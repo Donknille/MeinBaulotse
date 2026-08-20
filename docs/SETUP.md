@@ -178,11 +178,20 @@ Supabase leitet dann nicht auf eine Adresse weiter, die es nicht kennt.
 
 ### Wie die API auf Vercel liegt
 
-Die Funktion ist `api/[[...route]].ts`, Vercels Konvention für Sammelrouten.
-Sie erhält den Pfad **vollständig**, also `/api/v1/projects/…`. Deshalb hängt
-die Hono-App unter `/api`, und deshalb schneidet der Vite-Proxy lokal nichts ab:
-derselbe Pfad in beiden Umgebungen. Wer eine der drei Stellen ändert, muss die
-anderen beiden mitziehen, sonst antwortet im Betrieb jede Route mit 404.
+Die Funktion ist `api/index.ts`. Sie bedient `/api`, und die Umschreibung in
+`vercel.json` (`/api/(.*)` → `/api`) reicht alles Tiefere an dieselbe Funktion
+weiter, mit **vollständigem** Pfad, also `/api/v1/projects/…`. Deshalb hängt die
+Hono-App unter `/api`, und deshalb schneidet der Vite-Proxy lokal nichts ab:
+derselbe Pfad in beiden Umgebungen. Wer eine dieser Stellen ändert, muss die
+anderen mitziehen, sonst antwortet im Betrieb jede Route mit 404.
+
+Ohne Framework erkennt Vercel im Ordner `api/` nur eine Datei mit einem echten
+Pfad als Namen und einen Default-Export. Die Next.js-Schreibweisen
+`[[...route]].ts` und `export const GET = …` erzeugen dort gar keine Funktion;
+`/api/health` liefert dann die Anmeldemaske statt JSON.
+
+Zur Kontrolle nach jedem Deployment: `https://<deine-adresse>/api/health` muss
+`{"ok":true,"path":"/api/health"}` liefern.
 
 ---
 

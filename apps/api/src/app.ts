@@ -41,7 +41,11 @@ export function createApp(): Hono<App> {
   // Betrieb faellt sonst erst im Betrieb auf, und dann als 404 auf jeder Route.
   const app = new Hono<App>().basePath('/api');
 
-  app.get('/health', (c) => c.json({ ok: true }));
+  // Die Gesundheitsprüfung nennt den Pfad, den Hono tatsächlich gesehen hat.
+  // Im Betrieb ist das die schnellste Auskunft darüber, ob die Function
+  // erreicht wurde und ob Vercel den Pfad beim Umschreiben vollständig
+  // durchreicht: `/api/health` muss hier wieder als `/api/health` auftauchen.
+  app.get('/health', (c) => c.json({ ok: true, path: c.req.path }));
 
   // Testzugang ohne Mailversand. Ohne eingestellten Schlüssel gibt es diese
   // Route nicht — sie antwortet dann wie jede unbekannte Adresse mit 404.
