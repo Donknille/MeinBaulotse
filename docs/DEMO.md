@@ -235,10 +235,16 @@ https://<deine-adresse>/api/health/db
 
 - `{"ok":true,"phases":9,"roles":47}` → die Verbindung steht und die
   Migrationen sind eingespielt.
-- `{"ok":false,…}` → der Grund steht in `detail`. Meist ist `DATABASE_URL` in
-  Vercel nicht gesetzt, zeigt auf die *Direct connection* statt auf den
-  Transaction-Pooler, oder das Passwort stimmt nicht. Zugangsdaten werden in
-  dieser Meldung maskiert.
+- `{"ok":false,…}` → der Grund steht in `detail`, Zugangsdaten sind maskiert.
+  Daneben steht `connection` und nennt die **Form** der Adresse, ohne Host,
+  Benutzer oder Passwort:
+
+  | Was dort steht | Was es bedeutet |
+  |---|---|
+  | `configured: false` | `DATABASE_URL` ist in dieser Umgebung nicht gesetzt |
+  | `port: 5432`, `poolerUser: false` | Direct connection — von Vercel aus **nicht erreichbar**, sie ist nur über IPv6 zu haben. Nimm den Transaction-Pooler |
+  | `port: 6543`, `poolerUser: false` | Pooler-Adresse, aber der Benutzername ist nicht `postgres.<projektkennung>` — der Pooler weist das als `Tenant or user not found` ab |
+  | `port: 6543`, `poolerUser: true` | Die Adresse hat die richtige Form; dann steht die Ursache in `detail` |
 - `phases: 0` bekommst du hier nie zu sehen; fehlen die Migrationen, scheitert
   schon die Abfrage und der Grund steht in `detail`.
 

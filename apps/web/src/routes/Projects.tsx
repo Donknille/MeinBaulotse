@@ -157,6 +157,10 @@ function SeenIdentity({
 function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const reason = error instanceof ApiError ? error.message : 'Die Verbindung kam nicht zustande.';
   const hint = error instanceof ApiError ? error.hint : undefined;
+  // Der technische Grund, den die API mitschickt. Er steht bewusst hier und
+  // nicht nur im Protokoll: Ohne ihn ist von außen nicht zu unterscheiden, ob
+  // die Datenbank nicht antwortet oder ob eine Abfrage schiefging.
+  const detail = error instanceof ApiError ? error.detail : undefined;
 
   return (
     <div className="flex flex-col items-start gap-3 py-8">
@@ -165,6 +169,9 @@ function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
       </p>
       <p className="max-w-[34rem] text-body text-steel">{reason}</p>
       {hint !== undefined ? <p className="max-w-[34rem] text-caption text-steel">{hint}</p> : null}
+      {detail !== undefined ? (
+        <p className="max-w-[34rem] font-mono text-caption break-words text-steel">{detail}</p>
+      ) : null}
       <Button variant="primary" size="field" onClick={onRetry}>
         Erneut versuchen
       </Button>

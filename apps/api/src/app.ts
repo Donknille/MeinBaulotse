@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { withUserTx } from '@meinbaulotse/db';
+import { describeConnection, withUserTx } from '@meinbaulotse/db';
 import {
   workdayDifference,
   workdayOffset,
@@ -76,7 +76,14 @@ export function createApp(): Hono<App> {
   // Gezählt werden Stammdaten, keine Projektdaten: Phasen und Rechteeinträge
   // stehen in jeder eingerichteten Datenbank und verraten nichts über einen
   // Nutzer. Fehlen die Migrationen, scheitert schon die Abfrage — dann steht
-  // der Grund in `detail`, und zwar ohne Zugangsdaten.
+  // der Grund in `detail`.
+  //
+  // Die Route steht bewusst ohne Anmeldung offen, denn genau dann braucht man
+  // sie: wenn keine Anmeldung durchkommt. Was sie preisgibt, ist abgegrenzt.
+  // `connection` nennt nur Port, TLS und Benutzerform, nie Host, Benutzer oder
+  // Passwort. `detail` ist der Rohtext des Fehlers mit maskierten Zugangsdaten;
+  // darin kann ein Hostname stehen, und das ist vertretbar — die Adresse des
+  // Supabase-Projekts steht als `VITE_SUPABASE_URL` ohnehin im Browser-Bundle.
   app.get('/health/db', async (c) => {
     try {
       const counts = await withUserTx({ sub: HEALTH_PROBE_USER }, async (tx) => {
@@ -90,6 +97,7 @@ export function createApp(): Hono<App> {
         ok: true,
         phases: Number(counts.phases),
         roles: Number(counts.roles),
+        connection: describeConnection(),
       });
     } catch (error) {
       console.error('Die Datenbank antwortet nicht:', error);
@@ -98,6 +106,11 @@ export function createApp(): Hono<App> {
           ok: false,
           error: 'Die Datenbank antwortet nicht.',
           detail: withoutSecrets(error instanceof Error ? error.message : String(error)),
+          // Die Form der Adresse, ohne Host, Benutzer oder Passwort. Sie
+          // beantwortet die häufigste Ursache ohne weitere Rückfrage:
+          // `port: 5432` heißt Direktverbindung, und die ist von Vercel aus
+          // nicht erreichbar.
+          connection: describeConnection(),
         },
         503,
       );
@@ -253,10 +266,17 @@ export function createApp(): Hono<App> {
       );
     }
     console.error('Unerwarteter Fehler:', error);
+    // Der Grund gehört in die Antwort, nicht nur ins Protokoll.
+    //
+    // „Das hat nicht geklappt" allein kostete eine ganze Runde: Die Function
+    // lief, die Datenlage stand, und trotzdem war von außen nicht zu sehen,
+    // dass die Datenbankverbindung scheiterte. Wer hier fragt, ist angemeldet,
+    // und Zugangsdaten sind maskiert — die Auskunft ist die richtige Wahl.
     return c.json(
       {
         error: 'Das hat nicht geklappt.',
         hint: 'Versuch es bitte noch einmal. Bleibt es dabei, melde dich bei uns.',
+        detail: withoutSecrets(error instanceof Error ? error.message : String(error)),
       },
       500,
     );

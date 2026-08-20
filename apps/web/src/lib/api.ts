@@ -13,12 +13,15 @@ import { supabase } from './supabase';
 export class ApiError extends Error {
   readonly status: number;
   readonly hint: string | undefined;
+  /** Der technische Grund, maskiert von der API. Nur bei 500 gesetzt. */
+  readonly detail: string | undefined;
 
-  constructor(status: number, message: string, hint?: string) {
+  constructor(status: number, message: string, hint?: string, detail?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.hint = hint;
+    this.detail = detail;
   }
 }
 
@@ -55,6 +58,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = (await response.json().catch(() => null)) as {
       error?: string;
       hint?: string;
+      detail?: string;
     } | null;
     // Ohne JSON-Körper bleibt nur der Statuscode — und der ist mehr wert als
     // ein allgemeiner Satz: Ein 502 vom Router und ein 401 der API führen zu
@@ -63,6 +67,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       response.status,
       body?.error ?? `Der Server hat mit ${response.status} geantwortet.`,
       body?.hint,
+      body?.detail,
     );
   }
 

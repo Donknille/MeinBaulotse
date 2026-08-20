@@ -12126,6 +12126,22 @@ function needsTls(connectionString) {
     return true;
   }
 }
+function describeConnection(connectionString = process.env["DATABASE_URL"]) {
+  if (connectionString === void 0 || connectionString === "") {
+    return { configured: false, port: null, tls: false, poolerUser: false };
+  }
+  try {
+    const url = new URL(connectionString);
+    return {
+      configured: true,
+      port: url.port === "" ? null : Number(url.port),
+      tls: needsTls(connectionString),
+      poolerUser: decodeURIComponent(url.username).includes(".")
+    };
+  } catch {
+    return { configured: true, port: null, tls: true, poolerUser: false };
+  }
+}
 function getPool(connectionString = process.env["DATABASE_URL"]) {
   if (pool !== void 0)
     return pool;
@@ -14562,7 +14578,8 @@ function createApp() {
       return c.json({
         ok: true,
         phases: Number(counts.phases),
-        roles: Number(counts.roles)
+        roles: Number(counts.roles),
+        connection: describeConnection()
       });
     } catch (error) {
       console.error("Die Datenbank antwortet nicht:", error);
@@ -14570,7 +14587,12 @@ function createApp() {
         {
           ok: false,
           error: "Die Datenbank antwortet nicht.",
-          detail: withoutSecrets(error instanceof Error ? error.message : String(error))
+          detail: withoutSecrets(error instanceof Error ? error.message : String(error)),
+          // Die Form der Adresse, ohne Host, Benutzer oder Passwort. Sie
+          // beantwortet die häufigste Ursache ohne weitere Rückfrage:
+          // `port: 5432` heißt Direktverbindung, und die ist von Vercel aus
+          // nicht erreichbar.
+          connection: describeConnection()
         },
         503
       );
@@ -14687,7 +14709,8 @@ function createApp() {
     return c.json(
       {
         error: "Das hat nicht geklappt.",
-        hint: "Versuch es bitte noch einmal. Bleibt es dabei, melde dich bei uns."
+        hint: "Versuch es bitte noch einmal. Bleibt es dabei, melde dich bei uns.",
+        detail: withoutSecrets(error instanceof Error ? error.message : String(error))
       },
       500
     );

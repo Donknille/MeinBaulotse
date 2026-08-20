@@ -90,6 +90,45 @@ function needsTls(connectionString: string): boolean {
   }
 }
 
+/**
+ * Die **Form** der eingestellten Verbindung, ohne ein Geheimnis zu nennen.
+ *
+ * Wenn eine Verbindung im Betrieb scheitert, ist die erste Frage nicht, wie
+ * das Passwort lautet, sondern welche der beiden Supabase-Adressen eingetragen
+ * ist. Die Direktverbindung (Port 5432) ist nur über IPv6 erreichbar und von
+ * einer Vercel-Function aus deshalb gar nicht; der Transaction-Pooler (Port
+ * 6543) verlangt den Benutzernamen `postgres.<projektkennung>`. Beides lässt
+ * sich beantworten, ohne Host, Benutzer oder Passwort herauszugeben.
+ */
+export interface ConnectionShape {
+  configured: boolean;
+  /** 6543 ist der Transaction-Pooler, 5432 die Direktverbindung. */
+  port: number | null;
+  tls: boolean;
+  /** Trägt der Benutzername eine Projektkennung? Nur der Pooler verlangt das. */
+  poolerUser: boolean;
+}
+
+export function describeConnection(
+  connectionString = process.env['DATABASE_URL'],
+): ConnectionShape {
+  if (connectionString === undefined || connectionString === '') {
+    return { configured: false, port: null, tls: false, poolerUser: false };
+  }
+  try {
+    const url = new URL(connectionString);
+    return {
+      configured: true,
+      port: url.port === '' ? null : Number(url.port),
+      tls: needsTls(connectionString),
+      poolerUser: decodeURIComponent(url.username).includes('.'),
+    };
+  } catch {
+    // Eine Adresse, die sich nicht lesen lässt, ist selbst schon die Auskunft.
+    return { configured: true, port: null, tls: true, poolerUser: false };
+  }
+}
+
 export function getPool(connectionString = process.env['DATABASE_URL']): pg.Pool {
   if (pool !== undefined) return pool;
   if (connectionString === undefined || connectionString === '') {

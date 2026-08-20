@@ -10,7 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SignJWT } from 'jose';
-import { closePool, permissionsOf, withAdminTx } from '@meinbaulotse/db';
+import { closePool, describeConnection, permissionsOf, withAdminTx } from '@meinbaulotse/db';
 import { projectSchedule, type ProjectSchedule } from '@meinbaulotse/shared';
 import { createApp, withoutSecrets } from './app.js';
 
@@ -104,11 +104,38 @@ describe('Auskunft über Verbindung und Identität', () => {
     const response = await request('/api/health/db');
     expect(response.status).toBe(200);
 
-    const body = (await response.json()) as { ok: boolean; phases: number; roles: number };
+    const body = (await response.json()) as {
+      ok: boolean;
+      phases: number;
+      roles: number;
+      connection: { configured: boolean; port: number | null; poolerUser: boolean };
+    };
     expect(body.ok).toBe(true);
     // Die Stammdaten aus 0003_seed.sql. Steht hier 0, fehlen die Migrationen.
     expect(body.phases).toBeGreaterThan(0);
     expect(body.roles).toBeGreaterThan(0);
+    expect(body.connection.configured).toBe(true);
+  });
+
+  it('nennt die Form der Verbindung, aber kein Geheimnis', async () => {
+    // Die Auskunft darf im Betrieb offenstehen. Sie muss deshalb belegbar
+    // frei von Host, Benutzer und Passwort sein.
+    const shape = describeConnection('postgresql://postgres.abcdef:s3cret@pooler.example:6543/db');
+    expect(shape).toEqual({ configured: true, port: 6543, tls: true, poolerUser: true });
+
+    const direkt = describeConnection('postgresql://postgres:s3cret@db.example:5432/db');
+    expect(direkt).toEqual({ configured: true, port: 5432, tls: true, poolerUser: false });
+
+    expect(describeConnection('')).toEqual({
+      configured: false,
+      port: null,
+      tls: false,
+      poolerUser: false,
+    });
+
+    const alsText = JSON.stringify(describeConnection('postgresql://u:s3cret@h.example:6543/db'));
+    expect(alsText).not.toContain('s3cret');
+    expect(alsText).not.toContain('h.example');
   });
 
   it('hält Zugangsdaten aus Fehlermeldungen heraus', async () => {
