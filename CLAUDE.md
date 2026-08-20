@@ -37,10 +37,21 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
 7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
    entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und der
-   Vite-Proxy schneidet nichts ab. Vier Stellen halten das zusammen:
+   Vite-Proxy schneidet nichts ab. **Fünf** Stellen halten das zusammen:
    `apps/api/src/app.ts` (`basePath`), `apps/web/vite.config.ts` (Proxy ohne
-   `rewrite`), `apps/api/src/vercel.ts` und die Umschreibung in `vercel.json`
-   (`/api/(.*)` → `/api`). Wer eine ändert, ändert alle vier.
+   `rewrite` **und** `navigateFallbackDenylist: [/^\/api\//]` im Service
+   Worker), `apps/api/src/vercel.ts` und die Umschreibung in `vercel.json`
+   (`/api/(.*)` → `/api`). Wer eine ändert, ändert alle fünf.
+
+   Die fünfte ist die unauffälligste und hat am längsten gekostet: Ohne die
+   Ausnahme beantwortet der Service Worker **jede** Navigation aus dem
+   Zwischenspeicher, auch `/api/health` in der Adresszeile. Die Gegenprobe aus
+   Regel 8 ist dann ausgerechnet dort blind, wo man sie braucht.
+
+   Und `registerType` gehört auf `autoUpdate`. Mit `prompt` wartet der neue
+   Service Worker, bis ihn jemand freischaltet — solange kein Modul
+   `virtual:pwa-register` importiert, gibt es dieses „jemand" nicht, und
+   Auslieferungen erreichen niemanden, während die CI grün meldet.
 
 8. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
    macht aus `apps/api/src/vercel.ts` die eingecheckte Datei `api/index.js`,

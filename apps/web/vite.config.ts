@@ -8,8 +8,30 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'prompt',
+      // `autoUpdate`, nicht `prompt`.
+      //
+      // `prompt` war eine Absichtserklärung ohne Umsetzung: Der neue Service
+      // Worker installiert sich und wartet, bis ihn jemand freischaltet — und
+      // dieses „jemand" gab es nie, denn kein Modul importiert
+      // `virtual:pwa-register`. Folge im Betrieb: Drei aufeinanderfolgende
+      // Auslieferungen kamen beim Nutzer nicht an, er sah tagelang dieselbe
+      // alte Fassung, während die CI grün meldete.
+      //
+      // `autoUpdate` erzeugt einen Service Worker mit `skipWaiting` und
+      // `clientsClaim`; die neue Fassung übernimmt beim nächsten Laden. Der
+      // Preis ist ein möglicher Neuaufbau der Seite mitten in einer Eingabe.
+      // Das ist der kleinere Schaden — eine Auslieferung, die niemanden
+      // erreicht, ist gar keine.
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      workbox: {
+        // Ohne diese Ausnahme beantwortet der Service Worker **jede**
+        // Navigation aus dem Zwischenspeicher — auch die Eingabe von
+        // `/api/health/db` in der Adresszeile. Statt der Auskunft bekommt man
+        // die Anwendung, und die Gegenprobe, die im Betrieb helfen soll, ist
+        // ausgerechnet dort nicht erreichbar.
+        navigateFallbackDenylist: [/^\/api\//],
+      },
       manifest: {
         name: 'MeinBaulotse',
         short_name: 'Baulotse',
