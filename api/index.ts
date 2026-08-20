@@ -24,6 +24,15 @@
  * Der Import bewusst ohne `.js`-Endung. Für `tsc` wäre sie richtig, aber
  * esbuild in Vercels Node-Builder löst sie nicht zuverlässig auf die
  * `.ts`-Datei auf.
+ *
+ * **`api/package.json` mit `"type": "commonjs"` gehört dazu.** Der
+ * Projektstamm ist ESM, und Vercel bündelt diese Funktion entsprechend als
+ * ESM. Dabei wandert `pg` mit hinein, das CommonJS ist und intern `require`
+ * benutzt. In einem ESM-Bündel gibt es kein `require`, und die Funktion
+ * stirbt beim Kaltstart mit `Dynamic require of "events" is not supported`,
+ * also mit FUNCTION_INVOCATION_FAILED auf jeder Route. Die eine Zeile in
+ * `api/package.json` dreht das Bündelformat für diesen Ordner auf CommonJS.
+ * Am übrigen Repository ändert sie nichts.
  */
 
 import { handle } from 'hono/vercel';
