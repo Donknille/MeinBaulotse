@@ -52,12 +52,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       clearDemoSession();
     }
 
-    const body = (await response.json().catch(() => null)) as
-      | { error?: string; hint?: string }
-      | null;
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      hint?: string;
+    } | null;
+    // Ohne JSON-Körper bleibt nur der Statuscode — und der ist mehr wert als
+    // ein allgemeiner Satz: Ein 502 vom Router und ein 401 der API führen zu
+    // ganz verschiedenen nächsten Schritten.
     throw new ApiError(
       response.status,
-      body?.error ?? 'Das hat nicht geklappt.',
+      body?.error ?? `Der Server hat mit ${response.status} geantwortet.`,
       body?.hint,
     );
   }
@@ -73,8 +77,22 @@ export interface OnboardingResult {
   deviationWorkdays: number | null;
 }
 
+/**
+ * Wen die Datenbank im Anrufer erkennt — nicht, was das Token behauptet.
+ *
+ * `databaseUserId` ist `null`, wenn `auth.uid()` den JWT-Claim nicht auflöst.
+ * Dann bleibt jede Liste leer, obwohl die Daten in der Datenbank stehen.
+ */
+export interface Identity {
+  tokenSub: string;
+  databaseUserId: string | null;
+  email: string | null;
+  memberships: number;
+}
+
 export const api = {
   listProjects: () => request<{ projects: ProjectSummary[] }>('/me/projects'),
+  me: () => request<Identity>('/me'),
   createProject: (answers: OnboardingRequest) =>
     request<OnboardingResult>('/projects/onboarding', {
       method: 'POST',

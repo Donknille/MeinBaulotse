@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { EmptyState } from '../components/ui';
 import { PlanView } from '../components/PlanView';
-import { api } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 
 /** Route: holt den Plan und übergibt ihn an die Darstellung. */
 export function Plan() {
@@ -18,7 +18,15 @@ export function Plan() {
       {query.isPending ? (
         <p className="text-body text-steel">Der Plan wird geladen.</p>
       ) : query.isError || query.data === undefined ? (
-        <EmptyState text="Dieses Projekt konnten wir nicht laden. Prüf bitte den Link, oder öffne es noch einmal aus deiner Übersicht." />
+        // Den Grund nennen, nicht nur das Scheitern: „Prüf bitte den Link"
+        // schickt in die Irre, wenn in Wahrheit die Datenbank nicht antwortet.
+        <EmptyState
+          text={`Dieses Projekt konnten wir nicht laden. ${
+            query.error instanceof ApiError
+              ? query.error.message
+              : 'Prüf bitte den Link, oder öffne es noch einmal aus deiner Übersicht.'
+          }`}
+        />
       ) : (
         <PlanView schedule={query.data} />
       )}

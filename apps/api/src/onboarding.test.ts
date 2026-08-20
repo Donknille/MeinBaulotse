@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SignJWT } from 'jose';
 import { closePool, permissionsOf, withAdminTx } from '@meinbaulotse/db';
 import { projectSchedule, type ProjectSchedule } from '@meinbaulotse/shared';
-import { createApp } from './app.js';
+import { createApp, withoutSecrets } from './app.js';
 
 const SECRET = 'super-secret-jwt-token-with-at-least-32-characters-long';
 process.env['SUPABASE_JWT_SECRET'] = SECRET;
@@ -90,6 +90,85 @@ describe('Anmeldung', () => {
 
   it('lässt die Gesundheitsprüfung ohne Anmeldung zu', async () => {
     expect((await request('/api/health')).status).toBe(200);
+  });
+});
+
+/**
+ * Die beiden Auskünfte, die eine leere Liste erklären.
+ *
+ * Sie sind entstanden, weil im Betrieb eine leere Liste und eine gescheiterte
+ * Anfrage gleich aussahen. Wer sie prüft, prüft die Fehlersuche selbst.
+ */
+describe('Auskunft über Verbindung und Identität', () => {
+  it('meldet die Datenbank als erreichbar, ohne Anmeldung', async () => {
+    const response = await request('/api/health/db');
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as { ok: boolean; phases: number; roles: number };
+    expect(body.ok).toBe(true);
+    // Die Stammdaten aus 0003_seed.sql. Steht hier 0, fehlen die Migrationen.
+    expect(body.phases).toBeGreaterThan(0);
+    expect(body.roles).toBeGreaterThan(0);
+  });
+
+  it('hält Zugangsdaten aus Fehlermeldungen heraus', async () => {
+    // Der Grund, warum die Fehlermeldung dieser Route überhaupt gezeigt werden
+    // darf: Postgres-Adressen tragen das Passwort zwischen `//` und `@`.
+    expect(withoutSecrets('connect failed: postgresql://user:s3cret@db.example:5432/x')).toBe(
+      'connect failed: postgresql://***@db.example:5432/x',
+    );
+    expect(withoutSecrets('nichts zu maskieren')).toBe('nichts zu maskieren');
+  });
+
+  it('verlangt für die Identität eine Anmeldung', async () => {
+    expect((await request('/api/v1/me')).status).toBe(401);
+  });
+
+  it('nennt dieselbe Kennung, die im Token steht', async () => {
+    const response = await request('/api/v1/me', { token });
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as {
+      tokenSub: string;
+      databaseUserId: string | null;
+      email: string | null;
+      memberships: number;
+    };
+
+    // Der Kern: Was das Token behauptet, und was die Datenbank daraus macht.
+    // Fällt das auseinander, bleibt jede Liste leer, obwohl Daten da sind.
+    expect(body.tokenSub).toBe(bauherr);
+    expect(body.databaseUserId).toBe(bauherr);
+    expect(body.email).toBe(`${bauherr}@example.test`);
+  });
+
+  it('zählt nur die Beteiligungen der eigenen Kennung', async () => {
+    // Eine eigene Kennung, damit dieser Test keine Datenlage hinterlässt, auf
+    // die spätere Fälle stoßen.
+    const eigener = await tokenFor(await createUser('zaehlprobe@example.test'));
+
+    const vorher = (await (await request('/api/v1/me', { token: eigener })).json()) as {
+      memberships: number;
+    };
+    expect(vorher.memberships).toBe(0);
+
+    await request('/api/v1/projects/onboarding', {
+      method: 'POST',
+      token: eigener,
+      body: JSON.stringify({ ...ANTWORTEN, name: 'Zählprobe' }),
+    });
+
+    const nachher = (await (await request('/api/v1/me', { token: eigener })).json()) as {
+      memberships: number;
+    };
+    expect(nachher.memberships).toBe(1);
+
+    // Ein Unbeteiligter zählt nicht mit — die Zahl kommt aus der RLS, nicht
+    // aus einer Gesamtsumme.
+    const fremder = (await (await request('/api/v1/me', { token: fremderToken })).json()) as {
+      memberships: number;
+    };
+    expect(fremder.memberships).toBe(0);
   });
 });
 

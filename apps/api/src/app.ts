@@ -31,6 +31,24 @@ type App = { Variables: AuthedVariables };
 
 const uuid = z.string().uuid();
 
+/**
+ * Die Kennung, unter der die Datenbankprüfung fragt.
+ *
+ * Bewusst die Nullkennung und kein echter Nutzer: Die Prüfung liest nur
+ * Stammdaten, die jede angemeldete Kennung lesen darf (`phase_read`,
+ * `role_permission_read`). Sie läuft damit innerhalb der RLS und braucht keine
+ * privilegierte Rolle — Regel 1 gilt auch für eine Gesundheitsprüfung.
+ */
+const HEALTH_PROBE_USER = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Zugangsdaten dürfen nicht in einer Fehlermeldung landen. Postgres-Adressen
+ * tragen das Passwort im Klartext zwischen `//` und `@`.
+ */
+export function withoutSecrets(text: string): string {
+  return text.replace(/:\/\/[^@\s]*@/g, '://***@');
+}
+
 export function createApp(): Hono<App> {
   // Die App haengt unter `/api`, nicht unter der Wurzel.
   //
@@ -47,6 +65,45 @@ export function createApp(): Hono<App> {
   // durchreicht: `/api/health` muss hier wieder als `/api/health` auftauchen.
   app.get('/health', (c) => c.json({ ok: true, path: c.req.path }));
 
+  // Die Gegenprobe zur Datenbank, ohne Anmeldung.
+  //
+  // `/api/health` sagt, ob die Function läuft. Diese Route sagt, ob sie an die
+  // Datenbank kommt — und das ist die zweite Frage, die im Betrieb immer
+  // gestellt wird, wenn eine Liste leer bleibt. Ohne sie ist von außen nicht
+  // zu unterscheiden, ob eine Antwort leer ist, weil nichts da ist, oder weil
+  // die Verbindung fehlt.
+  //
+  // Gezählt werden Stammdaten, keine Projektdaten: Phasen und Rechteeinträge
+  // stehen in jeder eingerichteten Datenbank und verraten nichts über einen
+  // Nutzer. Fehlen die Migrationen, scheitert schon die Abfrage — dann steht
+  // der Grund in `detail`, und zwar ohne Zugangsdaten.
+  app.get('/health/db', async (c) => {
+    try {
+      const counts = await withUserTx({ sub: HEALTH_PROBE_USER }, async (tx) => {
+        const result = await tx.query<{ phases: string; roles: string }>(
+          `select (select count(*) from phase)::text           as phases,
+                  (select count(*) from role_permission)::text as roles`,
+        );
+        return result.rows[0]!;
+      });
+      return c.json({
+        ok: true,
+        phases: Number(counts.phases),
+        roles: Number(counts.roles),
+      });
+    } catch (error) {
+      console.error('Die Datenbank antwortet nicht:', error);
+      return c.json(
+        {
+          ok: false,
+          error: 'Die Datenbank antwortet nicht.',
+          detail: withoutSecrets(error instanceof Error ? error.message : String(error)),
+        },
+        503,
+      );
+    }
+  });
+
   // Testzugang ohne Mailversand. Ohne eingestellten Schlüssel gibt es diese
   // Route nicht — sie antwortet dann wie jede unbekannte Adresse mit 404.
   // Warum das vertretbar ist, steht in `demo.ts`.
@@ -58,6 +115,36 @@ export function createApp(): Hono<App> {
 
   const v1 = new Hono<App>();
   v1.use('*', requireAuth);
+
+  // -- Wer fragt hier eigentlich? -------------------------------------------
+
+  // Diese Route beantwortet die Frage, an der jede leere Liste hängt: Erkennt
+  // die **Datenbank** denselben Nutzer, den das Token nennt?
+  //
+  // `databaseUserId` kommt aus `mbl.current_user_id()`, also aus `auth.uid()`.
+  // Steht dort `null`, während `tokenSub` gefüllt ist, löst die Datenbank den
+  // JWT-Claim nicht auf — dann bleibt jede Liste leer, obwohl die Daten da
+  // sind. Ohne diese Unterscheidung sieht das genauso aus wie „noch nichts
+  // angelegt", und man sucht an der falschen Stelle.
+  v1.get('/me', async (c) => {
+    const claims = c.get('claims');
+    const seen = await withUserTx(claims, async (tx) => {
+      const result = await tx.query<{ user_id: string | null; memberships: string }>(
+        `select mbl.current_user_id() as user_id,
+                (select count(*) from project_member
+                  where user_id = mbl.current_user_id() and revoked_at is null)::text
+                  as memberships`,
+      );
+      return result.rows[0]!;
+    });
+
+    return c.json({
+      tokenSub: claims.sub,
+      databaseUserId: seen.user_id,
+      email: typeof claims.email === 'string' ? claims.email : null,
+      memberships: Number(seen.memberships),
+    });
+  });
 
   // -- Onboarding -----------------------------------------------------------
 
@@ -120,7 +207,9 @@ export function createApp(): Hono<App> {
       const tasks = await loadTasks(tx, projectId);
       const phases = await loadPhases(tx, projectId);
 
-      const ends = tasks.map((task) => task.currentEnd).filter((end): end is string => end !== null);
+      const ends = tasks
+        .map((task) => task.currentEnd)
+        .filter((end): end is string => end !== null);
       const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => (a > b ? a : b));
 
       // Die Abweichung wird gerechnet, nicht aus einem Puffer abgeleitet: Der

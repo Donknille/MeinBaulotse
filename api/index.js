@@ -14543,9 +14543,39 @@ async function createProjectFromAnswers(tx, claims, answers) {
 
 // src/app.ts
 var uuid = external_exports.string().uuid();
+var HEALTH_PROBE_USER = "00000000-0000-0000-0000-000000000000";
+function withoutSecrets(text) {
+  return text.replace(/:\/\/[^@\s]*@/g, "://***@");
+}
 function createApp() {
   const app = new Hono2().basePath("/api");
   app.get("/health", (c) => c.json({ ok: true, path: c.req.path }));
+  app.get("/health/db", async (c) => {
+    try {
+      const counts = await withUserTx({ sub: HEALTH_PROBE_USER }, async (tx) => {
+        const result = await tx.query(
+          `select (select count(*) from phase)::text           as phases,
+                  (select count(*) from role_permission)::text as roles`
+        );
+        return result.rows[0];
+      });
+      return c.json({
+        ok: true,
+        phases: Number(counts.phases),
+        roles: Number(counts.roles)
+      });
+    } catch (error) {
+      console.error("Die Datenbank antwortet nicht:", error);
+      return c.json(
+        {
+          ok: false,
+          error: "Die Datenbank antwortet nicht.",
+          detail: withoutSecrets(error instanceof Error ? error.message : String(error))
+        },
+        503
+      );
+    }
+  });
   const demoKey = demoLoginKey();
   if (demoKey !== null) {
     console.info("Testzugang aktiv: POST /api/demo/session");
@@ -14553,6 +14583,24 @@ function createApp() {
   }
   const v1 = new Hono2();
   v1.use("*", requireAuth);
+  v1.get("/me", async (c) => {
+    const claims = c.get("claims");
+    const seen = await withUserTx(claims, async (tx) => {
+      const result = await tx.query(
+        `select mbl.current_user_id() as user_id,
+                (select count(*) from project_member
+                  where user_id = mbl.current_user_id() and revoked_at is null)::text
+                  as memberships`
+      );
+      return result.rows[0];
+    });
+    return c.json({
+      tokenSub: claims.sub,
+      databaseUserId: seen.user_id,
+      email: typeof claims.email === "string" ? claims.email : null,
+      memberships: Number(seen.memberships)
+    });
+  });
   v1.post("/projects/onboarding", async (c) => {
     const parsed = onboardingRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
@@ -14801,9 +14849,6 @@ function respondJson(response, status, body) {
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(JSON.stringify(body));
-}
-function withoutSecrets(text) {
-  return text.replace(/:\/\/[^@\s]*@/g, "://***@");
 }
 async function vercelHandler(request, response) {
   try {

@@ -59,8 +59,11 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    | `hono/vercel` als Adapter | FUNCTION_INVOCATION_FAILED, denn Vercel ruft `(req, res)` |
    | Import auf `../apps/api/src` oder `@meinbaulotse/api` | `Cannot find module` im Lambda |
 
-   Die Gegenprobe nach jedem Deployment ist ein Aufruf:
-   `/api/health` muss `{"ok":true,"path":"/api/health"}` liefern.
+   Die Gegenprobe nach jedem Deployment sind zwei Aufrufe, beide ohne
+   Anmeldung: `/api/health` muss `{"ok":true,"path":"/api/health"}` liefern —
+   dann läuft die Function. `/api/health/db` muss `{"ok":true,"phases":9,…}`
+   liefern — dann kommt sie auch an die Datenbank. Ohne den zweiten sieht eine
+   fehlende Verbindung aus wie eine leere Datenlage.
 
 ## Befehle
 

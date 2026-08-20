@@ -222,6 +222,73 @@ für eine Vorführung zu zweit ist das unnötig.
 Fehlt der Schlüssel im Link, etwa weil ein Messenger ihn abgeschnitten hat,
 sagt die Seite das und bietet ein Feld zum Einfügen an.
 
+## Wenn die Liste leer bleibt
+
+„Hier stehen deine Bauvorhaben. Leg eines an" — obwohl das Skript gelaufen ist.
+Drei Ursachen kommen in Frage. Der Reihe nach, jede mit einem Aufruf zu prüfen.
+
+### 1. Kommt die API an die Datenbank?
+
+```
+https://<deine-adresse>/api/health/db
+```
+
+- `{"ok":true,"phases":9,"roles":47}` → die Verbindung steht und die
+  Migrationen sind eingespielt.
+- `{"ok":false,…}` → der Grund steht in `detail`. Meist ist `DATABASE_URL` in
+  Vercel nicht gesetzt, zeigt auf die *Direct connection* statt auf den
+  Transaction-Pooler, oder das Passwort stimmt nicht. Zugangsdaten werden in
+  dieser Meldung maskiert.
+- `phases: 0` bekommst du hier nie zu sehen; fehlen die Migrationen, scheitert
+  schon die Abfrage und der Grund steht in `detail`.
+
+### 2. Wen sieht die Datenbank?
+
+Steht die Liste leer da, nennt die Seite darunter in kleiner Schrift, wen die
+Datenbank erkannt hat:
+
+```
+Angemeldet als bauherr@demo.meinbaulotse.de · keine Beteiligung eingetragen
+```
+
+- **Deine eigene Adresse** statt der des Testzugangs → du schaust mit deinem
+  Supabase-Konto auf eine Liste, in der nichts steht. Einmal *Abmelden*, dann
+  den Demo-Link öffnen. Das passiert von selbst, wenn das Testtoken nach zwölf
+  Stunden abläuft und daneben eine echte Anmeldung liegt; dann steht dort auch
+  „Du warst zuletzt im Testzugang".
+- **„Die Datenbank erkennt diese Anmeldung nicht"** → `auth.uid()` löst den
+  JWT-Claim nicht auf. Dann bleibt jede Liste leer, egal was in den Tabellen
+  steht.
+
+Dieselbe Auskunft gibt es als Aufruf, mit dem Token im Kopf der Anfrage:
+`GET /api/v1/me` liefert `tokenSub`, `databaseUserId`, `email` und
+`memberships`.
+
+### 3. Ist die Datenlage in *dieser* Datenbank?
+
+Im SQL Editor genau die Abfrage, die die API stellt — als Demo-Bauherr:
+
+```sql
+select set_config('request.jwt.claims',
+  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}', false);
+select set_config('role', 'authenticated', false);
+
+select p.name, m.role
+  from project p
+  join project_member m on m.project_id = p.id
+ where m.user_id = mbl.current_user_id() and m.revoked_at is null;
+
+reset role;
+```
+
+Zwei Zeilen → die Datenlage steht, es liegt an der Anwendung. Null Zeilen →
+das Skript ist hier nicht angekommen, und dann ist es die falsche Datenbank.
+
+Was es **nicht** ist: der `DEMO_LOGIN_KEY`. Der bewacht allein die
+Anmelderoute. Stimmt er nicht, sagt die Seite beim Klick „Dieser
+Zugangsschlüssel stimmt nicht" — bis zur Liste kommt man damit gar nicht.
+Sobald das Token ausgestellt ist, entscheidet allein die RLS, was zu sehen ist.
+
 ## Warum das vertretbar ist
 
 Drei Riegel, nachzulesen in `apps/api/src/demo.ts`:

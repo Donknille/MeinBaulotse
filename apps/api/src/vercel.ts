@@ -46,7 +46,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handle } from '@hono/node-server/vercel';
-import { createApp } from './app.js';
+import { createApp, withoutSecrets } from './app.js';
 
 type NodeHandler = (request: IncomingMessage, response: ServerResponse) => void | Promise<void>;
 
@@ -108,14 +108,6 @@ function respondJson(response: ServerResponse, status: number, body: unknown): v
   response.statusCode = status;
   response.setHeader('content-type', 'application/json; charset=utf-8');
   response.end(JSON.stringify(body));
-}
-
-/**
- * Zugangsdaten dürfen nicht in einer Fehlermeldung landen. Postgres-Adressen
- * tragen das Passwort im Klartext zwischen `//` und `@`.
- */
-function withoutSecrets(text: string): string {
-  return text.replace(/:\/\/[^@\s]*@/g, '://***@');
 }
 
 export default async function vercelHandler(
