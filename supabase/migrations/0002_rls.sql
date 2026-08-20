@@ -248,8 +248,21 @@ create policy expert_org_member_delete on expert_org_member for delete to authen
 
 -- Projekt -------------------------------------------------------------------
 
+-- Der zweite Zweig hat zwei Gründe.
+--
+-- Fachlich: Wer ein Projekt angelegt hat, verliert nie den Zugang dazu. Ein
+-- Bauherr, den ein zweiter Bauherr versehentlich aus seinem eigenen Projekt
+-- entfernt, stünde sonst vor verschlossener Tür.
+--
+-- Technisch: `insert … returning` verlangt zusätzlich zur WITH-CHECK- auch die
+-- USING-Bedingung. Im Moment des Anlegens gibt es noch keine Mitgliedszeile,
+-- die `mbl.is_member` finden könnte. Ohne diesen Zweig ließe sich kein Projekt
+-- anlegen — und der Fehler läse sich irreführend als Verstoß gegen die
+-- Einfügeregel.
+--
+-- `created_by` ist deshalb unveränderlich, siehe Trigger weiter unten.
 create policy project_read on project for select to authenticated
-  using (mbl.is_member(id));
+  using (mbl.is_member(id) or created_by = mbl.current_user_id());
 
 create policy project_create on project for insert to authenticated
   with check (created_by = mbl.current_user_id());
@@ -461,6 +474,25 @@ $$;
 create trigger task_log_change
   after insert or update on task
   for each row execute function mbl.log_task_change();
+
+-- `created_by` ist unveränderlich. Sonst ließe sich der Lesezugriff aus
+-- project_read verschieben oder entziehen.
+create or replace function mbl.guard_created_by()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.created_by is distinct from old.created_by then
+    raise exception 'Der Ersteller eines Projekts kann nicht geändert werden.'
+      using errcode = 'raise_exception';
+  end if;
+  return new;
+end
+$$;
+
+create trigger project_guard_created_by
+  before update on project
+  for each row execute function mbl.guard_created_by();
 
 -- (5) Abhängigkeiten dürfen keinen Zyklus schließen.
 create or replace function mbl.guard_dependency_cycle()

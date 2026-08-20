@@ -11,6 +11,27 @@
 
 import pg from 'pg';
 
+// ---------------------------------------------------------------------------
+// `date`-Spalten kommen als Zeichenkette zurück, nicht als Date-Objekt.
+//
+// node-postgres wandelt `date` (OID 1082) standardmäßig in ein JavaScript-Date
+// um — und damit in einen Zeitpunkt in der Zeitzone des Servers. Aus dem
+// 23.04.2026 wird je nach Umgebung der 22.04. oder eine Zeichenkette mit
+// Uhrzeit. Genau dieser Fehler ist der Grund, warum der Berechnungskern
+// überhaupt auf Epochentagen rechnet; er darf nicht durch den Treiber wieder
+// hereinkommen.
+//
+// Dasselbe für `timestamptz` gilt ausdrücklich nicht: Zeitpunkte sind
+// Zeitpunkte und bleiben Date-Objekte.
+// ---------------------------------------------------------------------------
+const PG_TYPE_DATE = 1082;
+pg.types.setTypeParser(PG_TYPE_DATE, (value: string) => value);
+
+// bigint (OID 20) käme sonst als Zeichenkette; Centbeträge passen sicher in
+// eine JavaScript-Zahl, solange sie unter 2^53 liegen.
+const PG_TYPE_INT8 = 20;
+pg.types.setTypeParser(PG_TYPE_INT8, (value: string) => Number(value));
+
 export interface JwtClaims {
   /** Nutzerkennung aus Supabase Auth. */
   sub: string;
