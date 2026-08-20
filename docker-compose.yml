@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: meinbaulotse-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: meinbaulotse
+    ports:
+      - '54329:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d meinbaulotse']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - meinbaulotse-db-data:/var/lib/postgresql/data
+
+volumes:
+  meinbaulotse-db-data:
