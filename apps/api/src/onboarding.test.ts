@@ -9,8 +9,16 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { rootCertificates } from 'node:tls';
 import { SignJWT } from 'jose';
-import { closePool, describeConnection, permissionsOf, withAdminTx } from '@meinbaulotse/db';
+import {
+  closePool,
+  describeConnection,
+  permissionsOf,
+  sslOptions,
+  SUPABASE_ROOT_CA_2021,
+  withAdminTx,
+} from '@meinbaulotse/db';
 import { projectSchedule, type ProjectSchedule } from '@meinbaulotse/shared';
 import { createApp, withoutSecrets } from './app.js';
 
@@ -121,15 +129,28 @@ describe('Auskunft über Verbindung und Identität', () => {
     // Die Auskunft darf im Betrieb offenstehen. Sie muss deshalb belegbar
     // frei von Host, Benutzer und Passwort sein.
     const shape = describeConnection('postgresql://postgres.abcdef:s3cret@pooler.example:6543/db');
-    expect(shape).toEqual({ configured: true, port: 6543, tls: true, poolerUser: true });
+    expect(shape).toEqual({
+      configured: true,
+      port: 6543,
+      tls: true,
+      verifyTls: true,
+      poolerUser: true,
+    });
 
     const direkt = describeConnection('postgresql://postgres:s3cret@db.example:5432/db');
-    expect(direkt).toEqual({ configured: true, port: 5432, tls: true, poolerUser: false });
+    expect(direkt).toEqual({
+      configured: true,
+      port: 5432,
+      tls: true,
+      verifyTls: true,
+      poolerUser: false,
+    });
 
     expect(describeConnection('')).toEqual({
       configured: false,
       port: null,
       tls: false,
+      verifyTls: false,
       poolerUser: false,
     });
 
@@ -145,6 +166,43 @@ describe('Auskunft über Verbindung und Identität', () => {
       'connect failed: postgresql://***@db.example:5432/x',
     );
     expect(withoutSecrets('nichts zu maskieren')).toBe('nichts zu maskieren');
+  });
+
+  it('vertraut Supabases Wurzel zusätzlich zu den bekannten', () => {
+    // Der Pooler weist sich mit einer selbstsignierten Wurzel aus. Ohne diesen
+    // Anker endet jede Verbindung in „self-signed certificate in certificate
+    // chain", und zwar erst im Betrieb — lokal läuft Postgres ohne TLS.
+    const optionen = sslOptions('postgresql://u:p@pooler.example:6543/db');
+    expect(optionen).not.toBe(false);
+    const { ca, rejectUnauthorized } = optionen as { ca: string[]; rejectUnauthorized: boolean };
+
+    // Die Prüfung bleibt scharf. Abgeschaltet wird sie nur über eine
+    // ausdrücklich gesetzte Umgebungsvariable.
+    expect(rejectUnauthorized).toBe(true);
+
+    // `ca` ersetzt in Node den Vertrauensspeicher, statt ihn zu ergänzen.
+    // Stünde hier nur Supabases Wurzel, liefe keine andere Datenbank mit
+    // öffentlichem Zertifikat mehr.
+    expect(ca).toContain(SUPABASE_ROOT_CA_2021);
+    expect(ca.length).toBe(rootCertificates.length + 1);
+    for (const bekannt of rootCertificates) expect(ca).toContain(bekannt);
+
+    // Lokal ohne TLS, sonst bräuchte die Entwicklungsdatenbank ein Zertifikat.
+    expect(sslOptions('postgresql://postgres:postgres@localhost:5432/db')).toBe(false);
+  });
+
+  it('schaltet die Prüfung nur auf ausdrückliche Ansage ab', () => {
+    const vorher = process.env['DATABASE_SSL_NO_VERIFY'];
+    try {
+      process.env['DATABASE_SSL_NO_VERIFY'] = '1';
+      expect(sslOptions('postgresql://u:p@pooler.example:6543/db')).toEqual({
+        rejectUnauthorized: false,
+      });
+      expect(describeConnection('postgresql://u:p@pooler.example:6543/db').verifyTls).toBe(false);
+    } finally {
+      if (vorher === undefined) delete process.env['DATABASE_SSL_NO_VERIFY'];
+      else process.env['DATABASE_SSL_NO_VERIFY'] = vorher;
+    }
   });
 
   it('verlangt für die Identität eine Anmeldung', async () => {
@@ -295,19 +353,21 @@ describe('Onboarding mit fünf Fragen', () => {
   });
 
   it('hält den Projektstart im Protokoll fest', async () => {
-    const entry = await withAdminTx(async (tx) =>
-      (
-        await tx.query<{ action: string }>(
-          'select action from audit_log where project_id = $1',
-          [projectId],
-        )
-      ).rows,
+    const entry = await withAdminTx(
+      async (tx) =>
+        (
+          await tx.query<{ action: string }>('select action from audit_log where project_id = $1', [
+            projectId,
+          ])
+        ).rows,
     );
     expect(entry.map((row) => row.action)).toContain('project.created');
   });
 
   it('verbirgt das Projekt vor Fremden', async () => {
-    const response = await request(`/api/v1/projects/${projectId}/schedule`, { token: fremderToken });
+    const response = await request(`/api/v1/projects/${projectId}/schedule`, {
+      token: fremderToken,
+    });
     // 404 statt 403: Ob es dieses Projekt gibt, geht Fremde nichts an.
     expect(response.status).toBe(404);
 
@@ -371,7 +431,11 @@ describe('Onboarding ohne Keller', () => {
       token,
       body: JSON.stringify({ ...ANTWORTEN, name: 'Ohne Keller', hasBasement: false }),
     });
-    const body = (await response.json()) as { projectId: string; taskCount: number; computedEnd: string };
+    const body = (await response.json()) as {
+      projectId: string;
+      taskCount: number;
+      computedEnd: string;
+    };
 
     expect(body.taskCount).toBe(34);
     expect(body.computedEnd).toBe('2026-10-01');

@@ -176,10 +176,37 @@ Sechs Stück, alle im Bereich *Production*:
 | `VITE_SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` |
 
 **`DATABASE_URL`: Transaction-Pooler auf 6543, nicht die Direktverbindung.**
-Eine Serverless-Funktion baut je Instanz ihre eigene Verbindung auf; die
-Direktverbindung ist nach wenigen gleichzeitigen Instanzen erschöpft. Der
-Anwendungscode setzt Rolle und JWT-Claim transaktionslokal
+Der Grund ist nicht nur die Zahl der Verbindungen. Die Direktverbindung
+`db.<projektkennung>.supabase.co` hat **keine IPv4-Adresse** — eine
+Vercel-Function erreicht sie überhaupt nicht:
+
+```
+db.<ref>.supabase.co              → 2a05:d018:… (nur IPv6)
+aws-1-<region>.pooler.supabase.com → 54.229.189.117, 18.202.64.2 (IPv4)
+```
+
+Die Adresse hat diese Form; `[YOUR-PASSWORD]` wird **samt Klammern** ersetzt,
+Sonderzeichen prozentkodiert (`@` → `%40`, `#` → `%23`, `/` → `%2F`):
+
+```
+postgresql://postgres.<projektkennung>:<passwort>@aws-1-<region>.pooler.supabase.com:6543/postgres
+```
+
+Der Anwendungscode setzt Rolle und JWT-Claim transaktionslokal
 (`set_config(…, true)`), und das verträgt sich mit dem Transaction-Modus.
+
+**Zum Zertifikat.** Der Pooler weist sich mit „Supabase Root 2021 CA" aus,
+einer selbstsignierten Wurzel, die Node nicht kennt. Ohne Gegenmaßnahme endet
+jede Verbindung in `self-signed certificate in certificate chain` — und zwar
+erst im Betrieb, denn lokal läuft Postgres ohne TLS. Die Anwendung bringt diese
+Wurzel deshalb mit (`packages/db/src/supabase-ca.ts`) und prüft weiterhin
+scharf. Du musst dafür nichts eintragen.
+
+Sollte die Wurzel einmal nicht mehr passen — sie läuft im April 2031 ab —, gibt
+es einen ausdrücklichen Notausgang: `DATABASE_SSL_NO_VERIFY=1`. Er verschlüsselt
+weiter, prüft aber nicht mehr, mit wem. Das ist eine Absenkung; der richtige Weg
+ist, das Zertifikat in `supabase-ca.ts` zu erneuern (Herkunft und Befehl stehen
+im Kopf der Datei).
 
 *(Zum Einspielen des Schemas gilt das Gegenteil — dort Port 5432, siehe
 Abschnitt 2.)*

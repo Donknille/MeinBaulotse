@@ -12094,6 +12094,9 @@ var coerce = {
 };
 var NEVER = INVALID;
 
+// ../../packages/db/dist/client.js
+var import_node_tls = require("node:tls");
+
 // ../../node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
 var Client = import_lib.default.Client;
@@ -12108,6 +12111,32 @@ var Result = import_lib.default.Result;
 var TypeOverrides = import_lib.default.TypeOverrides;
 var defaults = import_lib.default.defaults;
 var esm_default = import_lib.default;
+
+// ../../packages/db/dist/supabase-ca.js
+var SUPABASE_ROOT_CA_2021 = `-----BEGIN CERTIFICATE-----
+MIIDxDCCAqygAwIBAgIUbLxMod62P2ktCiAkxnKJwtE9VPYwDQYJKoZIhvcNAQEL
+BQAwazELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5l
+dyBDYXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJh
+c2UgUm9vdCAyMDIxIENBMB4XDTIxMDQyODEwNTY1M1oXDTMxMDQyNjEwNTY1M1ow
+azELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5ldyBD
+YXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJhc2Ug
+Um9vdCAyMDIxIENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqQXW
+QyHOB+qR2GJobCq/CBmQ40G0oDmCC3mzVnn8sv4XNeWtE5XcEL0uVih7Jo4Dkx1Q
+DmGHBH1zDfgs2qXiLb6xpw/CKQPypZW1JssOTMIfQppNQ87K75Ya0p25Y3ePS2t2
+GtvHxNjUV6kjOZjEn2yWEcBdpOVCUYBVFBNMB4YBHkNRDa/+S4uywAoaTWnCJLUi
+cvTlHmMw6xSQQn1UfRQHk50DMCEJ7Cy1RxrZJrkXXRP3LqQL2ijJ6F4yMfh+Gyb4
+O4XajoVj/+R4GwywKYrrS8PrSNtwxr5StlQO8zIQUSMiq26wM8mgELFlS/32Uclt
+NaQ1xBRizkzpZct9DwIDAQABo2AwXjALBgNVHQ8EBAMCAQYwHQYDVR0OBBYEFKjX
+uXY32CztkhImng4yJNUtaUYsMB8GA1UdIwQYMBaAFKjXuXY32CztkhImng4yJNUt
+aUYsMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAB8spzNn+4VU
+tVxbdMaX+39Z50sc7uATmus16jmmHjhIHz+l/9GlJ5KqAMOx26mPZgfzG7oneL2b
+VW+WgYUkTT3XEPFWnTp2RJwQao8/tYPXWEJDc0WVQHrpmnWOFKU/d3MqBgBm5y+6
+jB81TU/RG2rVerPDWP+1MMcNNy0491CTL5XQZ7JfDJJ9CCmXSdtTl4uUQnSuv/Qx
+Cea13BX2ZgJc7Au30vihLhub52De4P/4gonKsNHYdbWjg7OWKwNv/zitGDVDB9Y2
+CMTyZKG3XEu5Ghl1LEnI3QmEKsqaCLv12BnVjbkSeZsMnevJPs1Ye6TjjJwdik5P
+o/bKiIz+Fq8=
+-----END CERTIFICATE-----
+`;
 
 // ../../packages/db/dist/client.js
 var PG_TYPE_DATE = 1082;
@@ -12128,7 +12157,7 @@ function needsTls(connectionString) {
 }
 function describeConnection(connectionString = process.env["DATABASE_URL"]) {
   if (connectionString === void 0 || connectionString === "") {
-    return { configured: false, port: null, tls: false, poolerUser: false };
+    return { configured: false, port: null, tls: false, verifyTls: false, poolerUser: false };
   }
   try {
     const url = new URL(connectionString);
@@ -12136,11 +12165,22 @@ function describeConnection(connectionString = process.env["DATABASE_URL"]) {
       configured: true,
       port: url.port === "" ? null : Number(url.port),
       tls: needsTls(connectionString),
+      verifyTls: needsTls(connectionString) && !verificationDisabled(),
       poolerUser: decodeURIComponent(url.username).includes(".")
     };
   } catch {
-    return { configured: true, port: null, tls: true, poolerUser: false };
+    return { configured: true, port: null, tls: true, verifyTls: !verificationDisabled(), poolerUser: false };
   }
+}
+function verificationDisabled() {
+  return process.env["DATABASE_SSL_NO_VERIFY"] === "1";
+}
+function sslOptions(connectionString) {
+  if (!needsTls(connectionString))
+    return false;
+  if (verificationDisabled())
+    return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true, ca: [...import_node_tls.rootCertificates, SUPABASE_ROOT_CA_2021] };
 }
 function getPool(connectionString = process.env["DATABASE_URL"]) {
   if (pool !== void 0)
@@ -12156,7 +12196,7 @@ function getPool(connectionString = process.env["DATABASE_URL"]) {
     max: serverless ? 1 : 10,
     idleTimeoutMillis: serverless ? 1e4 : 3e4,
     connectionTimeoutMillis: 1e4,
-    ssl: needsTls(connectionString) ? { rejectUnauthorized: true } : false
+    ssl: sslOptions(connectionString)
   });
   return pool;
 }

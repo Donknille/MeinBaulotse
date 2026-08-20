@@ -15,6 +15,7 @@ export interface ConnectionShape {
   configured: boolean;
   port: number | null;
   tls: boolean;
+  verifyTls: boolean;
   poolerUser: boolean;
 }
 

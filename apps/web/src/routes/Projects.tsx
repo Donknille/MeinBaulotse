@@ -162,14 +162,23 @@ function SeenIdentity({
  * Transaction-Pooler auf 6543 verlangt `postgres.<projektkennung>` als
  * Benutzernamen. Beides steht hier, damit niemand es sich zusammenreimen muss.
  */
-function connectionAdvice(shape: ConnectionShape | undefined): string | undefined {
+function connectionAdvice(shape: ConnectionShape | undefined, detail?: string): string | undefined {
   if (shape === undefined) return undefined;
   if (!shape.configured) return 'DATABASE_URL ist in dieser Umgebung nicht gesetzt.';
+  // Der Zertifikatsfall hängt nicht an der Form der Adresse, sondern am Grund.
+  // Er sieht sonst aus wie „alles richtig eingetragen" — und war genau deshalb
+  // im Betrieb eine eigene Runde wert.
+  if (detail !== undefined && /certificate/i.test(detail)) {
+    return 'Das Zertifikat der Datenbank ließ sich nicht prüfen. Die aktuelle Fassung der Anwendung bringt Supabases Wurzelzertifikat mit — deploy sie, dann ist das erledigt.';
+  }
   if (shape.port === 5432 && !shape.poolerUser) {
     return 'Eingetragen ist die Direktverbindung (Port 5432). Sie ist nur über IPv6 erreichbar, von hier aus also nicht — nimm den Transaction-Pooler auf Port 6543.';
   }
   if (shape.port === 6543 && !shape.poolerUser) {
     return 'Pooler-Adresse (Port 6543), aber der Benutzername trägt keine Projektkennung. Der Pooler verlangt postgres.<projektkennung>.';
+  }
+  if (shape.tls && !shape.verifyTls) {
+    return `Eingetragen ist Port ${shape.port ?? 'ohne Angabe'}. Die Zertifikatsprüfung ist über DATABASE_SSL_NO_VERIFY abgeschaltet — verschlüsselt, aber ungeprüft.`;
   }
   return `Eingetragen ist Port ${shape.port ?? 'ohne Angabe'}${shape.tls ? ' mit TLS' : ' ohne TLS'}.`;
 }
@@ -182,7 +191,7 @@ function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
   // nicht nur im Protokoll: Ohne ihn ist von außen nicht zu unterscheiden, ob
   // die Datenbank nicht antwortet oder ob eine Abfrage schiefging.
   const detail = error instanceof ApiError ? error.detail : undefined;
-  const advice = error instanceof ApiError ? connectionAdvice(error.connection) : undefined;
+  const advice = error instanceof ApiError ? connectionAdvice(error.connection, detail) : undefined;
 
   return (
     <div className="flex flex-col items-start gap-3 py-8">

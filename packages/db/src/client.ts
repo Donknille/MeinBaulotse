@@ -9,7 +9,9 @@
  * bleibt verfügbar.
  */
 
+import { rootCertificates } from 'node:tls';
 import pg from 'pg';
+import { SUPABASE_ROOT_CA_2021 } from './supabase-ca.js';
 
 // ---------------------------------------------------------------------------
 // `date`-Spalten kommen als Zeichenkette zurück, nicht als Date-Objekt.
@@ -70,7 +72,9 @@ let pool: pg.Pool | undefined;
  * des Poolers, und zwar genau dann, wenn viel los ist.
  */
 function isServerless(): boolean {
-  return process.env['VERCEL'] !== undefined || process.env['AWS_LAMBDA_FUNCTION_NAME'] !== undefined;
+  return (
+    process.env['VERCEL'] !== undefined || process.env['AWS_LAMBDA_FUNCTION_NAME'] !== undefined
+  );
 }
 
 /**
@@ -105,6 +109,8 @@ export interface ConnectionShape {
   /** 6543 ist der Transaction-Pooler, 5432 die Direktverbindung. */
   port: number | null;
   tls: boolean;
+  /** Wird das Zertifikat der Gegenstelle geprüft? Siehe `DATABASE_SSL_NO_VERIFY`. */
+  verifyTls: boolean;
   /** Trägt der Benutzername eine Projektkennung? Nur der Pooler verlangt das. */
   poolerUser: boolean;
 }
@@ -113,7 +119,7 @@ export function describeConnection(
   connectionString = process.env['DATABASE_URL'],
 ): ConnectionShape {
   if (connectionString === undefined || connectionString === '') {
-    return { configured: false, port: null, tls: false, poolerUser: false };
+    return { configured: false, port: null, tls: false, verifyTls: false, poolerUser: false };
   }
   try {
     const url = new URL(connectionString);
@@ -121,12 +127,46 @@ export function describeConnection(
       configured: true,
       port: url.port === '' ? null : Number(url.port),
       tls: needsTls(connectionString),
+      verifyTls: needsTls(connectionString) && !verificationDisabled(),
       poolerUser: decodeURIComponent(url.username).includes('.'),
     };
   } catch {
     // Eine Adresse, die sich nicht lesen lässt, ist selbst schon die Auskunft.
-    return { configured: true, port: null, tls: true, poolerUser: false };
+    return {
+      configured: true,
+      port: null,
+      tls: true,
+      verifyTls: !verificationDisabled(),
+      poolerUser: false,
+    };
   }
+}
+
+/**
+ * Ist die Gegenprüfung des Zertifikats abgeschaltet?
+ *
+ * Ausdrücklich benannt und ausdrücklich zu setzen. Es ist eine Absenkung:
+ * Die Verbindung bleibt verschlüsselt, aber es wird nicht mehr geprüft, mit
+ * wem. Der Weg dahin steht nur für den Fall offen, dass die hinterlegte
+ * Wurzel einmal nicht mehr passt — dann ist ein gesetztes `1` besser als eine
+ * Anwendung, die niemand mehr erreicht.
+ */
+function verificationDisabled(): boolean {
+  return process.env['DATABASE_SSL_NO_VERIFY'] === '1';
+}
+
+/**
+ * TLS-Einstellungen der Verbindung.
+ *
+ * Die bekannten Wurzeln **und** die von Supabase. `ca` ersetzt in Node den
+ * Vertrauensspeicher, statt ihn zu ergänzen — würde hier nur die
+ * Supabase-Wurzel stehen, liefe keine andere Datenbank mit öffentlichem
+ * Zertifikat mehr.
+ */
+export function sslOptions(connectionString: string): pg.PoolConfig['ssl'] {
+  if (!needsTls(connectionString)) return false;
+  if (verificationDisabled()) return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true, ca: [...rootCertificates, SUPABASE_ROOT_CA_2021] };
 }
 
 export function getPool(connectionString = process.env['DATABASE_URL']): pg.Pool {
@@ -142,7 +182,7 @@ export function getPool(connectionString = process.env['DATABASE_URL']): pg.Pool
     max: serverless ? 1 : 10,
     idleTimeoutMillis: serverless ? 10_000 : 30_000,
     connectionTimeoutMillis: 10_000,
-    ssl: needsTls(connectionString) ? { rejectUnauthorized: true } : false,
+    ssl: sslOptions(connectionString),
   });
   return pool;
 }
