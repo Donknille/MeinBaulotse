@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruefen:
+    name: Lint, Typen, Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: meinbaulotse
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d meinbaulotse"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meinbaulotse
+      SUPABASE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Pakete bauen
+        run: pnpm -r --filter './packages/*' build
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typen prüfen
+        run: pnpm typecheck
+
+      - name: Berechnungskern
+        run: pnpm --filter @meinbaulotse/schedule test
+
+      - name: Schema, Rechte und Stammdaten einspielen
+        run: pnpm --filter @meinbaulotse/db reset
+
+      - name: RLS-Matrix und Invarianten
+        run: pnpm --filter @meinbaulotse/db test
+
+      - name: Onboarding von Ende zu Ende
+        run: pnpm --filter @meinbaulotse/api test
+
+      - name: Erzeugte Dateien sind aktuell
+        run: |
+          pnpm --filter @meinbaulotse/db seed:generate
+          pnpm --filter @meinbaulotse/web fixture
+          git diff --exit-code -- supabase/migrations/0003_seed.sql apps/web/src/routes/plan-fixture.ts \
+            || (echo "::error::Erzeugte Dateien weichen von ihren Quellen ab. Bitte die Generatoren laufen lassen und das Ergebnis einchecken." && exit 1)
+
+      - name: Web bauen
+        run: pnpm --filter @meinbaulotse/web build
