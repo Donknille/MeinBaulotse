@@ -13,6 +13,7 @@ import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  DECISION_TEMPLATES,
   EFH_MASSIV_UNTERKELLERT,
   PHASES,
   TRADES,
@@ -20,7 +21,13 @@ import {
 import { PERMISSIONS } from '../src/permissions.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const target = join(here, '..', '..', '..', 'supabase', 'migrations', '0003_seed.sql');
+const migrations = join(here, '..', '..', '..', 'supabase', 'migrations');
+const target = join(migrations, '0003_seed.sql');
+
+// Die Entscheidungsvorlagen stehen in einer eigenen Datei, weil ihre Tabelle
+// erst in 0004 entsteht. Eine Seed-Anweisung vor ihrer Tabelle wäre keine
+// Migration, sondern ein Fehler beim ersten Einspielen.
+const decisionTarget = join(migrations, '0005_seed_entscheidungen.sql');
 
 const q = (value: string | null | undefined): string =>
   value === null || value === undefined ? 'null' : `'${value.replace(/'/g, "''")}'`;
@@ -117,9 +124,41 @@ lines.push(
 );
 
 writeFileSync(target, lines.join('\n'), 'utf8');
+
+// -- Entscheidungsvorlagen (Abschnitt 7.3) ----------------------------------
+
+const decisionLines: string[] = [
+  '-- ---------------------------------------------------------------------------',
+  '-- MeinBaulotse — Entscheidungsvorlagen (erzeugt, nicht von Hand bearbeiten)',
+  '--',
+  '-- Erzeugt von packages/db/scripts/generate-seed.ts aus:',
+  '--   - packages/schedule/src/templates/decisions.ts',
+  '--',
+  '-- Abschnitt 7.3 der Spezifikation. `blocks_task_code` verweist auf die',
+  '-- Nummern der Ablaufvorlage aus 7.2.',
+  '-- ---------------------------------------------------------------------------',
+  '',
+  'insert into decision_template',
+  '  (key, title, description, help_text, blocks_task_code, lead_time_days,',
+  '   lead_time_unit, sort_order)',
+  'values',
+  DECISION_TEMPLATES.map(
+    (entry) =>
+      `  (${q(entry.key)}, ${q(entry.title)}, ${q(entry.description)},\n` +
+      `   ${q(entry.helpText)},\n` +
+      `   ${q(entry.blocksTaskCode)}, ${entry.leadTimeDays}, ${q(entry.leadTimeUnit)}, ` +
+      `${entry.sortOrder})`,
+  ).join(',\n') + '\non conflict (key) do nothing;',
+  '',
+];
+
+writeFileSync(decisionTarget, decisionLines.join('\n'), 'utf8');
+
 console.log(
   `Seed geschrieben: ${target}\n` +
     `  ${PHASES.length} Phasen, ${TRADES.length} Gewerke, ${permissionRows.length} Rechte, ` +
     `${EFH_MASSIV_UNTERKELLERT.tasks.length} Vorlagenvorgänge, ` +
-    `${EFH_MASSIV_UNTERKELLERT.dependencies.length} Abhängigkeiten.`,
+    `${EFH_MASSIV_UNTERKELLERT.dependencies.length} Abhängigkeiten.\n` +
+    `Seed geschrieben: ${decisionTarget}\n` +
+    `  ${DECISION_TEMPLATES.length} Entscheidungsvorlagen.`,
 );

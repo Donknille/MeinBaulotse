@@ -141,3 +141,32 @@ export function TaskRow({ task, referenceYear }: { task: ScheduledTaskDto; refer
     </li>
   );
 }
+
+/**
+ * Die laufende Phase: diejenige, deren Zeitraum das heutige Datum enthält.
+ * Liegt der Baustart noch in der Zukunft, ist es die erste; ist alles vorbei,
+ * die letzte.
+ *
+ * Das heutige Datum kommt herein und wird nicht gelesen — dieselbe Regel wie
+ * im Berechnungskern, aus demselben Grund: Wer die Uhr mitten in einer
+ * Darstellung abfragt, bekommt eine Funktion, die sich nicht prüfen lässt.
+ */
+export function currentPhaseKey(
+  schedule: { phases: readonly PhaseProgress[] },
+  today: string,
+): string | undefined {
+  const withTasks = schedule.phases.filter((phase) => phase.taskCount > 0);
+  if (withTasks.length === 0) return undefined;
+
+  const running = withTasks.find(
+    (phase) =>
+      phase.firstStart !== null &&
+      phase.lastEnd !== null &&
+      phase.firstStart <= today &&
+      today <= phase.lastEnd,
+  );
+  if (running !== undefined) return running.key;
+
+  const upcoming = withTasks.find((phase) => phase.firstStart !== null && phase.firstStart > today);
+  return upcoming?.key ?? withTasks.at(-1)?.key;
+}

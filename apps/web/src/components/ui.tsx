@@ -97,15 +97,38 @@ export function Field({
 // Der schwarze Rand ist die Signatur der Referenz: Felder wirken wichtig,
 // nicht optional. 16 px Schriftgröße, weil iOS darunter ungefragt hineinzoomt.
 const CONTROL =
-  'h-11 w-full rounded-[var(--radius-input)] border border-midnight-ink bg-canvas-white ' +
-  'px-3 text-body-lg text-charcoal placeholder:text-fog';
+  'rounded-[var(--radius-input)] border border-midnight-ink bg-canvas-white ' +
+  'px-3 text-charcoal placeholder:text-fog';
 
-export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`${CONTROL} ${props.className ?? ''}`} />;
+// Größe und Breite gehören zur Variante, nicht in ein durchgereichtes
+// className: Zwei Tailwind-Klassen für dieselbe Eigenschaft entscheiden sich
+// nach der Reihenfolge im Stylesheet, nicht nach der im Attribut. Wer `h-9`
+// anhängt, um `h-11` zu überschreiben, bekommt ein Ergebnis, das vom
+// Bündelvorgang abhängt.
+//
+// Sie heißt `density` und nicht `size`, weil `size` auf `input` und `select`
+// bereits ein HTML-Attribut mit anderer Bedeutung ist.
+const CONTROL_DENSITY = {
+  default: 'h-11 w-full text-body-lg',
+  compact: 'h-9 w-auto text-body',
+} as const;
+
+type ControlDensity = keyof typeof CONTROL_DENSITY;
+
+export function TextInput({
+  density = 'default',
+  className = '',
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { density?: ControlDensity }) {
+  return <input {...props} className={`${CONTROL} ${CONTROL_DENSITY[density]} ${className}`} />;
 }
 
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${CONTROL} ${props.className ?? ''}`} />;
+export function Select({
+  density = 'default',
+  className = '',
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & { density?: ControlDensity }) {
+  return <select {...props} className={`${CONTROL} ${CONTROL_DENSITY[density]} ${className}`} />;
 }
 
 type PillTone = 'neutral' | 'blue' | 'green' | 'amber' | 'violet' | 'red';

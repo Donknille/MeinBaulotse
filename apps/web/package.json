@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "echo 'keine eigenen Tests'",
+    "test": "vitest run",
     "fixture": "tsx scripts/make-plan-fixture.ts"
   },
   "dependencies": {
@@ -32,6 +32,7 @@
     "vite-plugin-pwa": "^0.21.1",
     "@meinbaulotse/schedule": "workspace:*",
     "tsx": "^4.19.2",
-    "@types/node": "^22.10.5"
+    "@types/node": "^22.10.5",
+    "vitest": "^3.0.4"
   }
 }

@@ -10,6 +10,7 @@
 import {
   computeSchedule,
   criticalPath,
+  decisionDueDate,
   instantiateTemplate,
   type Calendar,
   type DependencyType,
@@ -19,6 +20,7 @@ import {
 } from '@meinbaulotse/schedule';
 import type { JwtClaims, Transaction } from '@meinbaulotse/db';
 import type { OnboardingRequest } from '@meinbaulotse/shared';
+import { instantiateDecisions } from './decisions.js';
 
 /**
  * In Stufe 1 gibt es genau eine Vorlage. Fertighaus und Sanierung greifen
@@ -95,6 +97,7 @@ export interface OnboardingResult {
   projectId: string;
   taskCount: number;
   dependencyCount: number;
+  decisionCount: number;
   computedEnd: string;
   deviationWorkdays: number | null;
 }
@@ -221,6 +224,12 @@ export async function createProjectFromAnswers(
     );
   }
 
+  // Die Entscheidungen entstehen zusammen mit dem Plan, nicht auf Zuruf: Wer
+  // erst nach dem Baubeginn merkt, dass die Fenster seit acht Wochen hätten
+  // bestellt sein müssen, hat den Assistenten zu spät bekommen.
+  const decisionCount = await instantiateDecisions(tx, projectId);
+  await updateDecisionDueDates(tx, projectId, calendar);
+
   await tx.query(
     `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
      values ($1, 'app', 'project.created', 'project', $1, $2)`,
@@ -230,6 +239,7 @@ export async function createProjectFromAnswers(
         template: template.key,
         hasBasement: answers.hasBasement,
         taskCount: plan.tasks.length,
+        decisionCount,
       }),
     ],
   );
@@ -238,8 +248,51 @@ export async function createProjectFromAnswers(
     projectId,
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
+    decisionCount,
     computedEnd: schedule.projectEnd,
     deviationWorkdays:
       answers.contractualCompletion === undefined ? null : floats.deviationWorkdays,
   };
+}
+
+/**
+ * Die Fristen der frisch angelegten Entscheidungen.
+ *
+ * Gerechnet wird im Kern, gelesen wird der Vorgangsbeginn, der eine Zeile
+ * weiter oben geschrieben wurde. Beim Anlegen ist der Bauherr selbst der
+ * Anrufer und darf schreiben; deshalb genügt hier ein gewöhnliches UPDATE
+ * statt `mbl.apply_plan`.
+ */
+async function updateDecisionDueDates(
+  tx: Transaction,
+  projectId: string,
+  calendar: Calendar,
+): Promise<void> {
+  const result = await tx.query<{
+    id: string;
+    blocks_task_id: string;
+    lead_time_days: number;
+    lead_time_unit: 'werktage' | 'kalendertage';
+    current_start: string;
+  }>(
+    `select d.id, d.blocks_task_id, d.lead_time_days, d.lead_time_unit, t.current_start
+       from decision d
+       join task t on t.id = d.blocks_task_id
+      where d.project_id = $1 and t.current_start is not null`,
+    [projectId],
+  );
+
+  for (const row of result.rows) {
+    const due = decisionDueDate(
+      {
+        id: row.id,
+        blocksTaskId: row.blocks_task_id,
+        leadTimeDays: row.lead_time_days,
+        leadTimeUnit: row.lead_time_unit,
+      },
+      row.current_start,
+      calendar,
+    );
+    await tx.query('update decision set due_date = $2 where id = $1', [row.id, due]);
+  }
 }

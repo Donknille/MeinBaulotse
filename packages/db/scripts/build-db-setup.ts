@@ -61,11 +61,12 @@ const header = `-- ${'='.repeat(75)}
 --      (select count(*) from phase)              as phasen,             -- 9
 --      (select count(*) from trade)              as gewerke,            -- 21
 --      (select count(*) from role_permission)    as rechte,             -- 47
---      (select count(*) from plan_template_task) as vorlagenvorgaenge;  -- 38
+--      (select count(*) from plan_template_task) as vorlagenvorgaenge,  -- 38
+--      (select count(*) from decision_template)  as entscheidungen;     -- 14
 --
 --    select count(*) filter (where rowsecurity) as mit_rls,
 --           count(*)                            as tabellen
---    from pg_tables where schemaname = 'public';                -- 14 von 14
+--    from pg_tables where schemaname = 'public';                -- 16 von 16
 --
 --  Die zweite Abfrage ist die wichtigere: Die Zählung oben stimmt auch
 --  dann, wenn die Rechte nur zur Hälfte angekommen sind.

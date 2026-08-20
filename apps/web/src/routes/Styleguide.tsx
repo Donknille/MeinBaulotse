@@ -6,9 +6,9 @@
 
 import { CalendarDays, Camera, ClipboardList, Scale } from 'lucide-react';
 import { Button, Card, EmptyState, Field, Pill, SectionPill, Select, TextInput } from '../components/ui';
-import { ConfirmationChip, PhaseBar, TaskRow } from '../components/schedule';
-import { PlanView } from '../components/PlanView';
-import { PLAN_FIXTURE } from './plan-fixture';
+import { ConfirmationChip, currentPhaseKey, PhaseBar, TaskRow } from '../components/schedule';
+import { Gantt } from '../components/Gantt';
+import { DECISION_FIXTURE, PLAN_FIXTURE } from './plan-fixture';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 
 const PHASES: PhaseProgress[] = [
@@ -247,14 +247,53 @@ export function Styleguide() {
         </Card>
       </Section>
 
-      <Section title="Planübersicht">
+      <Section title="Zeitachse (ab 768 px)">
         <p className="max-w-[34rem] text-body text-steel">
-          Dieselbe Ansicht wie im Projekt, mit fester Datenlage: Baustart 01.04.2026 in Bayern,
+          Je Vorgang zwei Spuren: Baseline blass darüber, heutiger Stand darunter. Der
+          Zwischenraum ist die Verschiebung — er wird nicht beschriftet, man sieht ihn.
+          Entscheidungsfristen sitzen als Rauten vor dem zugehörigen Vorgang, ihre Linie zeigt,
+          warum sie dort liegen. Der kritische Pfad bekommt eine Kante links, kein rotes Feld.
+        </p>
+        <Gantt
+          tasks={PLAN_FIXTURE.tasks}
+          phases={PLAN_FIXTURE.phases}
+          decisions={DECISION_FIXTURE}
+          contractualEnd={PLAN_FIXTURE.contractualEnd}
+        />
+      </Section>
+
+      <Section title="Liste (Standard auf dem Handy)">
+        <p className="max-w-[34rem] text-body text-steel">
+          Dieselben Daten wie oben, nach Phasen gruppiert: Baustart 01.04.2026 in Bayern,
           geschuldet der 30.09.2026. Erzeugt aus der Ablaufvorlage und dem Berechnungskern, nicht
           von Hand geschrieben.
         </p>
-        <div className="flex flex-col gap-10 rounded-[var(--radius-large)] border border-ash p-6">
-          <PlanView schedule={PLAN_FIXTURE} />
+        <div className="flex flex-col gap-6 rounded-[var(--radius-large)] border border-ash p-6">
+          <Card>
+            <PhaseBar
+              phases={PLAN_FIXTURE.phases}
+              currentKey={currentPhaseKey(PLAN_FIXTURE, '2026-06-15')}
+            />
+          </Card>
+          {PLAN_FIXTURE.phases
+            .filter((phase) => phase.taskCount > 0)
+            .slice(4, 7)
+            .map((phase) => (
+              <div key={phase.key} className="flex flex-col gap-2">
+                <h3 className="text-subheading font-medium text-charcoal">
+                  {phase.ordinal}. {phase.name}
+                </h3>
+                <Card className="py-0">
+                  <ul>
+                    {PLAN_FIXTURE.tasks
+                      .filter((entry) => entry.phaseKey === phase.key)
+                      .map((entry) => (
+                        <TaskRow key={entry.id} task={entry} referenceYear={2026} />
+                      ))}
+                  </ul>
+                </Card>
+              </div>
+            ))}
         </div>
       </Section>
 

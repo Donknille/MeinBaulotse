@@ -16,3 +16,4 @@ export * from './backward-pass.js';
 export * from './decisions.js';
 export * from './instantiate.js';
 export * from './templates/efh-massiv-unterkellert.js';
+export * from './templates/decisions.js';

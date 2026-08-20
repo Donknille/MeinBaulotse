@@ -64,15 +64,19 @@ jobs:
       - name: RLS-Matrix und Invarianten
         run: pnpm --filter @meinbaulotse/db test
 
-      - name: Onboarding von Ende zu Ende
+      - name: Onboarding, Verschiebungen und Rollen von Ende zu Ende
         run: pnpm --filter @meinbaulotse/api test
+
+      - name: Zeitachse und Rollenansicht
+        run: pnpm --filter @meinbaulotse/web test
 
       - name: Erzeugte Dateien sind aktuell
         run: |
           pnpm --filter @meinbaulotse/db seed:generate
           pnpm --filter @meinbaulotse/db build:db-setup
           pnpm --filter @meinbaulotse/web fixture
-          git diff --exit-code -- supabase/migrations/0003_seed.sql docs/db-setup.sql apps/web/src/routes/plan-fixture.ts \
+          git diff --exit-code -- supabase/migrations/0003_seed.sql supabase/migrations/0005_seed_entscheidungen.sql \
+            docs/db-setup.sql apps/web/src/routes/plan-fixture.ts \
             || (echo "::error::Erzeugte Dateien weichen von ihren Quellen ab. Bitte die Generatoren laufen lassen und das Ergebnis einchecken." && exit 1)
 
       - name: Web bauen

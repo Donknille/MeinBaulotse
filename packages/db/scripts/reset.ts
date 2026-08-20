@@ -57,17 +57,24 @@ async function main(): Promise<void> {
     await run(`Migration ${file}`, readFileSync(join(migrationDir, file), 'utf8'));
   }
 
-  const counts = await client.query<{ phasen: string; gewerke: string; rechte: string; vorgaenge: string }>(
+  const counts = await client.query<{
+    phasen: string;
+    gewerke: string;
+    rechte: string;
+    vorgaenge: string;
+    entscheidungen: string;
+  }>(
     `select
        (select count(*) from phase)                     as phasen,
        (select count(*) from trade)                     as gewerke,
        (select count(*) from role_permission)           as rechte,
-       (select count(*) from plan_template_task)        as vorgaenge`,
+       (select count(*) from plan_template_task)        as vorgaenge,
+       (select count(*) from decision_template)         as entscheidungen`,
   );
   const row = counts.rows[0]!;
   console.log(
     `Fertig: ${row.phasen} Phasen, ${row.gewerke} Gewerke, ${row.rechte} Rechteeinträge, ` +
-      `${row.vorgaenge} Vorlagenvorgänge.`,
+      `${row.vorgaenge} Vorlagenvorgänge, ${row.entscheidungen} Entscheidungsvorlagen.`,
   );
 
   await client.end();

@@ -13,12 +13,45 @@ function parts(isoDate: string): { year: number; month: number; day: number } {
   return { year: year!, month: month!, day: day! };
 }
 
+/**
+ * Tage seit dem 1. Januar 1970, ganzzahlig.
+ *
+ * Dieselbe Rechnung wie im Berechnungskern, aus demselben Grund: Ein
+ * Date-Objekt trägt eine Uhrzeit und eine Zeitzone mit sich herum, und beides
+ * hat in einem Terminplan nichts zu suchen. Für die Zeitachse ist ein Tag eine
+ * Zahl, nicht ein Zeitpunkt.
+ */
+export function epochDay(isoDate: string): number {
+  const { year, month, day } = parts(isoDate);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+}
+
+export function fromEpochDay(value: number): string {
+  const date = new Date(value * 86_400_000);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    date.getUTCDate(),
+  ).padStart(2, '0')}`;
+}
+
 /** 1970-01-01 war ein Donnerstag — derselbe Versatz wie im Berechnungskern. */
 function weekday(isoDate: string): string {
-  const { year, month, day } = parts(isoDate);
-  const utc = Date.UTC(year, month - 1, day);
-  const epochDay = Math.floor(utc / 86_400_000);
-  return WEEKDAYS[(((epochDay + 3) % 7) + 7) % 7]!;
+  return WEEKDAYS[(((epochDay(isoDate) + 3) % 7) + 7) % 7]!;
+}
+
+export function isWeekendIso(isoDate: string): boolean {
+  const index = ((epochDay(isoDate) + 3) % 7 + 7) % 7;
+  return index >= 5;
+}
+
+const MONTHS = [
+  'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+  'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
+] as const;
+
+/** `Mai 26` — der Monat ausgeschrieben, das Jahr zweistellig. */
+export function monthLabel(isoDate: string): string {
+  const { year, month } = parts(isoDate);
+  return `${MONTHS[month - 1]!} ${String(year).slice(2)}`;
 }
 
 /** `12.05.` im laufenden Jahr, sonst `12.05.2026`. */
