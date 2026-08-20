@@ -136,7 +136,6 @@ export function criticalPath(input: CriticalPathInput): CriticalPathResult {
   const critical: TaskId[] = [];
 
   for (const id of schedule.order) {
-    const task = byId.get(id)!;
     const scheduled = schedule.tasks.get(id)!;
     const finish = lateFinish.get(id)!;
     const start = lateStart.get(id)!;
