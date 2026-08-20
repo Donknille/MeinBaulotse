@@ -108,6 +108,15 @@ export type PhaseProgress = z.infer<typeof phaseProgress>;
 
 export const projectSchedule = z.object({
   project: projectSummary,
+  /**
+   * Was der Fragende in diesem Projekt darf. Kommt aus `role_permission` in
+   * der Datenbank, nicht aus einer Konstante im Code — die Oberfläche zeigt
+   * damit dieselbe Matrix an, die die RLS durchsetzt.
+   *
+   * Nur zur Darstellung. Autorisiert wird weiterhin ausschließlich in der
+   * Datenbank; wer diese Liste fälscht, kommt an keiner Policy vorbei.
+   */
+  permissions: z.array(z.string()),
   phases: z.array(phaseProgress),
   tasks: z.array(scheduledTask),
   /** Errechnetes Ende aus der Vorwärtsrechnung. */

@@ -20,6 +20,7 @@ import {
   TRADES,
   type Calendar,
 } from '@meinbaulotse/schedule';
+import { permissionsOf } from '@meinbaulotse/db';
 import type { PhaseProgress, ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
 
 const PLANNED_START = '2026-04-01';
@@ -104,6 +105,9 @@ const fixture: ProjectSchedule = {
     contractualCompletion: CONTRACTUAL_END,
     role: 'owner',
   },
+  // Aus derselben Quelle, aus der die Seed-Migration `role_permission` befüllt.
+  // Eine zweite Liste im Code wäre genau die Doppelpflege, die Regel 5 verbietet.
+  permissions: [...permissionsOf('owner')],
   phases,
   tasks,
   computedEnd: schedule.projectEnd,

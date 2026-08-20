@@ -10,7 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SignJWT } from 'jose';
-import { closePool, withAdminTx } from '@meinbaulotse/db';
+import { closePool, permissionsOf, withAdminTx } from '@meinbaulotse/db';
 import { projectSchedule, type ProjectSchedule } from '@meinbaulotse/shared';
 import { createApp } from './app.js';
 
@@ -322,5 +322,68 @@ describe('Eingabeprüfung', () => {
   it('lehnt eine ungültige Projektkennung ab', async () => {
     const response = await request('/api/v1/projects/kein-uuid/schedule', { token });
     expect(response.status).toBe(400);
+  });
+});
+
+/**
+ * Ein Projekt mit zwei Beteiligten.
+ *
+ * Solange nur der Bauherr im Projekt stand, konnte eine Abfrage über
+ * `project_member` ohne Bezug auf den Fragenden richtig aussehen und trotzdem
+ * falsch sein. Diese Fälle halten das fest.
+ */
+describe('Zwei Rollen in einem Projekt', () => {
+  let projectId: string;
+  let guToken: string;
+
+  beforeAll(async () => {
+    const response = await request('/api/v1/projects/onboarding', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ ...ANTWORTEN, name: 'Zwei Beteiligte' }),
+    });
+    projectId = ((await response.json()) as { projectId: string }).projectId;
+
+    const gu = await createUser('gu@example.test');
+    guToken = await tokenFor(gu);
+    await withAdminTx((tx) =>
+      tx.query(
+        `insert into project_member (project_id, user_id, role, display_name, accepted_at)
+         values ($1, $2, 'contractor', 'Baumeister', now())`,
+        [projectId, gu],
+      ),
+    );
+  });
+
+  it('nennt jedem seine eigene Rolle, und das Projekt genau einmal', async () => {
+    const alsBauherr = (await (await request('/api/v1/me/projects', { token })).json()) as {
+      projects: { id: string; role: string }[];
+    };
+    const alsGu = (await (await request('/api/v1/me/projects', { token: guToken })).json()) as {
+      projects: { id: string; role: string }[];
+    };
+
+    expect(alsBauherr.projects.filter((p) => p.id === projectId)).toHaveLength(1);
+    expect(alsBauherr.projects.find((p) => p.id === projectId)?.role).toBe('owner');
+
+    expect(alsGu.projects).toHaveLength(1);
+    expect(alsGu.projects[0]!.role).toBe('contractor');
+  });
+
+  it('liefert die Rechte aus der Rechtematrix der Datenbank', async () => {
+    const alsBauherr = (await (
+      await request(`/api/v1/projects/${projectId}/schedule`, { token })
+    ).json()) as ProjectSchedule;
+    const alsGu = (await (
+      await request(`/api/v1/projects/${projectId}/schedule`, { token: guToken })
+    ).json()) as ProjectSchedule;
+
+    expect([...alsBauherr.permissions].sort()).toEqual([...permissionsOf('owner')].sort());
+    expect([...alsGu.permissions].sort()).toEqual([...permissionsOf('contractor')].sort());
+
+    // Die Stellen, an denen sich die beiden Rollen unterscheiden müssen.
+    expect(alsGu.permissions).toContain('task.schedule');
+    expect(alsGu.permissions).not.toContain('payment.release');
+    expect(alsGu.permissions).not.toContain('member.invite');
   });
 });

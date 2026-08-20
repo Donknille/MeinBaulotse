@@ -62,14 +62,26 @@ Oben rechts steht im Testzugang, aus wessen Sicht du gerade schaust
 Das Testtoken gilt zwölf Stunden. Läuft es ab, landest du wieder auf der
 Anmeldemaske.
 
-## Was der Zugang heute noch nicht zeigt
+## Was du sehen wirst
 
-- **Beide Rollen sehen denselben Bildschirm.** Die Oberfläche wertet
-  `project.role` noch nicht aus; die Rechte stecken bisher nur in der
-  Datenbank. Der Unterschied zwischen Bauherr und GU wird also erst sichtbar,
-  wenn schreibende Ansichten dazukommen.
-- **Es gibt keinen Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die
-  Policy dafür (`member.invite`) steht, die Route dazu fehlt noch.
+Der Plan trägt neben dem Projektnamen deine Rolle, und darunter steht, was du
+in diesem Bauvorhaben tun kannst. Diese Liste ist nicht im Code notiert: Sie
+kommt aus `role_permission`, also aus derselben Tabelle, die `mbl.has_perm()`
+für die RLS befragt. Was die Karte verspricht, lässt die Datenbank auch zu.
+
+Als **Bauherr** stehen dort dreizehn Zeilen und der Satz „Du hast in diesem
+Bauvorhaben alle Rechte". Als **Generalunternehmer** sind es sechs, und die
+Fehlanzeige nennt die Grenze beim Namen: Mängel erfassen, Entscheidungen
+pflegen, Mitglieder einladen, Zahlungen freigeben — „Das entscheidet der
+Bauherr."
+
+## Was noch fehlt
+
+- **Schreibende Ansichten.** Rechte werden angezeigt, aber noch nirgends
+  ausgeübt: Die API kennt bisher nur Onboarding und Lesen. Ein GU sieht also,
+  dass er Termine ändern dürfte, kann es aber noch nicht.
+- **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
+  (`member.invite`) steht, die Route dazu fehlt noch.
 
 ## Nach `pnpm db:test`
 

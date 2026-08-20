@@ -9,11 +9,12 @@
  * was kommt.
  */
 
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Check } from 'lucide-react';
 import type { ProjectSchedule } from '@meinbaulotse/shared';
-import { Card, SectionPill } from './ui';
+import { Card, Pill, SectionPill } from './ui';
 import { PhaseBar, TaskRow } from './schedule';
 import { formatDate } from '../lib/format';
+import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
 
 export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -24,7 +25,14 @@ export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
     <>
       <header className="flex flex-col gap-5">
         <div className="flex flex-col gap-1">
-          <h1 className="display-title text-heading-lg text-charcoal">{schedule.project.name}</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="display-title text-heading-lg text-charcoal">{schedule.project.name}</h1>
+            {/* Wer schaut, steht neben dem Namen: In einem Projekt mit mehreren
+                Beteiligten ist das die erste Frage, nicht die letzte. */}
+            <Pill tone={schedule.project.role === 'owner' ? 'blue' : 'neutral'}>
+              {ROLE_LABEL[schedule.project.role]}
+            </Pill>
+          </div>
           <p className="text-body text-steel">
             Baubeginn {formatDate(schedule.project.plannedStart)} ·{' '}
             {schedule.project.hasBasement ? 'mit Keller' : 'ohne Keller'} ·{' '}
@@ -65,6 +73,8 @@ export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
             </p>
           ) : null}
         </Card>
+
+        <RoleCard schedule={schedule} />
       </header>
 
       <section className="flex flex-col gap-8">
@@ -91,6 +101,58 @@ export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
         })}
       </section>
     </>
+  );
+}
+
+/**
+ * Was diese Rolle in diesem Projekt tun kann — und was nicht.
+ *
+ * Die Liste kommt aus `schedule.permissions`, also aus der Rechtematrix in der
+ * Datenbank. Die Oberfläche verspricht damit nichts, was eine Policy hinterher
+ * ablehnt, und verschweigt nichts, was erlaubt wäre.
+ *
+ * Auch die Fehlanzeige trägt den nächsten Schritt: Wer etwas nicht selbst darf,
+ * erfährt, wer es tut.
+ */
+function RoleCard({ schedule }: { schedule: ProjectSchedule }) {
+  const role = schedule.project.role;
+  const { allowed, denied } = abilitiesOf(schedule.permissions);
+
+  if (allowed.length === 0 && denied.length === 0) return null;
+
+  return (
+    <Card tone="muted" className="flex flex-col gap-3">
+      <div>
+        <p className="text-body-lg font-medium text-charcoal">
+          Deine Rolle: {ROLE_LABEL[role]}
+        </p>
+        <p className="mt-1 text-body text-steel">{ROLE_DESCRIPTION[role]}</p>
+      </div>
+
+      {allowed.length > 0 ? (
+        <ul className="grid gap-1.5 sm:grid-cols-2">
+          {allowed.map((entry) => (
+            <li key={entry} className="flex items-start gap-2 text-body text-charcoal">
+              <Check size={16} className="mt-0.5 shrink-0 text-vivid-green" aria-hidden />
+              {entry}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {/* Die Fehlanzeige als ein Satz, nicht als zweite Liste: Sie soll die
+          Rolle abgrenzen, nicht den Plan nach unten drücken. */}
+      {denied.length > 0 ? (
+        <p className="border-t border-ash pt-3 text-caption text-steel">
+          Nicht in deiner Rolle: {denied.join(' · ')}.{' '}
+          {role === 'contractor' || role === 'trade'
+            ? 'Das entscheidet der Bauherr.'
+            : 'Dafür ist eine andere Rolle zuständig.'}
+        </p>
+      ) : (
+        <p className="text-caption text-steel">Du hast in diesem Bauvorhaben alle Rechte.</p>
+      )}
+    </Card>
   );
 }
 

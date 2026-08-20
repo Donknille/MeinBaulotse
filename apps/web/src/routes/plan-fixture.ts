@@ -14,6 +14,22 @@ export const PLAN_FIXTURE: ProjectSchedule = {
     "contractualCompletion": "2026-09-30",
     "role": "owner"
   },
+  "permissions": [
+    "project.read",
+    "project.delete",
+    "member.invite",
+    "task.write",
+    "task.schedule",
+    "task.confirm",
+    "task.progress",
+    "decision.write",
+    "diary.write",
+    "defect.write",
+    "defect.resolve",
+    "payment.release",
+    "contract.write",
+    "export.run"
+  ],
   "phases": [
     {
       "key": "vorbereitung",

@@ -112,6 +112,7 @@ export function createApp(): Hono<App> {
     const projectId = parseId(c.req.param('id'));
     const schedule = await withUserTx(c.get('claims'), async (tx): Promise<ProjectSchedule> => {
       const project = await loadProject(tx, projectId);
+      const permissions = await loadPermissions(tx, projectId);
       const tasks = await loadTasks(tx, projectId);
       const phases = await loadPhases(tx, projectId);
 
@@ -133,6 +134,7 @@ export function createApp(): Hono<App> {
 
       return {
         project,
+        permissions,
         phases,
         tasks,
         computedEnd,
@@ -224,6 +226,27 @@ async function loadProject(tx: Tx, projectId: string): Promise<ProjectSummary> {
     throw new HTTPException(404, { message: 'Dieses Projekt gibt es nicht.' });
   }
   return toProjectSummary(result.rows[0]!);
+}
+
+/**
+ * Die Rechte des Fragenden in diesem Projekt, gelesen aus der Rechtematrix.
+ *
+ * Die Oberfläche soll nichts anbieten, was die Datenbank hinterher ablehnt.
+ * Deshalb kommt die Liste aus `role_permission` und nicht aus einer Konstante
+ * im Anwendungscode — es ist dieselbe Tabelle, die `mbl.has_perm()` befragt.
+ */
+async function loadPermissions(tx: Tx, projectId: string): Promise<string[]> {
+  const result = await tx.query<{ permission: string }>(
+    `select rp.permission
+     from project_member m
+     join role_permission rp on rp.role = m.role
+     where m.project_id = $1
+       and m.user_id = mbl.current_user_id()
+       and m.revoked_at is null
+     order by rp.permission`,
+    [projectId],
+  );
+  return result.rows.map((row) => row.permission);
 }
 
 async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]> {
