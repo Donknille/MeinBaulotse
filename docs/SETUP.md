@@ -41,16 +41,27 @@ bricht ab, wenn `DATABASE_URL` auf `supabase.co` zeigt.
 
 ---
 
-## 2. Supabase-Projekt anlegen
+## 2. Supabase-Projekte anlegen
 
-### Beim Anlegen
+**Zwei Projekte, nicht eines.** Vercel erzeugt für jeden Branch und jeden Pull
+Request ein Preview-Deployment. Zeigen die auf dieselbe Datenbank wie die
+Produktion, schreibt jeder Versuch in deine echten Bauprojektdaten — mitsamt
+der `schedule_change`-Historie, die sich per Entwurf nicht bereinigen lässt.
+
+| Projekt | Zweck | Gebunden an |
+|---|---|---|
+| `meinbaulotse` | Produktion | Vercel-Bereich *Production* |
+| `meinbaulotse-staging` | Preview-Deployments | Vercel-Bereich *Preview* |
+
+### Beim Anlegen, für beide
 
 | Feld | Empfehlung |
 |---|---|
-| Name | `meinbaulotse` |
 | Region | **EU Frankfurt (`eu-central-1`)** — DSGVO und Latenz |
 | Postgres | 17 |
 | Datenbank-Passwort | stark, in den Passwortmanager |
+
+Alle folgenden Schritte gelten für **beide** Projekte.
 
 ### Migrationen einspielen
 
@@ -114,23 +125,62 @@ zwischen den Umgebungen.
 Die Bau- und Ausgabepfade stehen in `vercel.json`; im Dashboard muss dafür
 nichts eingestellt werden.
 
+### Production-Branch
+
+Auf `main` stellen (Settings → Git → Production Branch). Alles andere wird zum
+Preview-Deployment.
+
 ### Umgebungsvariablen
 
-| Name | Sichtbarkeit | Quelle |
+Jede Variable **zweimal** anlegen, einmal für *Production* und einmal für
+*Preview*, mit den Werten des jeweiligen Supabase-Projekts:
+
+| Name | Production | Preview |
 |---|---|---|
-| `DATABASE_URL` | geheim | Supabase → Project Settings → Database → Connection string (Pooler, Port 6543) |
-| `SUPABASE_URL` | geheim | `https://<project-ref>.supabase.co` |
-| `SUPABASE_ANON_KEY` | geheim | Project Settings → API |
-| `SUPABASE_JWT_SECRET` | geheim | Project Settings → API → JWT Settings |
-| `VITE_SUPABASE_URL` | öffentlich | wie `SUPABASE_URL` |
-| `VITE_SUPABASE_ANON_KEY` | öffentlich | wie `SUPABASE_ANON_KEY` |
+| `DATABASE_URL` | Produktions-Pooler | Staging-Pooler |
+| `SUPABASE_URL` | `https://<prod-ref>.supabase.co` | `https://<staging-ref>.supabase.co` |
+| `SUPABASE_ANON_KEY` | Produktion | Staging |
+| `SUPABASE_JWT_SECRET` | Produktion | Staging |
+| `VITE_SUPABASE_URL` | wie `SUPABASE_URL` | wie `SUPABASE_URL` |
+| `VITE_SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` |
+
+**`DATABASE_URL`: den Transaction-Pooler nehmen, nicht die Direktverbindung.**
+Project Settings → Database → Connection string → *Transaction pooler*,
+Port **6543**. Grund: Eine Serverless-Funktion baut je Instanz ihre eigene
+Verbindung auf; die Direktverbindung ist nach wenigen gleichzeitigen Instanzen
+erschöpft. Der Anwendungscode setzt Rolle und JWT-Claim transaktionslokal
+(`set_config(…, true)`), und das verträgt sich mit dem Transaction-Modus.
 
 Die beiden `VITE_`-Werte landen im Browser-Bundle. Das ist so vorgesehen: Der
 Anon-Key ist öffentlich, alles Weitere entscheidet die Datenbank über RLS.
 
+**Alle sechs vor dem ersten Deploy setzen.** Die `VITE_`-Werte werden beim Bauen
+ins Bundle eingebacken; wer sie nachträgt, braucht einen neuen Build.
+
 **Der `service_role`-Key wird nirgends gebraucht.** Abschnitt 6.4 der
 Spezifikation verbietet privilegierte Rollen im Anwendungscode, und der Code
 hält sich daran. Trag ihn nicht ein.
+
+### Nach dem ersten Deploy
+
+In **beiden** Supabase-Projekten unter Authentication → URL Configuration
+nachtragen:
+
+| Feld | Wert |
+|---|---|
+| Site URL | deine Produktionsadresse |
+| Redirect URLs | `https://<deine-domain>/**` und `https://*-<dein-team>.vercel.app/**` |
+
+Ohne diesen Schritt bricht die Anmeldung nach dem Klick auf den Magic Link ab —
+Supabase leitet dann nicht auf eine Adresse weiter, die es nicht kennt.
+
+### Wie die API auf Vercel liegt
+
+Die Funktion ist `api/[[...route]].ts`, Vercels Konvention für Sammelrouten.
+Sie erhält den Pfad **vollständig**, also `/api/v1/projects/…`. Deshalb hängt
+die Hono-App unter `/api`, und deshalb schneidet der Vite-Proxy lokal nichts ab:
+derselbe Pfad in beiden Umgebungen. Wer eine der drei Stellen ändert, muss die
+anderen beiden mitziehen, sonst antwortet im Betrieb jede Route mit 404.
 
 ---
 

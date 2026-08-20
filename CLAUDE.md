@@ -12,6 +12,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `packages/db` | Drizzle-Schema, Migrationsläufer, RLS-Testmatrix |
 | `packages/shared` | Zod-Verträge und Enums, geteilt zwischen API und Web |
 | `apps/api` | Hono. Lokal Node-Server, auf Vercel Function unter `/api` |
+| `api/[[...route]].ts` | Einstiegspunkt der Function auf Vercel |
 | `apps/web` | Vite + React, installierbare PWA |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
@@ -34,6 +35,12 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    später die Lotsenkarten.
 6. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
+7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter auf
+   Vercel entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und
+   der Vite-Proxy schneidet nichts ab. Drei Stellen halten das zusammen:
+   `apps/api/src/app.ts` (`basePath`), `apps/web/vite.config.ts` (Proxy ohne
+   `rewrite`) und `api/[[...route]].ts`. Wer eine ändert, ändert alle drei —
+   sonst antwortet im Betrieb jede Route mit 404, und die Tests merken es nicht.
 
 ## Befehle
 

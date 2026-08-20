@@ -75,7 +75,7 @@ afterAll(async () => {
 
 describe('Anmeldung', () => {
   it('weist Anfragen ohne Token ab', async () => {
-    const response = await request('/v1/me/projects');
+    const response = await request('/api/v1/me/projects');
     expect(response.status).toBe(401);
   });
 
@@ -84,12 +84,12 @@ describe('Anmeldung', () => {
       .setProtectedHeader({ alg: 'HS256' })
       .setExpirationTime('1h')
       .sign(new TextEncoder().encode('ein-ganz-anderes-geheimnis-mit-32-zeichen'));
-    const response = await request('/v1/me/projects', { token: fremdSigniert });
+    const response = await request('/api/v1/me/projects', { token: fremdSigniert });
     expect(response.status).toBe(401);
   });
 
   it('lässt die Gesundheitsprüfung ohne Anmeldung zu', async () => {
-    expect((await request('/health')).status).toBe(200);
+    expect((await request('/api/health')).status).toBe(200);
   });
 });
 
@@ -97,7 +97,7 @@ describe('Onboarding mit fünf Fragen', () => {
   let projectId: string;
 
   it('erzeugt einen vollständigen Plan', async () => {
-    const response = await request('/v1/projects/onboarding', {
+    const response = await request('/api/v1/projects/onboarding', {
       method: 'POST',
       token,
       body: JSON.stringify(ANTWORTEN),
@@ -118,14 +118,14 @@ describe('Onboarding mit fünf Fragen', () => {
   });
 
   it('trägt den Bauherrn als owner ein', async () => {
-    const response = await request('/v1/me/projects', { token });
+    const response = await request('/api/v1/me/projects', { token });
     const body = (await response.json()) as { projects: { id: string; role: string }[] };
     expect(body.projects).toHaveLength(1);
     expect(body.projects[0]!.role).toBe('owner');
   });
 
   it('liefert einen Terminplan mit Phasen und Puffern', async () => {
-    const response = await request(`/v1/projects/${projectId}/schedule`, { token });
+    const response = await request(`/api/v1/projects/${projectId}/schedule`, { token });
     expect(response.status).toBe(200);
     const schedule = (await response.json()) as ProjectSchedule;
 
@@ -151,13 +151,13 @@ describe('Onboarding mit fünf Fragen', () => {
     // Fängt unter anderem ab, dass der Treiber aus einer date-Spalte einen
     // Zeitstempel macht — der häufigste Weg, wie sich ein Termin um einen Tag
     // verschiebt.
-    const response = await request(`/v1/projects/${projectId}/schedule`, { token });
+    const response = await request(`/api/v1/projects/${projectId}/schedule`, { token });
     const parsed = projectSchedule.safeParse(await response.json());
     expect(parsed.success ? null : parsed.error.issues).toBeNull();
   });
 
   it('setzt die Baseline gleich der ersten Terminlage', async () => {
-    const response = await request(`/v1/projects/${projectId}/tasks`, { token });
+    const response = await request(`/api/v1/projects/${projectId}/tasks`, { token });
     const body = (await response.json()) as { tasks: ProjectSchedule['tasks'] };
     for (const task of body.tasks) {
       expect(task.baselineStart, task.name).toBe(task.currentStart);
@@ -166,7 +166,7 @@ describe('Onboarding mit fünf Fragen', () => {
   });
 
   it('ordnet jedem Arbeitsvorgang ein Gewerk zu, Meilensteinen keines', async () => {
-    const response = await request(`/v1/projects/${projectId}/tasks`, { token });
+    const response = await request(`/api/v1/projects/${projectId}/tasks`, { token });
     const body = (await response.json()) as { tasks: ProjectSchedule['tasks'] };
     const ohneGewerk = body.tasks.filter((task) => task.tradeCode === null);
     // Die vier Meilensteine und die beiden Wartezeiten haben kein Gewerk.
@@ -201,18 +201,18 @@ describe('Onboarding mit fünf Fragen', () => {
   });
 
   it('verbirgt das Projekt vor Fremden', async () => {
-    const response = await request(`/v1/projects/${projectId}/schedule`, { token: fremderToken });
+    const response = await request(`/api/v1/projects/${projectId}/schedule`, { token: fremderToken });
     // 404 statt 403: Ob es dieses Projekt gibt, geht Fremde nichts an.
     expect(response.status).toBe(404);
 
-    const list = await request('/v1/me/projects', { token: fremderToken });
+    const list = await request('/api/v1/me/projects', { token: fremderToken });
     expect(((await list.json()) as { projects: unknown[] }).projects).toHaveLength(0);
   });
 });
 
 describe('Geschuldeter Endtermin', () => {
   it('nennt die Abweichung einmal, und lässt die Puffer der Vorgänge davon unberührt', async () => {
-    const response = await request('/v1/projects/onboarding', {
+    const response = await request('/api/v1/projects/onboarding', {
       method: 'POST',
       token,
       body: JSON.stringify({
@@ -227,7 +227,7 @@ describe('Geschuldeter Endtermin', () => {
     expect(body.deviationWorkdays).toBe(13);
 
     const schedule = (await (
-      await request(`/v1/projects/${body.projectId}/schedule`, { token })
+      await request(`/api/v1/projects/${body.projectId}/schedule`, { token })
     ).json()) as ProjectSchedule;
 
     expect(schedule.deviationWorkdays).toBe(13);
@@ -245,12 +245,12 @@ describe('Geschuldeter Endtermin', () => {
   });
 
   it('lässt die Abweichung offen, solange kein Termin erfasst ist', async () => {
-    const list = (await (await request('/v1/me/projects', { token })).json()) as {
+    const list = (await (await request('/api/v1/me/projects', { token })).json()) as {
       projects: { id: string; name: string }[];
     };
     const ohneTermin = list.projects.find((project) => project.name === 'Musterweg 4')!;
     const schedule = (await (
-      await request(`/v1/projects/${ohneTermin.id}/schedule`, { token })
+      await request(`/api/v1/projects/${ohneTermin.id}/schedule`, { token })
     ).json()) as ProjectSchedule;
 
     expect(schedule.contractualEnd).toBeNull();
@@ -260,7 +260,7 @@ describe('Geschuldeter Endtermin', () => {
 
 describe('Onboarding ohne Keller', () => {
   it('lässt die vier Kellervorgänge weg und wird früher fertig', async () => {
-    const response = await request('/v1/projects/onboarding', {
+    const response = await request('/api/v1/projects/onboarding', {
       method: 'POST',
       token,
       body: JSON.stringify({ ...ANTWORTEN, name: 'Ohne Keller', hasBasement: false }),
@@ -271,7 +271,7 @@ describe('Onboarding ohne Keller', () => {
     expect(body.computedEnd).toBe('2026-10-01');
 
     const schedule = (await (
-      await request(`/v1/projects/${body.projectId}/schedule`, { token })
+      await request(`/api/v1/projects/${body.projectId}/schedule`, { token })
     ).json()) as ProjectSchedule;
 
     const namen = schedule.tasks.map((task) => task.name);
@@ -288,7 +288,7 @@ describe('Onboarding ohne Keller', () => {
 
 describe('Das Bundesland verändert den Plan', () => {
   it('bringt Niedersachsen früher ans Ziel als Bayern', async () => {
-    const response = await request('/v1/projects/onboarding', {
+    const response = await request('/api/v1/projects/onboarding', {
       method: 'POST',
       token,
       body: JSON.stringify({ ...ANTWORTEN, name: 'Niedersachsen', federalState: 'NI' }),
@@ -300,7 +300,7 @@ describe('Das Bundesland verändert den Plan', () => {
 
 describe('Eingabeprüfung', () => {
   it('lehnt unvollständige Angaben mit einem hilfreichen Hinweis ab', async () => {
-    const response = await request('/v1/projects/onboarding', {
+    const response = await request('/api/v1/projects/onboarding', {
       method: 'POST',
       token,
       body: JSON.stringify({ name: 'X' }),
@@ -311,7 +311,7 @@ describe('Eingabeprüfung', () => {
   });
 
   it('lehnt ein unsinniges Datum ab', async () => {
-    const response = await request('/v1/projects/onboarding', {
+    const response = await request('/api/v1/projects/onboarding', {
       method: 'POST',
       token,
       body: JSON.stringify({ ...ANTWORTEN, plannedStart: '01.04.2026' }),
@@ -320,7 +320,7 @@ describe('Eingabeprüfung', () => {
   });
 
   it('lehnt eine ungültige Projektkennung ab', async () => {
-    const response = await request('/v1/projects/kein-uuid/schedule', { token });
+    const response = await request('/api/v1/projects/kein-uuid/schedule', { token });
     expect(response.status).toBe(400);
   });
 });

@@ -30,12 +30,16 @@ export default defineConfig({
   server: {
     port: 5173,
     // Web und API laufen auf Vercel unter derselben Herkunft. Lokal bildet der
-    // Proxy das nach, damit es keinen Unterschied zwischen den Umgebungen gibt.
+    // Proxy das nach.
+    //
+    // Bewusst **ohne** rewrite: Auf Vercel kommt der Pfad mit `/api` bei der
+    // Funktion an, und die Hono-App haengt entsprechend unter `/api`. Wuerde
+    // der Proxy das Praefix hier abschneiden, liefe lokal ein anderer Pfad als
+    // im Betrieb — und der Unterschied faellt erst im Betrieb auf.
     proxy: {
       '/api': {
         target: `http://localhost:${process.env['API_PORT'] ?? 8787}`,
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },

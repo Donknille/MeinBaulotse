@@ -61,17 +61,49 @@ export interface Transaction {
 
 let pool: pg.Pool | undefined;
 
+/**
+ * Läuft dieser Prozess in einer Serverless-Funktion?
+ *
+ * Der Unterschied ist nicht kosmetisch: Ein langlebiger Server hat genau einen
+ * Pool, eine Serverless-Umgebung hat einen Pool **je Instanz**. Zwanzig
+ * gleichzeitige Instanzen mit je zehn Verbindungen reißen das Verbindungslimit
+ * des Poolers, und zwar genau dann, wenn viel los ist.
+ */
+function isServerless(): boolean {
+  return process.env['VERCEL'] !== undefined || process.env['AWS_LAMBDA_FUNCTION_NAME'] !== undefined;
+}
+
+/**
+ * Braucht diese Verbindung TLS?
+ *
+ * Alles außer der lokalen Entwicklungsdatenbank. Bewusst so herum formuliert:
+ * Eine Prüfung auf bekannte Anbieter-Namen vergisst früher oder später einen
+ * Host, und das Ergebnis wäre eine unverschlüsselte Verbindung zur
+ * Produktionsdatenbank.
+ */
+function needsTls(connectionString: string): boolean {
+  try {
+    const host = new URL(connectionString).hostname;
+    return host !== 'localhost' && host !== '127.0.0.1' && host !== '::1' && host !== 'db';
+  } catch {
+    return true;
+  }
+}
+
 export function getPool(connectionString = process.env['DATABASE_URL']): pg.Pool {
   if (pool !== undefined) return pool;
   if (connectionString === undefined || connectionString === '') {
     throw new Error('DATABASE_URL ist nicht gesetzt.');
   }
+  const serverless = isServerless();
   pool = new pg.Pool({
     connectionString,
-    max: 10,
-    idleTimeoutMillis: 30_000,
-    // Supabase erzwingt TLS; lokal im Container gibt es keines.
-    ssl: connectionString.includes('supabase.co') ? { rejectUnauthorized: true } : false,
+    // Eine Node-Funktion bearbeitet eine Anfrage zur Zeit; mehr als eine
+    // Verbindung je Instanz bringt nichts und kostet Plätze im Pooler.
+    max: serverless ? 1 : 10,
+    idleTimeoutMillis: serverless ? 10_000 : 30_000,
+    connectionTimeoutMillis: 10_000,
+    ssl: needsTls(connectionString) ? { rejectUnauthorized: true } : false,
   });
   return pool;
 }

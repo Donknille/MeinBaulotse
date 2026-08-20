@@ -31,7 +31,14 @@ type App = { Variables: AuthedVariables };
 const uuid = z.string().uuid();
 
 export function createApp(): Hono<App> {
-  const app = new Hono<App>();
+  // Die App haengt unter `/api`, nicht unter der Wurzel.
+  //
+  // Auf Vercel liegt die Funktion unter `/api`, und der Hono-Adapter reicht die
+  // Anfrage unveraendert durch — er entfernt kein Praefix. Die App bekommt dort
+  // also `/api/v1/...`. Damit lokal derselbe Pfad gilt, schneidet der
+  // Vite-Proxy bewusst nichts ab. Ein Unterschied zwischen Entwicklung und
+  // Betrieb faellt sonst erst im Betrieb auf, und dann als 404 auf jeder Route.
+  const app = new Hono<App>().basePath('/api');
 
   app.get('/health', (c) => c.json({ ok: true }));
 
