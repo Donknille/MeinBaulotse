@@ -43,19 +43,9 @@ bricht ab, wenn `DATABASE_URL` auf `supabase.co` zeigt.
 
 ---
 
-## 2. Supabase-Projekte anlegen
+## 2. Supabase-Projekt anlegen
 
-**Zwei Projekte, nicht eines.** Vercel erzeugt für jeden Branch und jeden Pull
-Request ein Preview-Deployment. Zeigen die auf dieselbe Datenbank wie die
-Produktion, schreibt jeder Versuch in deine echten Bauprojektdaten — mitsamt
-der `schedule_change`-Historie, die sich per Entwurf nicht bereinigen lässt.
-
-| Projekt | Zweck | Gebunden an |
-|---|---|---|
-| `meinbaulotse` | Produktion | Vercel-Bereich *Production* |
-| `meinbaulotse-staging` | Preview-Deployments | Vercel-Bereich *Preview* |
-
-### Beim Anlegen, für beide
+Ein Projekt, `meinbaulotse`.
 
 | Feld | Empfehlung |
 |---|---|
@@ -63,34 +53,69 @@ der `schedule_change`-Historie, die sich per Entwurf nicht bereinigen lässt.
 | Postgres | 17 |
 | Datenbank-Passwort | stark, in den Passwortmanager |
 
-Alle folgenden Schritte gelten für **beide** Projekte.
+> **Ein Projekt heißt: Preview-Deployments müssen aus.** Vercel baut sonst für
+> jeden Branch eine Vorschau, und die schriebe in dieselbe Datenbank wie die
+> Produktion — mitsamt der `schedule_change`-Historie, die sich per Entwurf
+> nicht bereinigen lässt. Die Einstellung dazu steht in Abschnitt 3.
 
-### Migrationen einspielen
+### Schema einspielen
 
-Die Migrationen sind reines SQL. Die Supabase-CLI ist bequem, aber nicht
-Voraussetzung.
+#### Weg A — SQL-Editor, eine Datei
+
+Dashboard → **SQL Editor** → *New query* → den Inhalt von
+[`docs/db-setup.sql`](db-setup.sql) vollständig einfügen → **Run**.
+
+Das ist eine erzeugte Datei: die drei Migrationen aus `supabase/migrations/` in
+der richtigen Reihenfolge zusammengefügt. Ein Einfügen, ein Durchlauf.
+
+#### Weg B — psql
 
 ```bash
-# Variante A — mit der Supabase-CLI
-supabase link --project-ref <dein-project-ref>
-supabase db push
+# Zum Einspielen den Session-Pooler auf Port 5432 nehmen, nicht 6543.
+export DATABASE_URL="postgresql://postgres.<project-ref>:<passwort>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
 
-# Variante B — mit psql, in dieser Reihenfolge
-psql "$DEIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_schema.sql
-psql "$DEIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_rls.sql
-psql "$DEIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_seed.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/db-setup.sql
+
+# oder einzeln, in dieser Reihenfolge:
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_schema.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_rls.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_seed.sql
 ```
 
-Zur Kontrolle: Danach stehen 9 Bauphasen, 21 Gewerke, 47 Rechteeinträge und 38
-Vorlagenvorgänge in der Datenbank.
+**Port 5432, nicht 6543.** Der Transaction-Pooler ist für die laufende
+Anwendung richtig, für Migrationen aber der falsche Modus: `create type` und
+`do $$…$$` gehören in eine Sitzung, nicht in eine Transaktion mit wechselnder
+Verbindung.
+
+#### Nicht einspielen
+
+`supabase/local/0000_auth_shim.sql` bleibt außen vor. Sie bildet nur in einem
+nackten Postgres nach, was ein Supabase-Projekt ohnehin mitbringt.
+
+#### Zur Kontrolle
 
 ```sql
 select
-  (select count(*) from phase)              as phasen,
-  (select count(*) from trade)              as gewerke,
-  (select count(*) from role_permission)    as rechte,
-  (select count(*) from plan_template_task) as vorlagenvorgaenge;
+  (select count(*) from phase)              as phasen,             -- 9
+  (select count(*) from trade)              as gewerke,            -- 21
+  (select count(*) from role_permission)    as rechte,             -- 47
+  (select count(*) from plan_template_task) as vorlagenvorgaenge;  -- 38
+
+select count(*) filter (where rowsecurity) as mit_rls,
+       count(*)                            as tabellen
+from pg_tables where schemaname = 'public';                        -- 14 von 14
 ```
+
+Die zweite Abfrage ist die wichtigere. Die Zählung oben stimmt auch dann, wenn
+`0002_rls.sql` nur zur Hälfte durchgelaufen ist — dann stehen die Stammdaten
+da, aber die Rechte fehlen.
+
+> **Die Supabase-CLI trägt hier derzeit nicht.** `supabase db push` erwartet
+> Migrationsdateien im Format `YYYYMMDDHHMMSS_name.sql` und verfolgt sie über
+> genau diesen Zeitstempel in `supabase_migrations.schema_migrations`. Unsere
+> heißen `0001_schema.sql` und so weiter. Wer die CLI später will, benennt die
+> drei Dateien auf Zeitstempel um und zieht `packages/db/scripts/reset.ts` und
+> diesen Abschnitt nach.
 
 ### Anmeldung einrichten
 
@@ -127,31 +152,37 @@ zwischen den Umgebungen.
 Die Bau- und Ausgabepfade stehen in `vercel.json`; im Dashboard muss dafür
 nichts eingestellt werden.
 
-### Production-Branch
+### Branch und Vorschauen
 
-Auf `main` stellen (Settings → Git → Production Branch). Alles andere wird zum
-Preview-Deployment.
+| Einstellung | Wert | Wo |
+|---|---|---|
+| Production Branch | `main` | Settings → Git |
+| Preview Deployments | **Only Production Branch** | Settings → Git |
+
+Die zweite Zeile ist nicht kosmetisch. Solange es nur ein Supabase-Projekt
+gibt, schriebe jede Branch-Vorschau in die Produktionsdatenbank.
 
 ### Umgebungsvariablen
 
-Jede Variable **zweimal** anlegen, einmal für *Production* und einmal für
-*Preview*, mit den Werten des jeweiligen Supabase-Projekts:
+Sechs Stück, alle im Bereich *Production*:
 
-| Name | Production | Preview |
-|---|---|---|
-| `DATABASE_URL` | Produktions-Pooler | Staging-Pooler |
-| `SUPABASE_URL` | `https://<prod-ref>.supabase.co` | `https://<staging-ref>.supabase.co` |
-| `SUPABASE_ANON_KEY` | Produktion | Staging |
-| `SUPABASE_JWT_SECRET` | Produktion | Staging |
-| `VITE_SUPABASE_URL` | wie `SUPABASE_URL` | wie `SUPABASE_URL` |
-| `VITE_SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` |
+| Name | Quelle |
+|---|---|
+| `DATABASE_URL` | Database → Connection string → **Transaction pooler, Port 6543** |
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `SUPABASE_ANON_KEY` | Project Settings → API |
+| `SUPABASE_JWT_SECRET` | Project Settings → API → JWT Settings |
+| `VITE_SUPABASE_URL` | wie `SUPABASE_URL` |
+| `VITE_SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` |
 
-**`DATABASE_URL`: den Transaction-Pooler nehmen, nicht die Direktverbindung.**
-Project Settings → Database → Connection string → *Transaction pooler*,
-Port **6543**. Grund: Eine Serverless-Funktion baut je Instanz ihre eigene
-Verbindung auf; die Direktverbindung ist nach wenigen gleichzeitigen Instanzen
-erschöpft. Der Anwendungscode setzt Rolle und JWT-Claim transaktionslokal
+**`DATABASE_URL`: Transaction-Pooler auf 6543, nicht die Direktverbindung.**
+Eine Serverless-Funktion baut je Instanz ihre eigene Verbindung auf; die
+Direktverbindung ist nach wenigen gleichzeitigen Instanzen erschöpft. Der
+Anwendungscode setzt Rolle und JWT-Claim transaktionslokal
 (`set_config(…, true)`), und das verträgt sich mit dem Transaction-Modus.
+
+*(Zum Einspielen des Schemas gilt das Gegenteil — dort Port 5432, siehe
+Abschnitt 2.)*
 
 Die beiden `VITE_`-Werte landen im Browser-Bundle. Das ist so vorgesehen: Der
 Anon-Key ist öffentlich, alles Weitere entscheidet die Datenbank über RLS.
@@ -165,13 +196,12 @@ hält sich daran. Trag ihn nicht ein.
 
 ### Nach dem ersten Deploy
 
-In **beiden** Supabase-Projekten unter Authentication → URL Configuration
-nachtragen:
+Unter Authentication → URL Configuration nachtragen:
 
 | Feld | Wert |
 |---|---|
 | Site URL | deine Produktionsadresse |
-| Redirect URLs | `https://<deine-domain>/**` und `https://*-<dein-team>.vercel.app/**` |
+| Redirect URLs | `https://<deine-domain>/**` |
 
 Ohne diesen Schritt bricht die Anmeldung nach dem Klick auf den Magic Link ab —
 Supabase leitet dann nicht auf eine Adresse weiter, die es nicht kennt.
@@ -229,9 +259,12 @@ Zwei Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
 | Datei | Quelle | Befehl |
 |---|---|---|
 | `supabase/migrations/0003_seed.sql` | Ablaufvorlage und Rechtematrix | `pnpm --filter @meinbaulotse/db seed:generate` |
+| `docs/db-setup.sql` | die drei Migrationen | `pnpm --filter @meinbaulotse/db build:db-setup` |
 | `apps/web/src/routes/plan-fixture.ts` | Ablaufvorlage und Berechnungskern | `pnpm --filter @meinbaulotse/web fixture` |
 
-Die Pipeline prüft, dass beide zu ihren Quellen passen.
+Die Pipeline prüft, dass alle drei zu ihren Quellen passen. **Wer eine Migration
+ändert, muss `db-setup.sql` neu erzeugen** — sonst spielt der nächste jemand
+ein veraltetes Schema ein.
 
 `0003_seed.sql` ist die **Erstbefüllung**. Sobald sie eingespielt ist, ist die
 Datenbank die Autorität: Die Ablaufvorlage soll ohne Deployment pflegbar sein.
