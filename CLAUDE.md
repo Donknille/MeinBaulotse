@@ -12,7 +12,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `packages/db` | Drizzle-Schema, Migrationsläufer, RLS-Testmatrix |
 | `packages/shared` | Zod-Verträge und Enums, geteilt zwischen API und Web |
 | `apps/api` | Hono. Lokal Node-Server, auf Vercel Function unter `/api` |
-| `api/index.ts` | Einstiegspunkt der Function auf Vercel |
+| `api/index.js` | **Erzeugt.** Die Function auf Vercel, fertig gebündelt |
 | `apps/web` | Vite + React, installierbare PWA |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
@@ -35,18 +35,32 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    später die Lotsenkarten.
 6. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
-7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter auf
-   Vercel entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und
-   der Vite-Proxy schneidet nichts ab. Vier Stellen halten das zusammen:
+7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
+   entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und der
+   Vite-Proxy schneidet nichts ab. Vier Stellen halten das zusammen:
    `apps/api/src/app.ts` (`basePath`), `apps/web/vite.config.ts` (Proxy ohne
-   `rewrite`), `api/index.ts` und die Umschreibung in `vercel.json`
-   (`/api/(.*)` → `/api`). Wer eine ändert, ändert alle vier — sonst antwortet
-   im Betrieb jede Route mit 404, und die Tests merken es nicht.
+   `rewrite`), `apps/api/src/vercel.ts` und die Umschreibung in `vercel.json`
+   (`/api/(.*)` → `/api`). Wer eine ändert, ändert alle vier.
 
-   Ohne Framework erkennt Vercel im Ordner `api/` nur eine Datei mit einem
-   echten Pfad als Namen und einen **Default-Export**. `[[...route]].ts` und
-   `export const GET = …` sind Next.js-Konventionen; hier entsteht damit gar
-   keine Function, und `/api/health` liefert die Anmeldemaske statt JSON.
+8. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
+   macht aus `apps/api/src/vercel.ts` die eingecheckte Datei `api/index.js`,
+   die außer Node-Bausteinen nichts mehr importiert. Nach jeder Änderung an
+   der API neu erzeugen; die CI prüft es.
+
+   Der Grund steht in vier gescheiterten Anläufen: Vercel bündelt diese Datei
+   **nicht**, sondern übersetzt sie und legt Abhängigkeiten daneben. Alles,
+   was zur Laufzeit aufgelöst werden muss, ist eine Wette auf das Verhalten
+   der Plattform. Die vier Fallen, jede mit eigenem Symptom:
+
+   | Falle | Symptom |
+   |---|---|
+   | Dateiname `[[...route]].ts` (Next.js) | keine Function, `/api/health` liefert die Anmeldemaske |
+   | `export const GET = …` statt Default-Export | dieselbe Fehlanzeige |
+   | `hono/vercel` als Adapter | FUNCTION_INVOCATION_FAILED, denn Vercel ruft `(req, res)` |
+   | Import auf `../apps/api/src` oder `@meinbaulotse/api` | `Cannot find module` im Lambda |
+
+   Die Gegenprobe nach jedem Deployment ist ein Aufruf:
+   `/api/health` muss `{"ok":true,"path":"/api/health"}` liefern.
 
 ## Befehle
 
@@ -57,6 +71,7 @@ pnpm db:up          # Postgres 17 im Container
 pnpm db:reset       # Shim + Migrationen + Seed
 pnpm db:test        # RLS-Matrix und Invarianten
 pnpm dev            # API und Web parallel
+pnpm build:function # Vercel-Function neu bündeln (nach API-Änderungen)
 pnpm typecheck && pnpm lint
 ```
 

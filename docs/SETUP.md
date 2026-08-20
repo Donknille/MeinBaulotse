@@ -208,17 +208,21 @@ Supabase leitet dann nicht auf eine Adresse weiter, die es nicht kennt.
 
 ### Wie die API auf Vercel liegt
 
-Die Funktion ist `api/index.ts`. Sie bedient `/api`, und die Umschreibung in
-`vercel.json` (`/api/(.*)` → `/api`) reicht alles Tiefere an dieselbe Funktion
-weiter, mit **vollständigem** Pfad, also `/api/v1/projects/…`. Deshalb hängt die
-Hono-App unter `/api`, und deshalb schneidet der Vite-Proxy lokal nichts ab:
-derselbe Pfad in beiden Umgebungen. Wer eine dieser Stellen ändert, muss die
-anderen mitziehen, sonst antwortet im Betrieb jede Route mit 404.
+Die Funktion ist `api/index.js`, und sie ist **erzeugt**: `pnpm build:function`
+bündelt `apps/api/src/vercel.ts` samt aller Abhängigkeiten zu einer Datei, die
+außer Node-Bausteinen nichts mehr importiert. Sie liegt im Repository, die CI
+prüft, dass sie zu ihrer Quelle passt.
 
-Ohne Framework erkennt Vercel im Ordner `api/` nur eine Datei mit einem echten
-Pfad als Namen und einen Default-Export. Die Next.js-Schreibweisen
-`[[...route]].ts` und `export const GET = …` erzeugen dort gar keine Funktion;
-`/api/health` liefert dann die Anmeldemaske statt JSON.
+Das ist kein Selbstzweck. Vercel bündelt diese Datei nicht, sondern übersetzt
+sie und legt Abhängigkeiten daneben. Ein Import auf ein anderes Paket des
+Monorepos scheitert dort mit `Cannot find module`, und ein Absturz beim Laden
+meldet sich nur als FUNCTION_INVOCATION_FAILED. Ein Bündel ohne Importe kennt
+dieses Problem nicht.
+
+Sie bedient `/api`; die Umschreibung in `vercel.json` (`/api/(.*)` → `/api`)
+reicht alles Tiefere an dieselbe Funktion weiter, mit **vollständigem** Pfad,
+also `/api/v1/projects/…`. Deshalb hängt die Hono-App unter `/api`, und deshalb
+schneidet der Vite-Proxy lokal nichts ab: derselbe Pfad in beiden Umgebungen.
 
 Zur Kontrolle nach jedem Deployment: `https://<deine-adresse>/api/health` muss
 `{"ok":true,"path":"/api/health"}` liefern.

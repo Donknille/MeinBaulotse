@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm -r --filter './packages/*' build && pnpm --filter @meinbaulotse/api build && pnpm --filter @meinbaulotse/web build",
+  "buildCommand": "pnpm -r --filter './packages/*' build && pnpm --filter @meinbaulotse/web build",
   "outputDirectory": "apps/web/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,

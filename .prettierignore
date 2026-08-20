@@ -1,3 +1,6 @@
 dist
 coverage
 pnpm-lock.yaml
+
+# Erzeugt: pnpm build:function
+api/index.js

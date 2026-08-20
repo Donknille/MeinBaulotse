@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/*' build && pnpm --filter @meinbaulotse/web build",
     "dev": "pnpm --parallel --filter @meinbaulotse/api --filter @meinbaulotse/web dev",
-    "typecheck": "pnpm -r typecheck && tsc -p api/tsconfig.json --noEmit",
+    "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -19,7 +19,8 @@
     "db:reset": "pnpm --filter @meinbaulotse/db reset",
     "db:test": "pnpm --filter @meinbaulotse/db test",
     "demo:seed": "pnpm --filter @meinbaulotse/api demo:seed",
-    "demo:sql": "pnpm --filter @meinbaulotse/api demo:sql"
+    "demo:sql": "pnpm --filter @meinbaulotse/api demo:sql",
+    "build:function": "pnpm --filter @meinbaulotse/api build:function"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -31,8 +32,6 @@
     "vitest": "^3.0.4"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.7",
-    "@meinbaulotse/api": "workspace:*",
     "hono": "^4.6.16"
   }
 }
