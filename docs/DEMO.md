@@ -36,6 +36,14 @@ Anmelden unter:  http://localhost:5173/demo?key=…
 Link öffnen, auf einen der beiden Knöpfe klicken, drin. Der Schlüssel steht im
 Link, es gibt kein Eingabefeld. Wer den Link nicht hat, kommt nicht hinein.
 
+`pnpm demo:seed` legt **ein** Bauvorhaben an. Wer lokal beide sehen will, nimmt
+denselben Weg wie im Betrieb und spielt das erzeugte Skript ein:
+
+```bash
+pnpm demo:sql
+psql "$DATABASE_URL" -f docs/demo-seed.sql
+```
+
 ## Wer ist wer
 
 | Rolle im Link | Person | Rolle im Projekt | Darf laut Rechtematrix |
@@ -43,15 +51,37 @@ Link, es gibt kein Eingabefeld. Wer den Link nicht hat, kommt nicht hinein.
 | Bauherr | Familie Sonnenweg | `owner` | alles: einladen, Geld freigeben, Vertrag pflegen |
 | Generalunternehmer | Jörg Baumeister | `contractor` | Vorgänge und Termine — **nicht** einladen, **nicht** freigeben |
 
-Das Demo-Projekt heißt *Musterhaus Sonnenweg*: Einfamilienhaus mit Keller in
-Bayern, Baubeginn in vier Wochen, 38 Vorgänge, und ein Vertragstermin, den der
-gerechnete Plan um gut zwei Wochen reißt — damit im Cockpit eine echte
-Abweichung steht und nicht die beruhigende Null.
-
-Angelegt hat das Projekt der **Bauherr**, nicht der GU. Das ist keine
+Angelegt hat beide Projekte der **Bauherr**, nicht der GU. Das ist keine
 Bequemlichkeit, sondern Abschnitt 2.1 der Spezifikation: Das Projekt gehört dem
 Bauherrn, und nur `owner` und `co_owner` dürfen Mitglieder einladen. Der GU
 kommt über eine Einladung hinein.
+
+## Die beiden Bauvorhaben
+
+In der Liste stehen zwei, und der Unterschied ist Absicht. An einem einzigen
+Projekt bleiben ganze Teile der Oberfläche unsichtbar.
+
+| | *Musterhaus Sonnenweg* | *Stadthaus Ahornweg* |
+|---|---|---|
+| Bundesland | Bayern | Niedersachsen |
+| Keller | mit, 38 Vorgänge | ohne, 34 Vorgänge |
+| Vertragsart | Verbraucherbauvertrag | Einzelgewerke |
+| Baubeginn | in vier Wochen | vor acht Wochen |
+| Abweichung | rund zwei Wochen **später** | zwanzig Werktage **früher** |
+| Bestätigungsgrade | alle grau | alle vier Sorten |
+
+Was das zweite Projekt zeigt und das erste nicht kann:
+
+- **Die Phasenleiste steht mittendrin.** Sie richtet sich nach dem heutigen
+  Datum. Ein Bau, der vor acht Wochen begann, steht in Phase vier von neun,
+  nicht am Anfang.
+- **Die gute Nachricht.** Die Abweichung steht in Grün statt in Tangerine —
+  „20 Werktage früher". Am ersten Projekt gibt es nur den anderen Fall.
+- **Alle vier Bestätigungsgrade nebeneinander:** grau „Von dir eingetragen",
+  blau „Vom GU genannt", grün „Abgestimmt", Tangerine „Zwei Angaben".
+- **Ist-Termine und Status.** Was heute vorbei ist, steht als `fertig` in der
+  Datenbank, das Laufende als `laeuft`. Die Planansicht zeigt beides noch
+  nicht — die Daten stimmen aber schon.
 
 ## Rolle wechseln
 
@@ -107,15 +137,20 @@ eingespielt (siehe `docs/SETUP.md`, Abschnitt 2).
 Dann im Dashboard: **SQL Editor → New query**, den Inhalt von
 [`docs/demo-seed.sql`](demo-seed.sql) einfügen, **Run**.
 
-Das Skript legt die beiden Demo-Nutzer, das Bauvorhaben, beide Mitgliedschaften,
-38 Vorgänge und 43 Abhängigkeiten an. Am Ende zeigt es eine Gegenprobe:
+Das Skript legt die beiden Demo-Nutzer an und dazu **beide Bauvorhaben** mit
+je zwei Mitgliedschaften — 38 und 34 Vorgänge. Am Ende zeigt es eine
+Gegenprobe:
 
 ```
-bauvorhaben          | beteiligte | vorgaenge | abhaengigkeiten | errechnetes_ende
-Musterhaus Sonnenweg |          2 |        38 |              43 | …
+bauvorhaben          | beteiligte | vorgaenge | abhaengigkeiten | errechnetes_ende | geschuldet
+Stadthaus Ahornweg   |          2 |        34 |              39 | …                | …
+Musterhaus Sonnenweg |          2 |        38 |              43 | …                | …
 ```
 
-Ein zweiter Lauf ändert nichts und bricht nicht ab. Gelöscht wird nie —
+Ein zweiter Lauf ändert nichts und bricht nicht ab: Jedes `insert` endet auf
+`on conflict do nothing`, alle Kennungen sind fest. Wer das Skript später
+erneut einfügt, bekommt also nur das, was ihm fehlt — ein bestehendes
+Bauvorhaben bleibt samt seiner Termine unangetastet. Gelöscht wird nie,
 `schedule_change` ist append-only.
 
 Das Skript schreibt bewusst nicht als Datenbankeigentümer: Es setzt den
@@ -176,7 +211,7 @@ https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>&role=gu
 ```
 
 Für die Vorführung zu zweit: Einer nimmt den Bauherrn, der andere den
-Generalunternehmer, beide sehen dasselbe Bauvorhaben aus ihrer Rolle.
+Generalunternehmer, beide sehen dieselben Bauvorhaben aus ihrer Rolle.
 
 Alle Links tragen denselben Schlüssel — wer einen davon hat, kommt über
 *Rolle wechseln* auch in die andere Rolle, ohne ihn erneut einzugeben. Der
