@@ -77,11 +77,18 @@ export function onDemoSessionChange(listener: () => void): () => void {
   };
 }
 
+/**
+ * Die Anmeldung geht per GET, ohne Anfragekörper.
+ *
+ * Das ist eine Lehre aus dem Betrieb: Der Körper einer POST-Anfrage erreichte
+ * die Vercel-Function nicht, sie antwortete gar nicht, und der Knopf blieb auf
+ * „Einen Moment." stehen, bis die Plattform mit 504 abbrach. Ohne Körper kann
+ * das nicht passieren. Der Schlüssel steht ohnehin im Link.
+ */
 export async function startDemoSession(role: string, key: string): Promise<DemoSession> {
-  const response = await fetch('/api/demo/session', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ role, key }),
+  const query = new URLSearchParams({ role, key });
+  const response = await fetch(`/api/demo/session?${query.toString()}`, {
+    headers: { accept: 'application/json' },
   });
 
   const body = (await response.json().catch(() => null)) as

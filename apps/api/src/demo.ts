@@ -22,7 +22,7 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { SignJWT } from 'jose';
 import { jwtSecret } from './auth.js';
@@ -124,6 +124,15 @@ interface SessionRequest {
 
 /**
  * Die Route. Wird in `app.ts` nur montiert, wenn ein Schlüssel eingestellt ist.
+ *
+ * Sie antwortet auf **GET und POST**. Der Testzugang benutzt GET, und das ist
+ * kein Schönheitsfehler, sondern eine Lehre aus dem Betrieb: Der
+ * Anfragekörper einer POST-Anfrage erreichte die Function auf Vercel nicht,
+ * `await c.req.json()` wartete ewig, und die Plattform brach mit 504 ab. Ohne
+ * Körper kann das nicht passieren.
+ *
+ * Der Schlüssel steht bei GET in der Adresse. Er steht ohnehin im Link, den
+ * man verschickt, und das Token gilt zwölf Stunden.
  */
 export function demoRoutes(expectedKey: string): Hono {
   const demo = new Hono();
@@ -140,29 +149,37 @@ export function demoRoutes(expectedKey: string): Hono {
     }),
   );
 
-  demo.post('/session', async (c) => {
-    const body = (await c.req.json().catch(() => null)) as SessionRequest | null;
-
-    if (body === null || !keyMatches(expectedKey, typeof body.key === 'string' ? body.key : '')) {
+  /** Prüfung und Antwort, gemeinsam für beide Methoden. */
+  async function issue(c: Context, role: unknown, key: unknown): Promise<Response> {
+    if (!keyMatches(expectedKey, typeof key === 'string' ? key : '')) {
       throw new HTTPException(401, {
         message: 'Dieser Zugangsschlüssel stimmt nicht. Prüf bitte den Link.',
       });
     }
 
-    if (!isDemoRole(body.role)) {
+    if (!isDemoRole(role)) {
       throw new HTTPException(422, {
         message: `Wähle eine der hinterlegten Rollen: ${DEMO_ROLES.join(', ')}.`,
       });
     }
 
-    const identity = DEMO_IDENTITIES[body.role];
+    const identity = DEMO_IDENTITIES[role];
+    // Kein Zwischenspeicher darf ein Token festhalten.
+    c.header('cache-control', 'no-store');
     return c.json({
       token: await mintDemoToken(identity),
-      role: body.role,
+      role,
       label: identity.label,
       displayName: identity.displayName,
       projectRole: identity.projectRole,
     });
+  }
+
+  demo.get('/session', (c) => issue(c, c.req.query('role'), c.req.query('key')));
+
+  demo.post('/session', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as SessionRequest | null;
+    return issue(c, body?.role, body?.key);
   });
 
   return demo;

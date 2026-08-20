@@ -14344,26 +14344,31 @@ function demoRoutes(expectedKey) {
       }))
     })
   );
-  demo.post("/session", async (c) => {
-    const body = await c.req.json().catch(() => null);
-    if (body === null || !keyMatches(expectedKey, typeof body.key === "string" ? body.key : "")) {
+  async function issue(c, role, key) {
+    if (!keyMatches(expectedKey, typeof key === "string" ? key : "")) {
       throw new HTTPException(401, {
         message: "Dieser Zugangsschl\xFCssel stimmt nicht. Pr\xFCf bitte den Link."
       });
     }
-    if (!isDemoRole(body.role)) {
+    if (!isDemoRole(role)) {
       throw new HTTPException(422, {
         message: `W\xE4hle eine der hinterlegten Rollen: ${DEMO_ROLES.join(", ")}.`
       });
     }
-    const identity = DEMO_IDENTITIES[body.role];
+    const identity = DEMO_IDENTITIES[role];
+    c.header("cache-control", "no-store");
     return c.json({
       token: await mintDemoToken(identity),
-      role: body.role,
+      role,
       label: identity.label,
       displayName: identity.displayName,
       projectRole: identity.projectRole
     });
+  }
+  demo.get("/session", (c) => issue(c, c.req.query("role"), c.req.query("key")));
+  demo.post("/session", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    return issue(c, body?.role, body?.key);
   });
   return demo;
 }
@@ -14755,11 +14760,60 @@ async function loadPhases(tx, projectId) {
 
 // src/vercel.ts
 var handler;
+var BODY_DEADLINE_MS = 2e3;
+function asBuffer(value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (typeof value === "string") return Buffer.from(value, "utf8");
+  return Buffer.from(JSON.stringify(value), "utf8");
+}
+async function collectBody(request) {
+  const method = (request.method ?? "GET").toUpperCase();
+  if (method === "GET" || method === "HEAD") return true;
+  if (Buffer.isBuffer(request.rawBody)) return true;
+  if (request.body !== void 0 && request.body !== null && request.body !== "") {
+    request.rawBody = asBuffer(request.body);
+    return true;
+  }
+  return await new Promise((resolve) => {
+    const chunks = [];
+    const done = (ok) => {
+      clearTimeout(timer);
+      request.off("data", onData);
+      request.off("end", onEnd);
+      request.off("error", onError);
+      resolve(ok);
+    };
+    const onData = (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    };
+    const onEnd = () => {
+      request.rawBody = Buffer.concat(chunks);
+      done(true);
+    };
+    const onError = () => done(false);
+    const timer = setTimeout(() => done(false), BODY_DEADLINE_MS);
+    request.on("data", onData);
+    request.on("end", onEnd);
+    request.on("error", onError);
+  });
+}
+function respondJson(response, status, body) {
+  response.statusCode = status;
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.end(JSON.stringify(body));
+}
 function withoutSecrets(text) {
   return text.replace(/:\/\/[^@\s]*@/g, "://***@");
 }
 async function vercelHandler(request, response) {
   try {
+    if (!await collectBody(request)) {
+      respondJson(response, 400, {
+        error: "Die Anfrage kam unvollst\xE4ndig an.",
+        detail: "Der Anfragek\xF6rper wurde nicht innerhalb der Frist geliefert."
+      });
+      return;
+    }
     handler ??= handle(createApp());
     await handler(request, response);
   } catch (error) {
@@ -14768,13 +14822,9 @@ async function vercelHandler(request, response) {
       response.end();
       return;
     }
-    response.statusCode = 500;
-    response.setHeader("content-type", "application/json; charset=utf-8");
-    response.end(
-      JSON.stringify({
-        error: "Die API konnte nicht starten.",
-        detail: withoutSecrets(error instanceof Error ? error.message : String(error))
-      })
-    );
+    respondJson(response, 500, {
+      error: "Die API konnte nicht starten.",
+      detail: withoutSecrets(error instanceof Error ? error.message : String(error))
+    });
   }
 }
