@@ -24,6 +24,7 @@ import {
   type ScheduledTaskDto,
 } from '@meinbaulotse/shared';
 import { requireAuth, type AuthedVariables } from './auth.js';
+import { demoLoginKey, demoRoutes } from './demo.js';
 import { createProjectFromAnswers } from './onboarding.js';
 
 type App = { Variables: AuthedVariables };
@@ -41,6 +42,15 @@ export function createApp(): Hono<App> {
   const app = new Hono<App>().basePath('/api');
 
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // Testzugang ohne Mailversand. Ohne eingestellten Schlüssel gibt es diese
+  // Route nicht — sie antwortet dann wie jede unbekannte Adresse mit 404.
+  // Warum das vertretbar ist, steht in `demo.ts`.
+  const demoKey = demoLoginKey();
+  if (demoKey !== null) {
+    console.info('Testzugang aktiv: POST /api/demo/session');
+    app.route('/demo', demoRoutes(demoKey));
+  }
 
   const v1 = new Hono<App>();
   v1.use('*', requireAuth);
@@ -65,6 +75,11 @@ export function createApp(): Hono<App> {
 
   // -- Lesen ----------------------------------------------------------------
 
+  // Der Verbund geht über `m.user_id = mbl.current_user_id()`, nicht über die
+  // Mitgliedschaft schlechthin: Sonst liefert ein Projekt mit drei Beteiligten
+  // dieselbe Zeile dreimal, und `role` wäre die Rolle irgendeines Mitglieds
+  // statt der des Fragenden. Solange jedes Projekt nur den Bauherrn kannte,
+  // fiel das nicht auf.
   v1.get('/me/projects', async (c) => {
     const projects = await withUserTx(c.get('claims'), async (tx) => {
       const result = await tx.query<ProjectRow & { role: ProjectSummary['role'] }>(
@@ -73,7 +88,7 @@ export function createApp(): Hono<App> {
                 m.role
          from project p
          join project_member m on m.project_id = p.id
-         where m.revoked_at is null
+         where m.user_id = mbl.current_user_id() and m.revoked_at is null
          order by p.created_at desc`,
       );
       return result.rows.map(toProjectSummary);
@@ -198,7 +213,9 @@ async function loadProject(tx: Tx, projectId: string): Promise<ProjectSummary> {
     `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
             p.has_basement, p.planned_start, p.contractual_completion, m.role
      from project p
-     join project_member m on m.project_id = p.id and m.revoked_at is null
+     join project_member m on m.project_id = p.id
+       and m.user_id = mbl.current_user_id()
+       and m.revoked_at is null
      where p.id = $1`,
     [projectId],
   );

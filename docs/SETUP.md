@@ -23,7 +23,9 @@ pnpm dev                                # API auf 8787, Web auf 5173
 ```
 
 Ohne Supabase-Zugangsdaten erklärt die Anmeldemaske, was fehlt, statt einen
-Fehler zu zeigen. Der Styleguide unter <http://localhost:5173/styleguide> ist
+Fehler zu zeigen. Zum Durchklicken braucht es dann kein Supabase-Konto: Der
+Testzugang aus `docs/DEMO.md` legt zwei feste Anmeldungen und ein fertiges
+Bauvorhaben an (`pnpm demo:seed`). Der Styleguide unter <http://localhost:5173/styleguide> ist
 ohne Anmeldung erreichbar und zeigt die Planübersicht mit fester Datenlage.
 
 **Ohne Docker:** Jedes erreichbare Postgres ab Version 16 genügt. Setz

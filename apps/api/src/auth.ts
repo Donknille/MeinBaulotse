@@ -17,7 +17,7 @@ export interface AuthedVariables {
 
 let secret: Uint8Array | undefined;
 
-function jwtSecret(): Uint8Array {
+export function jwtSecret(): Uint8Array {
   if (secret !== undefined) return secret;
   const raw = process.env['SUPABASE_JWT_SECRET'];
   if (raw === undefined || raw === '') {

@@ -6,9 +6,14 @@ import { FEDERAL_STATE_LABEL, formatDate } from '../lib/format';
 import { api } from '../lib/api';
 import { Topmark } from './SignIn';
 import { signOut } from '../lib/supabase';
+import { clearDemoSession, readDemoSession } from '../lib/demo-auth';
 
 export function Projects() {
   const query = useQuery({ queryKey: ['projects'], queryFn: () => api.listProjects() });
+  // Im Testzugang steht in der Kopfzeile, aus wessen Sicht man gerade schaut.
+  // Ohne diesen Hinweis verwechselt man beim Vergleichen der Rollen unweigerlich,
+  // wer man gerade ist.
+  const demo = readDemoSession();
 
   return (
     <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-8 sm:px-6">
@@ -17,9 +22,23 @@ export function Projects() {
           <Topmark size={22} />
           <span className="text-body font-medium">MeinBaulotse</span>
         </span>
-        <Button variant="ghost" size="sm" onClick={() => void signOut()}>
-          Abmelden
-        </Button>
+        <span className="flex items-center gap-2">
+          {demo !== null ? (
+            <Link to="/demo" className="text-body text-steel underline underline-offset-4">
+              {demo.label} · Rolle wechseln
+            </Link>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              clearDemoSession();
+              void signOut();
+            }}
+          >
+            Abmelden
+          </Button>
+        </span>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-4">

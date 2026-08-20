@@ -1,5 +1,7 @@
 /** Lokaler Entwicklungsserver. Auf Vercel läuft dieselbe App unter /api. */
 
+// Zuerst die .env, dann alles, was Umgebungswerte liest.
+import './env.js';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 

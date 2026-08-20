@@ -7,6 +7,7 @@
  */
 
 import type { OnboardingRequest, ProjectSchedule, ProjectSummary } from '@meinbaulotse/shared';
+import { clearDemoSession, readDemoSession } from './demo-auth';
 import { supabase } from './supabase';
 
 export class ApiError extends Error {
@@ -22,6 +23,11 @@ export class ApiError extends Error {
 }
 
 async function accessToken(): Promise<string> {
+  // Der Testzugang hat Vorrang: Wer über /demo hereinkommt, hat sich bewusst
+  // für eine andere Identität entschieden als die eigene Supabase-Sitzung.
+  const demo = readDemoSession();
+  if (demo !== null) return demo.token;
+
   const session = (await supabase?.auth.getSession())?.data.session;
   if (session == null) {
     throw new ApiError(401, 'Bitte melde dich an.');
@@ -40,6 +46,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
+    // Ein abgelaufenes Testtoken soll nicht in Fehlermeldungen enden, sondern
+    // zurück zur Anmeldung führen.
+    if (response.status === 401 && readDemoSession() !== null) {
+      clearDemoSession();
+    }
+
     const body = (await response.json().catch(() => null)) as
       | { error?: string; hint?: string }
       | null;
