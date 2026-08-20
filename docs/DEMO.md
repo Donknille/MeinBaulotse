@@ -156,13 +156,27 @@ Variable nach der Vorführung und deploye neu**; dann ist die Route wieder weg.
 
 ### 4. Anmelden
 
+Ein Link mit Auswahl:
+
 ```
 https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>
 ```
 
-Link öffnen, Rolle wählen. Für die Vorführung zu zweit: Einer nimmt den
-Bauherrn, der andere den Generalunternehmer, beide sehen dasselbe Bauvorhaben
-aus ihrer Rolle.
+Oder je ein Link pro Person — steht die Rolle im Link, meldet die Seite direkt
+an, ohne Auswahl:
+
+```
+https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>&role=bauherr
+https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>&role=gu
+```
+
+Für die Vorführung zu zweit: Einer nimmt den Bauherrn, der andere den
+Generalunternehmer, beide sehen dasselbe Bauvorhaben aus ihrer Rolle.
+
+Beide Links tragen denselben Schlüssel — wer einen davon hat, kommt über
+`/demo` auch in die andere Rolle. Für getrennte Zugänge im Wortsinn bräuchte es
+je Rolle einen eigenen Schlüssel; für eine Vorführung zu zweit ist das
+unnötig.
 
 ## Warum das vertretbar ist
 

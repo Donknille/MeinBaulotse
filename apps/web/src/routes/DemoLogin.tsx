@@ -7,9 +7,13 @@
  *
  * Zwei Knöpfe, zwei Rollen, derselbe Bildschirm dahinter: So lässt sich
  * prüfen, was der Generalunternehmer sieht und was der Bauherr sieht.
+ *
+ * Steht zusätzlich `&role=…` im Link, meldet die Seite direkt an. Damit wird
+ * aus der Auswahl ein fester Zugang je Person: Der eine bekommt den Link des
+ * Bauherrn, der andere den des Generalunternehmers.
  */
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, Field, TextInput } from '../components/ui';
 import { fetchDemoIdentities, startDemoSession, type DemoIdentityInfo } from '../lib/demo-auth';
@@ -23,11 +27,23 @@ export function DemoLogin() {
   const [identities, setIdentities] = useState<DemoIdentityInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Der Sprung darf sich nicht wiederholen, auch nicht beim doppelten Aufruf
+  // der Effekte im Entwicklungsmodus.
+  const jumped = useRef(false);
 
   useEffect(() => {
     fetchDemoIdentities().then(setIdentities, (cause: unknown) => {
       setError(cause instanceof Error ? cause.message : 'Der Testzugang antwortet nicht.');
     });
+  }, []);
+
+  useEffect(() => {
+    const wanted = params.get('role');
+    if (wanted === null || wanted === '' || key.trim() === '' || jumped.current) return;
+    jumped.current = true;
+    // Absichtlich nur beim ersten Aufbau: Der Link entscheidet, nicht jede
+    // spätere Eingabe im Schlüsselfeld.
+    void enter(wanted);
   }, []);
 
   async function enter(role: string, event?: FormEvent) {
@@ -69,7 +85,7 @@ export function DemoLogin() {
             </Field>
           </form>
 
-          {identities === null ? (
+          {identities === null || (busy !== null && jumped.current) ? (
             <p className="text-body text-steel">Einen Moment.</p>
           ) : (
             <ul className="flex flex-col gap-2">
