@@ -21,12 +21,15 @@ function analyse(
   tasks: readonly ScheduleTask[],
   dependencies: readonly ScheduleDependency[],
   contractualEnd?: string,
+  floatsAgainst: 'plan' | 'contract' = 'contract',
 ) {
   const schedule = computeSchedule({ tasks, dependencies, calendar: BY, projectStart: MONTAG });
   const input = { tasks, dependencies, calendar: BY, schedule };
   return {
     schedule,
-    result: criticalPath(contractualEnd === undefined ? input : { ...input, contractualEnd }),
+    result: criticalPath(
+      contractualEnd === undefined ? input : { ...input, contractualEnd, floatsAgainst },
+    ),
   };
 }
 
@@ -97,6 +100,15 @@ describe('criticalPath', () => {
     const { result } = analyse(tasks, [fs('a', 'w'), fs('w', 'b')]);
     expect(result.floats.get('w')?.totalFloatDays).toBe(0);
     expect(result.floats.get('w')?.isCritical).toBe(true);
+  });
+
+  it('misst den Puffer standardmäßig gegen den eigenen Plan, nicht gegen den Vertrag', () => {
+    // Sonst trüge bei einem Rückstand jede einzelne Zeile dieselbe schlechte
+    // Nachricht. Die Abweichung vom Vertrag steht genau einmal, oben.
+    const { result } = analyse([task('a', 10)], [], '2026-04-20', 'plan');
+    expect(result.deviationWorkdays).toBe(4);
+    expect(result.floats.get('a')?.totalFloatDays).toBe(0);
+    expect(result.targetEnd).toBe('2026-04-24');
   });
 
   it('nennt bei fehlendem Vertragstermin keine Abweichung', () => {

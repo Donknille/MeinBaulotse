@@ -119,11 +119,14 @@ export async function createProjectFromAnswers(
     projectStart: answers.plannedStart,
   });
 
+  // Puffer je Vorgang gegen den eigenen Plan. Die Abweichung vom Vertrag ist
+  // eine Aussage über das Projekt und steht genau einmal — nicht in jeder Zeile.
   const floats = criticalPath({
     tasks: plan.tasks,
     dependencies: plan.dependencies,
     calendar,
     schedule,
+    floatsAgainst: 'plan',
     ...(answers.contractualCompletion === undefined
       ? {}
       : { contractualEnd: answers.contractualCompletion }),

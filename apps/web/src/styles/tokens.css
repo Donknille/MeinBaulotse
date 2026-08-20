@@ -1,0 +1,123 @@
+/* ---------------------------------------------------------------------------
+ * Gestaltungs-Tokens.
+ *
+ * Quelle ist `meinbaulotse-ci.md`. Diese Datei folgt dem Dokument, nicht
+ * umgekehrt. Komponenten greifen ausschließlich auf die semantischen Namen
+ * weiter unten zu, nie auf die Rohfarben.
+ * ------------------------------------------------------------------------- */
+
+@theme {
+  /* -- Flächen und Linien ------------------------------------------------- */
+  --color-canvas-white: #ffffff;
+  --color-paper-mist: #f5f5f5;
+  --color-ash: #e5e5e5;
+  --color-smoke: #d4d4d4;
+  --color-pebble: #c8c8c8;
+
+  /* -- Schrift ------------------------------------------------------------ */
+  --color-midnight-ink: #0a0a0a;
+  --color-charcoal: #171717;
+  --color-graphite: #262626;
+  --color-slate: #404040;
+  --color-steel: #525252;
+  --color-fog: #737373;
+  --color-silver: #a3a3a3;
+
+  /* -- Akzente. Jeder trägt genau eine Bedeutung, siehe CI 3.5 ------------ */
+  --color-electric-blue: #2563eb; /* Termine und Plan                        */
+  --color-deep-sapphire: #1e40af; /* reserviert, in der Anwendung unbenutzt  */
+  --color-vivid-green: #16a34a; /* Einigkeit und Fertigstellung             */
+  --color-tangerine: #ea580c; /* Kümmer dich drum                           */
+  --color-lavender: #7c3aed; /* Wissen und Dokumentation                    */
+
+  /* Die einzige Ergänzung zur Dub-Palette: ein Rot für den echten Alarm.
+     Tangerine trägt bereits „zwei Angaben" und laufende Fristen. */
+  --color-alarm-red: #dc2626;
+
+  /* -- Tönungen. Nur auf Plaketten, nie auf großen Flächen ---------------- */
+  --color-soft-mint: #dcfce7;
+  --color-soft-blue: #dbeaff;
+  --color-soft-amber: #ffedd5;
+  --color-soft-violet: #ede9fe;
+  --color-soft-red: #fee2e2;
+
+  --color-primary-action-fill: #000000;
+
+  /* -- Schriften ---------------------------------------------------------- */
+  --font-satoshi: 'Satoshi', 'Inter Variable', ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-inter: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-geist-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* -- Typografische Skala ------------------------------------------------ */
+  --text-caption: 11px;
+  --text-caption--line-height: 1.5;
+  --text-body: 14px;
+  --text-body--line-height: 1.43;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 1.5;
+  --text-body-xl: 18px;
+  --text-body-xl--line-height: 1.56;
+  --text-subheading: 20px;
+  --text-subheading--line-height: 1.4;
+  --text-heading-sm: 24px;
+  --text-heading-sm--line-height: 1.33;
+  --text-heading: 30px;
+  --text-heading--line-height: 1.38;
+  --text-heading-lg: 36px;
+  --text-heading-lg--line-height: 1.11;
+  --text-display: 48px;
+  --text-display--line-height: 1;
+
+  /* -- Radien. Nur diese fünf -------------------------------------------- */
+  --radius-input: 6px;
+  --radius-button: 8px;
+  --radius-card: 12px;
+  --radius-large: 16px;
+  --radius-pill: 9999px;
+
+  /* -- Höhe. Kanten statt Schatten, drei Fälle --------------------------- */
+  --shadow-subtle: rgba(0, 0, 0, 0.05) 0px 1px 2px 0px;
+  --shadow-ring: rgba(0, 0, 0, 0.1) 0px 0px 0px 4px;
+  --shadow-sheet: rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.1) 0px 4px 6px -4px;
+
+  /* -- Bewegung ---------------------------------------------------------- */
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+:root {
+  /* -- Semantische Aliase. Nur diese benutzen Komponenten ---------------- */
+  --action-fill: var(--color-primary-action-fill);
+  --action-fill-text: var(--color-canvas-white);
+
+  --text-primary: var(--color-charcoal);
+  --text-secondary: var(--color-steel);
+  --text-muted: var(--color-fog);
+  --border-default: var(--color-ash);
+  --border-strong: var(--color-smoke);
+
+  /* Bestätigungsgrad, Abschnitt 3.4 der Spezifikation */
+  --status-self-fg: var(--color-steel);
+  --status-self-bg: var(--color-paper-mist);
+  --status-counterparty-fg: var(--color-electric-blue);
+  --status-counterparty-bg: var(--color-soft-blue);
+  --status-mutual-fg: var(--color-vivid-green);
+  --status-mutual-bg: var(--color-soft-mint);
+  --status-disputed-fg: var(--color-tangerine);
+  --status-disputed-bg: var(--color-soft-amber);
+
+  --due-open: var(--color-tangerine);
+  --due-overdue: var(--color-alarm-red);
+  --knowledge: var(--color-lavender);
+
+  --track-baseline: var(--color-smoke);
+  --track-actual: var(--color-electric-blue);
+  --track-wait: var(--color-silver);
+  --track-critical: var(--color-tangerine);
+
+  --motion-micro: 150ms;
+  --motion-transition: 220ms;
+  --motion-page: 300ms;
+}

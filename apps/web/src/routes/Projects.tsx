@@ -1,0 +1,67 @@
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
+import { Button, Card, EmptyState } from '../components/ui';
+import { FEDERAL_STATE_LABEL, formatDate } from '../lib/format';
+import { api } from '../lib/api';
+import { Topmark } from './SignIn';
+import { signOut } from '../lib/supabase';
+
+export function Projects() {
+  const query = useQuery({ queryKey: ['projects'], queryFn: () => api.listProjects() });
+
+  return (
+    <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-8 sm:px-6">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-3 text-charcoal">
+          <Topmark size={22} />
+          <span className="text-body font-medium">MeinBaulotse</span>
+        </span>
+        <Button variant="ghost" size="sm" onClick={() => void signOut()}>
+          Abmelden
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h1 className="display-title text-heading-lg text-charcoal">Deine Bauvorhaben</h1>
+        <Link to="/onboarding">
+          <Button variant="primary">
+            <Plus size={16} aria-hidden />
+            Neues Projekt
+          </Button>
+        </Link>
+      </div>
+
+      {query.isPending ? (
+        <p className="text-body text-steel">Wird geladen.</p>
+      ) : query.data === undefined || query.data.projects.length === 0 ? (
+        <EmptyState
+          text="Hier stehen deine Bauvorhaben. Leg eines an — fünf Fragen, danach steht dein Terminplan."
+          action={
+            <Link to="/onboarding">
+              <Button variant="primary" size="field">
+                Projekt anlegen
+              </Button>
+            </Link>
+          }
+        />
+      ) : (
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {query.data.projects.map((project) => (
+            <li key={project.id}>
+              <Link to={`/projekt/${project.id}`} className="block">
+                <Card className="transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist">
+                  <p className="text-body-xl font-medium text-charcoal">{project.name}</p>
+                  <p className="mt-1 text-body text-steel">
+                    Baubeginn {formatDate(project.plannedStart)} ·{' '}
+                    {FEDERAL_STATE_LABEL[project.federalState]}
+                  </p>
+                </Card>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}

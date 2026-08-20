@@ -210,6 +210,54 @@ describe('Onboarding mit fünf Fragen', () => {
   });
 });
 
+describe('Geschuldeter Endtermin', () => {
+  it('nennt die Abweichung einmal, und lässt die Puffer der Vorgänge davon unberührt', async () => {
+    const response = await request('/v1/projects/onboarding', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({
+        ...ANTWORTEN,
+        name: 'Mit Vertragstermin',
+        contractualCompletion: '2026-09-30',
+      }),
+    });
+    const body = (await response.json()) as { projectId: string; deviationWorkdays: number | null };
+
+    // Errechnet 19.10., geschuldet 30.09. — dazwischen liegen 13 Werktage.
+    expect(body.deviationWorkdays).toBe(13);
+
+    const schedule = (await (
+      await request(`/v1/projects/${body.projectId}/schedule`, { token })
+    ).json()) as ProjectSchedule;
+
+    expect(schedule.deviationWorkdays).toBe(13);
+    expect(schedule.contractualEnd).toBe('2026-09-30');
+
+    // Der Puffer je Vorgang misst gegen den eigenen Plan. Wäre er gegen den
+    // Vertrag gemessen, trüge jede der 38 Zeilen dieselbe schlechte Nachricht.
+    const negative = schedule.tasks.filter(
+      (task) => task.totalFloatDays !== null && task.totalFloatDays < 0,
+    );
+    expect(negative).toHaveLength(0);
+
+    const innentueren = schedule.tasks.find((task) => task.name === 'Innentüren')!;
+    expect(innentueren.totalFloatDays).toBe(35);
+  });
+
+  it('lässt die Abweichung offen, solange kein Termin erfasst ist', async () => {
+    const list = (await (await request('/v1/me/projects', { token })).json()) as {
+      projects: { id: string; name: string }[];
+    };
+    const ohneTermin = list.projects.find((project) => project.name === 'Musterweg 4')!;
+    const schedule = (await (
+      await request(`/v1/projects/${ohneTermin.id}/schedule`, { token })
+    ).json()) as ProjectSchedule;
+
+    expect(schedule.contractualEnd).toBeNull();
+    expect(schedule.deviationWorkdays).toBeNull();
+  });
+});
+
 describe('Onboarding ohne Keller', () => {
   it('lässt die vier Kellervorgänge weg und wird früher fertig', async () => {
     const response = await request('/v1/projects/onboarding', {

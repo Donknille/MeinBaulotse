@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import './tokens.css';
+
+/* ---------------------------------------------------------------------------
+ * Grundlagen. Alles Weitere steht in den Komponenten.
+ * ------------------------------------------------------------------------- */
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas-white);
+  color: var(--text-primary);
+  font-family: var(--font-inter);
+  font-size: var(--text-body-lg);
+  line-height: 1.5;
+  /* Tabellenziffern überall. In einem Terminplan stehen Daten und Dauern
+     untereinander; proportionale Ziffern lassen die Spalten zappeln, und
+     zappelnde Zahlen wirken unzuverlässig. */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  /* Safe-Area für die installierte PWA */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+/* Anzeigenschrift ausschließlich ab 36 px, siehe CI 4.1 */
+.display-title {
+  font-family: var(--font-satoshi);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-ring);
+  border-radius: var(--radius-button);
+}
+
+/* Der feine Punkteraster aus der Referenz — nur außerhalb datenführender
+   Ansichten, hinter einem Terminplan stört er. */
+.dotted-canvas {
+  background-image: radial-gradient(var(--color-ash) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

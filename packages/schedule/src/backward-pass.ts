@@ -31,11 +31,27 @@ export interface CriticalPathInput {
   calendar: Calendar;
   schedule: ScheduleResult;
   /**
-   * Vertraglich geschuldeter Fertigstellungstermin. Fehlt er, wird vom
-   * errechneten Ende zurückgerechnet — dann ist der kritische Pfad die längste
-   * Kette, und der Puffer misst gegen den eigenen Plan.
+   * Vertraglich geschuldeter Fertigstellungstermin. Er beeinflusst
+   * standardmäßig **nur** `deviationWorkdays`, nicht die Puffer der einzelnen
+   * Vorgänge — siehe `floatsAgainst`.
    */
   contractualEnd?: IsoDate;
+  /**
+   * Wogegen der Puffer je Vorgang gemessen wird.
+   *
+   * - `plan` (Standard): gegen das errechnete Ende. Der Puffer beantwortet
+   *   dann die Frage, die sich der Bauherr an der einzelnen Zeile stellt:
+   *   „Wie viel Luft habe ich hier, ohne dass sich mein Endtermin verschiebt?"
+   * - `contract`: gegen den geschuldeten Termin. Liegt der Plan dahinter,
+   *   werden alle Puffer negativ.
+   *
+   * Der Standard ist mit Bedacht `plan`. Andernfalls trägt bei einem Rückstand
+   * jede einzelne Zeile dieselbe schlechte Nachricht — und eine Nachricht, die
+   * 38-mal wiederholt wird, wird nicht mehr gelesen. Die Abweichung vom
+   * Vertrag ist eine Aussage über das Projekt und steht deshalb genau einmal,
+   * oben.
+   */
+  floatsAgainst?: 'plan' | 'contract';
 }
 
 function isCalendarTask(task: ScheduleTask): boolean {
@@ -97,7 +113,10 @@ export function criticalPath(input: CriticalPathInput): CriticalPathResult {
   const graph = buildGraph([...byId.keys()], dependencies);
   const reverseOrder = [...schedule.order].reverse();
 
-  const targetEnd = contractualEnd ?? schedule.projectEnd;
+  const targetEnd =
+    input.floatsAgainst === 'contract' && contractualEnd !== undefined
+      ? contractualEnd
+      : schedule.projectEnd;
   const lateFinish = new Map<TaskId, IsoDate>();
   const lateStart = new Map<TaskId, IsoDate>();
 

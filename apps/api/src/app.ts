@@ -11,6 +11,12 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { withUserTx } from '@meinbaulotse/db';
 import {
+  workdayDifference,
+  workdayOffset,
+  type Calendar,
+  type FederalState,
+} from '@meinbaulotse/schedule';
+import {
   onboardingRequest,
   type PhaseProgress,
   type ProjectSchedule,
@@ -90,12 +96,18 @@ export function createApp(): Hono<App> {
       const ends = tasks.map((task) => task.currentEnd).filter((end): end is string => end !== null);
       const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => (a > b ? a : b));
 
-      // Der Endtermin gegen den geschuldeten: negativer Puffer auf dem letzten
-      // Vorgang bedeutet, dass der Plan hinter dem Vertrag liegt.
-      const lastFloat = tasks
-        .filter((task) => task.currentEnd === computedEnd)
-        .map((task) => task.totalFloatDays)
-        .find((value): value is number => value !== null);
+      // Die Abweichung wird gerechnet, nicht aus einem Puffer abgeleitet: Der
+      // Puffer je Vorgang misst gegen den eigenen Plan, die Abweichung gegen
+      // den Vertrag. Das sind zwei verschiedene Zahlen.
+      let deviationWorkdays: number | null = null;
+      if (project.contractualCompletion !== null && computedEnd !== null) {
+        const calendar = await calendarOf(tx, projectId);
+        deviationWorkdays = workdayDifference(
+          workdayOffset(project.contractualCompletion, 1, calendar),
+          workdayOffset(computedEnd, 1, calendar),
+          calendar,
+        );
+      }
 
       return {
         project,
@@ -103,8 +115,7 @@ export function createApp(): Hono<App> {
         tasks,
         computedEnd,
         contractualEnd: project.contractualCompletion,
-        deviationWorkdays:
-          project.contractualCompletion === null || lastFloat === undefined ? null : -lastFloat,
+        deviationWorkdays,
       };
     });
     return c.json(schedule);
@@ -248,6 +259,16 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     totalFloatDays: row.total_float_days,
     isCritical: row.is_critical,
   }));
+}
+
+/** Der Feiertagskalender des Projekts — Bundesland plus Gemeindetyp. */
+async function calendarOf(tx: Tx, projectId: string): Promise<Calendar> {
+  const result = await tx.query<{
+    federal_state: FederalState;
+    catholic_municipality: boolean;
+  }>('select federal_state, catholic_municipality from project where id = $1', [projectId]);
+  const row = result.rows[0]!;
+  return { federalState: row.federal_state, catholicMunicipality: row.catholic_municipality };
 }
 
 async function loadPhases(tx: Tx, projectId: string): Promise<PhaseProgress[]> {

@@ -13,3 +13,6 @@ coverage/
 
 .DS_Store
 *.log
+
+# vom Bauwerkzeug erzeugt
+apps/web/dev-dist/
