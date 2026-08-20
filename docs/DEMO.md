@@ -33,8 +33,8 @@ pnpm dev
 Anmelden unter:  http://localhost:5173/demo?key=…
 ```
 
-Diesen Link öffnen, Rolle wählen, fertig. Der Schlüssel steht im Link; wer ihn
-nicht hat, kommt nicht hinein.
+Link öffnen, auf einen der beiden Knöpfe klicken, drin. Der Schlüssel steht im
+Link, es gibt kein Eingabefeld. Wer den Link nicht hat, kommt nicht hinein.
 
 ## Wer ist wer
 
@@ -56,8 +56,10 @@ kommt über eine Einladung hinein.
 ## Rolle wechseln
 
 Oben rechts steht im Testzugang, aus wessen Sicht du gerade schaust
-(„Generalunternehmer · Rolle wechseln"). Der Link führt zurück auf `/demo`.
-*Abmelden* wirft beide Anmeldungen weg, die echte wie die Test-Anmeldung.
+(„Generalunternehmer · Rolle wechseln"). Der Link führt zurück auf `/demo`,
+und dort genügt wieder ein Klick: Der Schlüssel aus dem Link ist gemerkt.
+*Abmelden* wirft beide Anmeldungen weg, die echte wie die Test-Anmeldung, und
+vergisst den Schlüssel.
 
 Das Testtoken gilt zwölf Stunden. Läuft es ab, landest du wieder auf der
 Anmeldemaske.
@@ -156,14 +158,17 @@ Variable nach der Vorführung und deploye neu**; dann ist die Route wieder weg.
 
 ### 4. Anmelden
 
-Ein Link mit Auswahl:
+Ein Link, ein Klick:
 
 ```
 https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>
 ```
 
+Die Seite zeigt zwei Knöpfe, *Als Bauherr starten* und *Als Generalunternehmer
+starten*. Ein Klick genügt, ein Eingabefeld gibt es nicht.
+
 Oder je ein Link pro Person — steht die Rolle im Link, meldet die Seite direkt
-an, ohne Auswahl:
+an, ganz ohne Klick:
 
 ```
 https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>&role=bauherr
@@ -173,10 +178,14 @@ https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>&role=gu
 Für die Vorführung zu zweit: Einer nimmt den Bauherrn, der andere den
 Generalunternehmer, beide sehen dasselbe Bauvorhaben aus ihrer Rolle.
 
-Beide Links tragen denselben Schlüssel — wer einen davon hat, kommt über
-`/demo` auch in die andere Rolle. Für getrennte Zugänge im Wortsinn bräuchte es
-je Rolle einen eigenen Schlüssel; für eine Vorführung zu zweit ist das
-unnötig.
+Alle Links tragen denselben Schlüssel — wer einen davon hat, kommt über
+*Rolle wechseln* auch in die andere Rolle, ohne ihn erneut einzugeben. Der
+Browser merkt sich den Schlüssel dafür, und *Abmelden* vergisst ihn wieder.
+Für getrennte Zugänge im Wortsinn bräuchte es je Rolle einen eigenen Schlüssel;
+für eine Vorführung zu zweit ist das unnötig.
+
+Fehlt der Schlüssel im Link, etwa weil ein Messenger ihn abgeschnitten hat,
+sagt die Seite das und bietet ein Feld zum Einfügen an.
 
 ## Warum das vertretbar ist
 

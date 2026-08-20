@@ -13,6 +13,16 @@
 
 const STORAGE_KEY = 'mbl.demo-session';
 
+/**
+ * Der Schlüssel aus dem Link, gemerkt für den Rollenwechsel.
+ *
+ * „Rolle wechseln" führt zurück auf `/demo`, und dort steht kein `key` in der
+ * Adresse. Ohne dieses Gedächtnis stünde man vor einem Eingabefeld, obwohl man
+ * gerade angemeldet war. Der Schlüssel liegt damit im Browser, so wie er
+ * ohnehin in der Adresszeile und im Verlauf steht.
+ */
+const KEY_STORAGE = 'mbl.demo-key';
+
 export interface DemoSession {
   token: string;
   role: string;
@@ -43,7 +53,17 @@ export function writeDemoSession(session: DemoSession): void {
 
 export function clearDemoSession(): void {
   window.localStorage.removeItem(STORAGE_KEY);
+  // Abmelden räumt vollständig auf, sonst käme man ohne Link wieder hinein.
+  window.localStorage.removeItem(KEY_STORAGE);
   window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+export function readDemoKey(): string {
+  try {
+    return window.localStorage.getItem(KEY_STORAGE) ?? '';
+  } catch {
+    return '';
+  }
 }
 
 export function onDemoSessionChange(listener: () => void): () => void {
@@ -55,23 +75,6 @@ export function onDemoSessionChange(listener: () => void): () => void {
     window.removeEventListener(CHANGE_EVENT, listener);
     window.removeEventListener('storage', listener);
   };
-}
-
-export interface DemoIdentityInfo {
-  role: string;
-  label: string;
-  displayName: string;
-  projectRole: string;
-  explanation: string;
-}
-
-export async function fetchDemoIdentities(): Promise<DemoIdentityInfo[]> {
-  const response = await fetch('/api/demo/identities');
-  if (!response.ok) {
-    throw new Error('Der Testzugang ist auf diesem Server nicht eingeschaltet.');
-  }
-  const body = (await response.json()) as { identities: DemoIdentityInfo[] };
-  return body.identities;
 }
 
 export async function startDemoSession(role: string, key: string): Promise<DemoSession> {
@@ -89,5 +92,6 @@ export async function startDemoSession(role: string, key: string): Promise<DemoS
   }
 
   writeDemoSession(body);
+  window.localStorage.setItem(KEY_STORAGE, key);
   return body;
 }

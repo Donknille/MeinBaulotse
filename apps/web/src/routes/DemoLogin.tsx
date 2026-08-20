@@ -1,52 +1,58 @@
 /**
  * Die Tür für Vorführung und Test.
  *
- * Erreichbar unter `/demo?key=…`. Der Schlüssel steht im Link, damit ein
- * Zugang verschickt werden kann, ohne dass es dafür einen Mailversand braucht
- * — genau das Loch, das diese Seite überbrückt.
+ * Erreichbar unter `/demo?key=…`. Der Schlüssel steht im Link, damit ein Zugang
+ * verschickt werden kann, ohne dass es dafür einen Mailversand braucht — genau
+ * das Loch, das diese Seite überbrückt.
  *
- * Zwei Knöpfe, zwei Rollen, derselbe Bildschirm dahinter: So lässt sich
- * prüfen, was der Generalunternehmer sieht und was der Bauherr sieht.
+ * Wer den Link hat, ist einen Klick entfernt: zwei Rollen, zwei Knöpfe. Ein
+ * Eingabefeld erscheint nur, wenn im Link kein Schlüssel steht, etwa weil ein
+ * Messenger ihn abgeschnitten hat.
  *
- * Steht zusätzlich `&role=…` im Link, meldet die Seite direkt an. Damit wird
- * aus der Auswahl ein fester Zugang je Person: Der eine bekommt den Link des
- * Bauherrn, der andere den des Generalunternehmers.
+ * Die beiden Rollen stehen **hier** und werden nicht vom Server geholt. Das ist
+ * kein Geiz, sondern eine Lehre: Solange die Seite dafür auf eine Antwort
+ * wartete, blieb sie bei „Einen Moment." stehen, sobald die API einmal nicht
+ * antwortete. Für die Darstellung von zwei festen Knöpfen braucht es keinen
+ * Netzaufruf. Ob der Zugang wirklich offen ist, entscheidet ohnehin erst der
+ * Klick, und dann sagt es die Antwort im Klartext.
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, Field, TextInput } from '../components/ui';
-import { fetchDemoIdentities, startDemoSession, type DemoIdentityInfo } from '../lib/demo-auth';
+import { readDemoKey, startDemoSession } from '../lib/demo-auth';
 import { Topmark } from './SignIn';
+
+interface DemoRole {
+  role: string;
+  action: string;
+  person: string;
+}
+
+/** Dieselben zwei Identitäten wie in `apps/api/src/demo.ts`. */
+const ROLES: readonly DemoRole[] = [
+  { role: 'bauherr', action: 'Als Bauherr starten', person: 'Familie Sonnenweg' },
+  {
+    role: 'gu',
+    action: 'Als Generalunternehmer starten',
+    person: 'Jörg Baumeister, Baumeister Bau GmbH',
+  },
+];
 
 export function DemoLogin() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
-  const [key, setKey] = useState(params.get('key') ?? '');
-  const [identities, setIdentities] = useState<DemoIdentityInfo[] | null>(null);
+  // Der Link hat Vorrang; sonst der Schlüssel von der letzten Anmeldung, damit
+  // „Rolle wechseln" ohne erneute Eingabe auskommt.
+  const [key, setKey] = useState(() => params.get('key') ?? readDemoKey());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   // Der Sprung darf sich nicht wiederholen, auch nicht beim doppelten Aufruf
   // der Effekte im Entwicklungsmodus.
   const jumped = useRef(false);
 
-  useEffect(() => {
-    fetchDemoIdentities().then(setIdentities, (cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : 'Der Testzugang antwortet nicht.');
-    });
-  }, []);
-
-  useEffect(() => {
-    const wanted = params.get('role');
-    if (wanted === null || wanted === '' || key.trim() === '' || jumped.current) return;
-    jumped.current = true;
-    // Absichtlich nur beim ersten Aufbau: Der Link entscheidet, nicht jede
-    // spätere Eingabe im Schlüsselfeld.
-    void enter(wanted);
-  }, []);
-
-  async function enter(role: string, event?: FormEvent) {
+  async function enter(role: string, event?: FormEvent): Promise<void> {
     event?.preventDefault();
     setBusy(role);
     setError(null);
@@ -60,6 +66,17 @@ export function DemoLogin() {
     }
   }
 
+  useEffect(() => {
+    const wanted = params.get('role');
+    if (wanted === null || wanted === '' || key.trim() === '' || jumped.current) return;
+    jumped.current = true;
+    // Absichtlich nur beim ersten Aufbau: Der Link entscheidet, nicht jede
+    // spätere Eingabe im Schlüsselfeld. Scheitert es, bleiben die Knöpfe.
+    void enter(wanted);
+  }, []);
+
+  const hasKey = key.trim() !== '';
+
   return (
     <main className="dotted-canvas flex min-h-dvh items-center justify-center px-4 py-16">
       <div className="w-full max-w-[30rem]">
@@ -67,49 +84,45 @@ export function DemoLogin() {
           <Topmark />
           <h1 className="display-title text-heading-lg text-charcoal">Testzugang</h1>
           <p className="text-body-lg text-steel">
-            Zwei feste Zugänge auf dasselbe Bauvorhaben. Wähl die Rolle, aus der du schauen willst —
-            wechseln kannst du jederzeit.
+            {hasKey
+              ? 'Dasselbe Bauvorhaben aus zwei Sichten. Wähl deine Rolle — wechseln kannst du jederzeit.'
+              : 'Dieser Link ist nicht vollständig.'}
           </p>
         </div>
 
         <Card className="flex flex-col gap-4">
-          <form onSubmit={(event) => void enter(identities?.[0]?.role ?? 'bauherr', event)}>
-            <Field label="Zugangsschlüssel" hint="Steht im Link. Ohne ihn bleibt die Tür zu.">
-              <TextInput
-                type="password"
-                autoComplete="off"
-                value={key}
-                onChange={(event) => setKey(event.target.value)}
-                placeholder="aus deiner .env"
-              />
-            </Field>
-          </form>
-
-          {identities === null || (busy !== null && jumped.current) ? (
-            <p className="text-body text-steel">Einen Moment.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {identities.map((identity) => (
-                <li key={identity.role}>
-                  <Card tone="muted" className="flex flex-col gap-3">
-                    <div>
-                      <p className="text-body-lg font-medium text-charcoal">
-                        {identity.label} · {identity.displayName}
-                      </p>
-                      <p className="mt-1 text-body text-steel">{identity.explanation}</p>
-                    </div>
-                    <Button
-                      variant="primary"
-                      size="field"
-                      disabled={busy !== null || key.trim() === ''}
-                      onClick={() => void enter(identity.role)}
-                    >
-                      {busy === identity.role ? 'Einen Moment.' : `Als ${identity.label} anmelden`}
-                    </Button>
-                  </Card>
-                </li>
+          {hasKey ? (
+            <div className="flex flex-col gap-3">
+              {ROLES.map((entry) => (
+                <div key={entry.role} className="flex flex-col gap-1">
+                  <Button
+                    variant="primary"
+                    size="field"
+                    disabled={busy !== null}
+                    onClick={() => void enter(entry.role)}
+                  >
+                    {busy === entry.role ? 'Einen Moment.' : entry.action}
+                  </Button>
+                  <p className="text-caption text-steel">{entry.person}</p>
+                </div>
               ))}
-            </ul>
+            </div>
+          ) : (
+            // Der seltene Fall: Der Schlüssel fehlt im Link. Statt einer
+            // Sackgasse ein Feld, in das er sich einfügen lässt.
+            <form className="flex flex-col gap-4" onSubmit={(event) => void enter('bauherr', event)}>
+              <Field
+                label="Zugangsschlüssel"
+                hint="Er steht im Link hinter key=. Frag nach dem vollständigen Link, wenn du ihn nicht hast."
+              >
+                <TextInput
+                  autoComplete="off"
+                  value={key}
+                  onChange={(event) => setKey(event.target.value)}
+                  placeholder="Schlüssel einfügen"
+                />
+              </Field>
+            </form>
           )}
 
           {error !== null ? <p className="text-body text-alarm-red">{error}</p> : null}
