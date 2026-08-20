@@ -18,7 +18,8 @@
     "db:up": "docker compose up -d db",
     "db:reset": "pnpm --filter @meinbaulotse/db reset",
     "db:test": "pnpm --filter @meinbaulotse/db test",
-    "demo:seed": "pnpm --filter @meinbaulotse/api demo:seed"
+    "demo:seed": "pnpm --filter @meinbaulotse/api demo:seed",
+    "demo:sql": "pnpm --filter @meinbaulotse/api demo:sql"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

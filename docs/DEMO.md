@@ -92,24 +92,77 @@ Ein zweiter Aufruf bei bestehender Demolage ändert nichts: Ein Projekt lässt
 sich nicht löschen, solange `schedule_change` daran hängt, denn diese Historie
 ist append-only. Für einen frischen Plan `pnpm db:reset && pnpm demo:seed`.
 
-## Auf Vercel einschalten — nur in *Preview*
+## Online vorführen: Supabase und Vercel
 
-1. In Vercel unter Settings → Environment Variables `DEMO_LOGIN_KEY` anlegen
-   und **nur bei Preview** anhaken. In *Production* bleibt die Variable leer;
-   dann gibt es die Route dort nicht (sie antwortet mit 404 wie jede unbekannte
-   Adresse).
-2. Im Staging-Supabase unter Authentication → Users die beiden Demo-Nutzer
-   anlegen (*Auto Confirm*), mit genau diesen Kennungen:
+Der Weg ohne einen einzigen Befehl auf deinem Rechner. Reihenfolge einhalten —
+die Datenlage muss stehen, bevor sich jemand anmeldet.
 
-   | Kennung | Adresse |
-   |---|---|
-   | `11111111-1111-4111-8111-111111111111` | `bauherr@demo.meinbaulotse.de` |
-   | `22222222-2222-4222-8222-222222222222` | `gu@demo.meinbaulotse.de` |
+### 1. Datenlage in Supabase anlegen
 
-   Die Kennungen sind fest verdrahtet (`apps/api/src/demo.ts`), damit die
-   Anmeldung ohne Datenbankzugriff auskommt.
-3. `DATABASE_URL` auf das Staging-Projekt zeigen lassen und einmal
-   `pnpm demo:seed` laufen lassen.
+Voraussetzung: Die Dateien aus `supabase/migrations` sind in diesem Projekt
+eingespielt (siehe `docs/SETUP.md`, Abschnitt 2).
+
+Dann im Dashboard: **SQL Editor → New query**, den Inhalt von
+[`docs/demo-seed.sql`](demo-seed.sql) einfügen, **Run**.
+
+Das Skript legt die beiden Demo-Nutzer, das Bauvorhaben, beide Mitgliedschaften,
+38 Vorgänge und 43 Abhängigkeiten an. Am Ende zeigt es eine Gegenprobe:
+
+```
+bauvorhaben          | beteiligte | vorgaenge | abhaengigkeiten | errechnetes_ende
+Musterhaus Sonnenweg |          2 |        38 |              43 | …
+```
+
+Ein zweiter Lauf ändert nichts und bricht nicht ab. Gelöscht wird nie —
+`schedule_change` ist append-only.
+
+Das Skript schreibt bewusst nicht als Datenbankeigentümer: Es setzt den
+JWT-Claim des Bauherrn und wechselt auf die Rolle `authenticated`. Damit greifen
+dieselben Policies wie im Betrieb, und die Historie nennt einen Verursacher
+statt einer Leerstelle. Wer einen anderen Baustart braucht, ruft `pnpm demo:sql`
+auf und erzeugt das Skript neu.
+
+### 2. Umgebungsvariablen in Vercel
+
+Settings → Environment Variables. Vier Variablen braucht die Anwendung ohnehin,
+die fünfte schaltet den Testzugang frei:
+
+| Variable | Wert |
+|---|---|
+| `DATABASE_URL` | Transaction-Pooler des Projekts, Port 6543 |
+| `SUPABASE_JWT_SECRET` | Settings → JWT Keys → Legacy JWT Secret |
+| `VITE_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Settings → API Keys |
+| `DEMO_LOGIN_KEY` | dein Schlüssel, mindestens 16 Zeichen |
+
+`SUPABASE_JWT_SECRET` ist hier nicht optional: Mit genau diesem Geheimnis
+unterschreibt der Testzugang seine Token, und mit ihm prüft die API sie.
+Stimmt es nicht, endet jede Anmeldung in „Deine Anmeldung ist abgelaufen".
+
+**Nach dem Eintragen neu deployen.** Umgebungsvariablen wirken nicht
+rückwirkend, und die beiden `VITE_`-Werte werden beim Bauen ins Bundle gebacken.
+
+### 3. Wo der Zugang liegt
+
+Sauberer ist *Preview*: Dann gibt es die Tür in der Produktionsumgebung gar
+nicht. Achte aber darauf, dass **Deployment Protection** für Previews
+abgeschaltet ist — sonst steht dein Gast vor der Vercel-Anmeldung statt vor der
+Anwendung.
+
+Willst du unter der Produktionsadresse vorführen, trägst du `DEMO_LOGIN_KEY` in
+*Production* ein. Das ist vertretbar, solange der Schlüssel lang ist und du ihn
+danach wieder entfernst — die drei Riegel unten gelten dort genauso. **Lösch die
+Variable nach der Vorführung und deploye neu**; dann ist die Route wieder weg.
+
+### 4. Anmelden
+
+```
+https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>
+```
+
+Link öffnen, Rolle wählen. Für die Vorführung zu zweit: Einer nimmt den
+Bauherrn, der andere den Generalunternehmer, beide sehen dasselbe Bauvorhaben
+aus ihrer Rolle.
 
 ## Warum das vertretbar ist
 
@@ -132,8 +185,10 @@ Wenn der Mailversand steht, fällt der Zugang in einem Rutsch weg:
 ```
 apps/api/src/demo.ts
 apps/api/scripts/demo.ts
+apps/api/scripts/demo-sql.ts
 apps/web/src/lib/demo-auth.ts
 apps/web/src/routes/DemoLogin.tsx
+docs/demo-seed.sql
 ```
 
 dazu die vier Stellen, die darauf verweisen: `apps/api/src/app.ts`,
