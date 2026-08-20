@@ -6,7 +6,8 @@
   "exports": {
     ".": {
       "types": "./dist/app.d.ts",
-      "import": "./dist/app.js"
+      "import": "./dist/app.js",
+      "default": "./dist/app.js"
     }
   },
   "scripts": {

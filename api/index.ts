@@ -6,8 +6,8 @@
  * weder eine CORS-Schicht noch eine Basis-URL, die zwischen den Umgebungen
  * abweichen könnte.
  *
- * Vier Dinge sind hier nicht frei wählbar, und jedes hat schon einmal einen
- * ganzen Betrieb lahmgelegt:
+ * Fünf Dinge sind hier nicht frei wählbar. Jedes davon hat den Betrieb schon
+ * einmal lahmgelegt, und jedes meldet sich mit einem anderen Symptom:
  *
  * 1. **Der Dateiname.** Ohne Framework erkennt Vercel im Ordner `api/` nur
  *    eine Datei mit einem echten Pfad als Namen. `[[...route]].ts` ist eine
@@ -17,38 +17,34 @@
  *    …`) sind ebenfalls Next.js. Hier zählt ausschließlich `export default`.
  * 3. **Der Adapter.** Vercels Node-Runtime ruft die Funktion mit `(req, res)`
  *    aus `node:http` auf. Deshalb `@hono/node-server/vercel` und nicht
- *    `hono/vercel`: Letzterer gibt einen Handler zurück, der ein
- *    Web-`Request`-Objekt erwartet.
- * 4. **`api/package.json` mit `"type": "commonjs"`.** Der Projektstamm ist
- *    ESM, also bündelt Vercel auch diese Funktion als ESM. Dabei wandert `pg`
- *    mit hinein, das CommonJS ist und intern `require` benutzt. In einem
+ *    `hono/vercel`: Letzterer erwartet ein Web-`Request`-Objekt und stirbt
+ *    mit FUNCTION_INVOCATION_FAILED.
+ * 4. **Der Import geht auf `@meinbaulotse/api`, nicht auf `../apps/api/src`.**
+ *    Vercel bündelt diese Datei nicht, sondern übersetzt sie und legt die
+ *    Abhängigkeiten daneben. Ein relativer Pfad in den TypeScript-Quelltext
+ *    eines anderen Pakets ist zur Laufzeit nicht auflösbar:
+ *    `Cannot find module '/var/task/apps/api/src/app'`. Über den Paketnamen
+ *    landet der Import im gebauten `dist`, deshalb baut `vercel.json` auch
+ *    `@meinbaulotse/api`.
+ * 5. **`api/package.json` mit `"type": "commonjs"`.** Der Projektstamm ist
+ *    ESM. Sollte Vercel diese Datei doch einmal bündeln, wandert `pg` mit
+ *    hinein, das CommonJS ist und intern `require` benutzt. In einem
  *    ESM-Bündel gibt es kein `require`, und der Kaltstart bricht ab mit
  *    `Dynamic require of "events" is not supported`.
  *
- * Die Anwendung wird bewusst **im Handler** geladen, nicht im Modulkopf. Ein
- * Fehler beim Laden würde sonst die ganze Funktion töten, und Vercel
- * antwortete mit `FUNCTION_INVOCATION_FAILED` ohne einen Hinweis darauf, was
- * eigentlich fehlt. So steht der Grund als JSON in der Antwort, lesbar ohne
- * Zugriff auf die Logs.
- *
- * Der Import bewusst ohne `.js`-Endung. Für `tsc` wäre sie richtig, aber
- * esbuild in Vercels Node-Builder löst sie nicht zuverlässig auf die
- * `.ts`-Datei auf.
+ * Die Anwendung wird beim ersten Aufruf gebaut, innerhalb von `try/catch`.
+ * Scheitert das, antwortet die Funktion mit JSON und nennt den Grund, statt
+ * dass Vercel eine nackte Plattformmeldung zeigt. Diese Diagnose hat genau
+ * den Fehler unter Punkt 4 sichtbar gemacht.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handle } from '@hono/node-server/vercel';
+import { createApp } from '@meinbaulotse/api';
 
 type NodeHandler = (request: IncomingMessage, response: ServerResponse) => void | Promise<void>;
 
 let handler: NodeHandler | undefined;
-
-async function load(): Promise<NodeHandler> {
-  if (handler !== undefined) return handler;
-  const { createApp } = await import('../apps/api/src/app');
-  handler = handle(createApp()) as NodeHandler;
-  return handler;
-}
 
 /**
  * Zugangsdaten dürfen nicht in einer Fehlermeldung landen. Postgres-Adressen
@@ -63,7 +59,8 @@ export default async function vercelHandler(
   response: ServerResponse,
 ): Promise<void> {
   try {
-    await (await load())(request, response);
+    handler ??= handle(createApp()) as NodeHandler;
+    await handler(request, response);
   } catch (error) {
     console.error('Die API konnte nicht starten:', error);
     if (response.headersSent) {

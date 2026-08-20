@@ -11,6 +11,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.17(hono@4.13.3)
+      '@meinbaulotse/api':
+        specifier: workspace:*
+        version: link:apps/api
       hono:
         specifier: ^4.6.16
         version: 4.13.3

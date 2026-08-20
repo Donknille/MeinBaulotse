@@ -6,6 +6,5 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["**/*.ts", "../apps/api/src/**/*.ts"],
-  "exclude": ["../apps/api/src/**/*.test.ts"]
+  "include": ["**/*.ts"]
 }
