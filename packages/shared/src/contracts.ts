@@ -247,12 +247,12 @@ export const taskPatchRequest = z
     confirmation: confirmationLevel.optional(),
     reasonCode: changeReason.optional(),
     reasonText: z.string().trim().max(500).optional(),
-    /**
-     * Sollen die Folgevorgänge mitwandern? Standard ja — ein Bauablauf, in dem
-     * der Estrich sich verschiebt und die Fliesen stehen bleiben, ist keiner.
-     */
-    propagate: z.boolean().default(true),
   })
+  // Kein Schalter für „ohne Fortpflanzung": Die Folgevorgänge wandern immer
+  // mit. Ein Bauablauf, in dem sich der Estrich verschiebt und die Fliesen
+  // stehen bleiben, ist keiner. Die Einzelentkopplung aus Abschnitt 3.5 ist
+  // etwas anderes — sie hängt an der einzelnen Anordnungsbeziehung, nicht an
+  // einem Häkchen bei der Verschiebung, und kommt mit ihr.
   .refine(
     (value) =>
       value.currentStart !== undefined ||

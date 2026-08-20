@@ -93,7 +93,6 @@ export function TaskSheet({
 
   function submitSchedule(): void {
     const input: TaskPatchRequest = {
-      propagate: true,
       reasonCode: reason,
       ...(reasonText.trim() === '' ? {} : { reasonText: reasonText.trim() }),
       ...(start === '' || start === task.currentStart ? {} : { currentStart: start }),
@@ -108,7 +107,6 @@ export function TaskSheet({
 
   function submitActuals(): void {
     patch.mutate({
-      propagate: true,
       reasonCode: 'sonstiges',
       actualStart: actualStart === '' ? null : actualStart,
       actualEnd: actualEnd === '' ? null : actualEnd,
@@ -287,7 +285,7 @@ export function TaskSheet({
               <Button
                 variant="outline"
                 size="field"
-                onClick={() => patch.mutate({ propagate: true, confirmation: 'mutual' })}
+                onClick={() => patch.mutate({ confirmation: 'mutual' })}
                 disabled={patch.isPending}
               >
                 Als abgestimmt eintragen
