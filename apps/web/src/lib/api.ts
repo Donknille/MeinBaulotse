@@ -10,18 +10,35 @@ import type { OnboardingRequest, ProjectSchedule, ProjectSummary } from '@meinba
 import { clearDemoSession, readDemoSession } from './demo-auth';
 import { supabase } from './supabase';
 
+/** Wie `describeConnection()` in `packages/db` sie beschreibt. */
+export interface ConnectionShape {
+  configured: boolean;
+  port: number | null;
+  tls: boolean;
+  poolerUser: boolean;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly hint: string | undefined;
   /** Der technische Grund, maskiert von der API. Nur bei 500 gesetzt. */
   readonly detail: string | undefined;
+  /** Die Form der Datenbankadresse, ohne Host, Benutzer oder Passwort. */
+  readonly connection: ConnectionShape | undefined;
 
-  constructor(status: number, message: string, hint?: string, detail?: string) {
+  constructor(
+    status: number,
+    message: string,
+    hint?: string,
+    detail?: string,
+    connection?: ConnectionShape,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.hint = hint;
     this.detail = detail;
+    this.connection = connection;
   }
 }
 
@@ -59,6 +76,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       error?: string;
       hint?: string;
       detail?: string;
+      connection?: ConnectionShape;
     } | null;
     // Ohne JSON-Körper bleibt nur der Statuscode — und der ist mehr wert als
     // ein allgemeiner Satz: Ein 502 vom Router und ein 401 der API führen zu
@@ -68,6 +86,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       body?.error ?? `Der Server hat mit ${response.status} geantwortet.`,
       body?.hint,
       body?.detail,
+      body?.connection,
     );
   }
 

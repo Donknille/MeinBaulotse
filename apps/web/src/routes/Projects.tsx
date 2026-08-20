@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { Button, Card, EmptyState, Pill } from '../components/ui';
 import { FEDERAL_STATE_LABEL, formatDate } from '../lib/format';
-import { ApiError, api, type Identity } from '../lib/api';
+import { ApiError, api, type ConnectionShape, type Identity } from '../lib/api';
 import { Topmark } from './SignIn';
 import { signOut } from '../lib/supabase';
 import { clearDemoSession, readDemoKey, readDemoSession } from '../lib/demo-auth';
@@ -153,6 +153,27 @@ function SeenIdentity({
   );
 }
 
+/**
+ * Aus der Form der Datenbankadresse einen nächsten Schritt machen.
+ *
+ * Die beiden Supabase-Adressen sehen einander ähnlich und verhalten sich
+ * gegensätzlich: Die Direktverbindung auf Port 5432 ist nur über IPv6 zu
+ * haben und von einer Vercel-Function deshalb gar nicht erreichbar; der
+ * Transaction-Pooler auf 6543 verlangt `postgres.<projektkennung>` als
+ * Benutzernamen. Beides steht hier, damit niemand es sich zusammenreimen muss.
+ */
+function connectionAdvice(shape: ConnectionShape | undefined): string | undefined {
+  if (shape === undefined) return undefined;
+  if (!shape.configured) return 'DATABASE_URL ist in dieser Umgebung nicht gesetzt.';
+  if (shape.port === 5432 && !shape.poolerUser) {
+    return 'Eingetragen ist die Direktverbindung (Port 5432). Sie ist nur über IPv6 erreichbar, von hier aus also nicht — nimm den Transaction-Pooler auf Port 6543.';
+  }
+  if (shape.port === 6543 && !shape.poolerUser) {
+    return 'Pooler-Adresse (Port 6543), aber der Benutzername trägt keine Projektkennung. Der Pooler verlangt postgres.<projektkennung>.';
+  }
+  return `Eingetragen ist Port ${shape.port ?? 'ohne Angabe'}${shape.tls ? ' mit TLS' : ' ohne TLS'}.`;
+}
+
 /** Schlechte Nachricht mit nächstem Schritt — CI, Abschnitt Tonalität. */
 function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const reason = error instanceof ApiError ? error.message : 'Die Verbindung kam nicht zustande.';
@@ -161,6 +182,7 @@ function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
   // nicht nur im Protokoll: Ohne ihn ist von außen nicht zu unterscheiden, ob
   // die Datenbank nicht antwortet oder ob eine Abfrage schiefging.
   const detail = error instanceof ApiError ? error.detail : undefined;
+  const advice = error instanceof ApiError ? connectionAdvice(error.connection) : undefined;
 
   return (
     <div className="flex flex-col items-start gap-3 py-8">
@@ -171,6 +193,9 @@ function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
       {hint !== undefined ? <p className="max-w-[34rem] text-caption text-steel">{hint}</p> : null}
       {detail !== undefined ? (
         <p className="max-w-[34rem] font-mono text-caption break-words text-steel">{detail}</p>
+      ) : null}
+      {advice !== undefined ? (
+        <p className="max-w-[34rem] text-caption text-steel">{advice}</p>
       ) : null}
       <Button variant="primary" size="field" onClick={onRetry}>
         Erneut versuchen

@@ -277,6 +277,10 @@ export function createApp(): Hono<App> {
         error: 'Das hat nicht geklappt.',
         hint: 'Versuch es bitte noch einmal. Bleibt es dabei, melde dich bei uns.',
         detail: withoutSecrets(error instanceof Error ? error.message : String(error)),
+        // Auch hier, nicht nur unter /api/health/db: Wer einen Fehler sieht,
+        // erreicht womoeglich keine zweite Adresse mehr. Die Auskunft muss an
+        // der Stelle stehen, an der der Fehler auftaucht.
+        connection: describeConnection(),
       },
       500,
     );
