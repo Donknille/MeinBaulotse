@@ -12169,7 +12169,13 @@ function describeConnection(connectionString = process.env["DATABASE_URL"]) {
       poolerUser: decodeURIComponent(url.username).includes(".")
     };
   } catch {
-    return { configured: true, port: null, tls: true, verifyTls: !verificationDisabled(), poolerUser: false };
+    return {
+      configured: true,
+      port: null,
+      tls: true,
+      verifyTls: !verificationDisabled(),
+      poolerUser: false
+    };
   }
 }
 function verificationDisabled() {
@@ -13014,6 +13020,29 @@ var confirmationLevel = external_exports.enum([
   "mutual",
   "disputed"
 ]);
+var scheduleChangeReason = external_exports.enum([
+  "witterung",
+  "lieferzeit",
+  "kapazitaet",
+  "planungsaenderung",
+  "bauherren_entscheidung",
+  "vorgewerk_verzug",
+  "behoerde",
+  "mangelbeseitigung",
+  "nachtrag",
+  "sonstiges"
+]);
+var taskUpdateRequest = external_exports.object({
+  earliestStart: isoDate.nullable().optional(),
+  actualStart: isoDate.nullable().optional(),
+  actualEnd: isoDate.nullable().optional(),
+  status: taskStatus.optional(),
+  reason: scheduleChangeReason.optional(),
+  reasonText: external_exports.string().trim().max(500).optional()
+}).refine((value) => value.earliestStart !== void 0 || value.actualStart !== void 0 || value.actualEnd !== void 0 || value.status !== void 0, { message: "Es gibt nichts zu \xE4ndern." }).refine((value) => value.earliestStart === void 0 || value.reason !== void 0, {
+  message: "F\xFCr eine Verschiebung brauchen wir den Grund.",
+  path: ["reason"]
+});
 var onboardingRequest = external_exports.object({
   /** Frage 0, nicht gezählt: Wie soll das Projekt heißen? */
   name: external_exports.string().trim().min(2).max(120),
@@ -13058,6 +13087,8 @@ var scheduledTask = external_exports.object({
   currentEnd: isoDate.nullable(),
   baselineStart: isoDate.nullable(),
   baselineEnd: isoDate.nullable(),
+  /** Von Hand gesetzt: nicht früher als. `null` heißt: frei gerechnet. */
+  earliestStart: isoDate.nullable(),
   actualStart: isoDate.nullable(),
   actualEnd: isoDate.nullable(),
   status: taskStatus,
@@ -14597,6 +14628,109 @@ async function createProjectFromAnswers(tx, claims, answers) {
   };
 }
 
+// src/scheduling.ts
+async function loadPlan(tx, projectId) {
+  const project = await tx.query(
+    `select federal_state, catholic_municipality, planned_start, contractual_completion
+     from project where id = $1`,
+    [projectId]
+  );
+  const head = project.rows[0];
+  if (head === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const tasks = await tx.query(
+    `select t.id, t.duration_days, t.duration_unit, t.is_milestone, t.is_wait,
+            tr.code as trade_code, t.earliest_start, t.actual_start, t.actual_end,
+            t.current_start, t.current_end, t.total_float_days, t.is_critical
+     from task t
+     left join trade tr on tr.id = t.trade_id
+     where t.project_id = $1
+     order by t.sort_order`,
+    [projectId]
+  );
+  const dependencies = await tx.query(
+    `select predecessor_id, successor_id, type, lag_days, lag_unit
+     from dependency where project_id = $1`,
+    [projectId]
+  );
+  return {
+    rows: tasks.rows,
+    tasks: tasks.rows.map((row) => ({
+      id: row.id,
+      durationDays: row.duration_days,
+      durationUnit: row.duration_unit,
+      isMilestone: row.is_milestone,
+      isWait: row.is_wait,
+      ...row.trade_code === null ? {} : { tradeCode: row.trade_code },
+      ...row.earliest_start === null ? {} : { earliestStart: row.earliest_start },
+      ...row.actual_start === null ? {} : { actualStart: row.actual_start },
+      ...row.actual_end === null ? {} : { actualEnd: row.actual_end }
+    })),
+    dependencies: dependencies.rows.map((row) => ({
+      predecessorId: row.predecessor_id,
+      successorId: row.successor_id,
+      type: row.type,
+      lagDays: row.lag_days,
+      lagUnit: row.lag_unit
+    })),
+    calendar: {
+      federalState: head.federal_state,
+      catholicMunicipality: head.catholic_municipality
+    },
+    projectStart: head.planned_start,
+    contractualEnd: head.contractual_completion
+  };
+}
+async function recomputeProject(tx, projectId) {
+  const plan = await loadPlan(tx, projectId);
+  if (plan.tasks.length === 0) {
+    throw new HTTPException(409, {
+      message: "Dieses Bauvorhaben hat noch keine Vorg\xE4nge."
+    });
+  }
+  const schedule = computeSchedule({
+    tasks: plan.tasks,
+    dependencies: plan.dependencies,
+    calendar: plan.calendar,
+    projectStart: plan.projectStart
+  });
+  const floats = criticalPath({
+    tasks: plan.tasks,
+    dependencies: plan.dependencies,
+    calendar: plan.calendar,
+    schedule,
+    // Der Puffer misst gegen den eigenen Plan, die Abweichung gegen den
+    // Vertrag. Zwei Zahlen, zwei Fragen — siehe backward-pass.ts.
+    floatsAgainst: "plan",
+    ...plan.contractualEnd === null ? {} : { contractualEnd: plan.contractualEnd }
+  });
+  let movedTasks = 0;
+  for (const row of plan.rows) {
+    const scheduled = schedule.tasks.get(row.id);
+    const float = floats.floats.get(row.id);
+    const nextFloat = float?.totalFloatDays ?? null;
+    const nextCritical = float?.isCritical ?? false;
+    const termineGleich = row.current_start === scheduled.start && row.current_end === scheduled.end;
+    if (termineGleich && row.total_float_days === nextFloat && row.is_critical === nextCritical) {
+      continue;
+    }
+    if (!termineGleich) movedTasks += 1;
+    await tx.query(
+      `update task
+          set current_start = $2, current_end = $3,
+              total_float_days = $4, is_critical = $5
+        where id = $1`,
+      [row.id, scheduled.start, scheduled.end, nextFloat, nextCritical]
+    );
+  }
+  return {
+    movedTasks,
+    computedEnd: schedule.projectEnd,
+    deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays
+  };
+}
+
 // src/app.ts
 var uuid = external_exports.string().uuid();
 var HEALTH_PROBE_USER = "00000000-0000-0000-0000-000000000000";
@@ -14703,34 +14837,54 @@ function createApp() {
     const tasks = await withUserTx(c.get("claims"), (tx) => loadTasks(tx, projectId));
     return c.json({ tasks });
   });
+  v1.patch("/projects/:id/tasks/:taskId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const change = parsed.data;
+    const schedule = await withUserTx(
+      c.get("claims"),
+      async (tx) => {
+        const felder = [];
+        const werte = [taskId, projectId];
+        const setze = (spalte, wert) => {
+          werte.push(wert);
+          felder.push(`${spalte} = $${werte.length}`);
+        };
+        if (change.earliestStart !== void 0) setze("earliest_start", change.earliestStart);
+        if (change.actualStart !== void 0) setze("actual_start", change.actualStart);
+        if (change.actualEnd !== void 0) setze("actual_end", change.actualEnd);
+        if (change.status !== void 0) setze("status", change.status);
+        const result = await tx.query(
+          `update task set ${felder.join(", ")} where id = $1 and project_id = $2`,
+          werte
+        );
+        if (result.rowCount === 0) {
+          throw new HTTPException(404, {
+            message: "Diesen Vorgang gibt es in deinem Bauvorhaben nicht."
+          });
+        }
+        await recomputeProject(tx, projectId);
+        return loadSchedule(tx, projectId);
+      },
+      {
+        // Der Grund wandert über die Transaktion in jeden Historieneintrag,
+        // den der Trigger schreibt.
+        ...change.reason === void 0 ? {} : { changeReason: change.reason },
+        ...change.reasonText === void 0 || change.reasonText === "" ? {} : { changeReasonText: change.reasonText }
+      }
+    );
+    return c.json(schedule);
+  });
   v1.get("/projects/:id/schedule", async (c) => {
     const projectId = parseId(c.req.param("id"));
-    const schedule = await withUserTx(c.get("claims"), async (tx) => {
-      const project = await loadProject(tx, projectId);
-      const permissions = await loadPermissions(tx, projectId);
-      const tasks = await loadTasks(tx, projectId);
-      const phases = await loadPhases(tx, projectId);
-      const ends = tasks.map((task) => task.currentEnd).filter((end) => end !== null);
-      const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => a > b ? a : b);
-      let deviationWorkdays = null;
-      if (project.contractualCompletion !== null && computedEnd !== null) {
-        const calendar = await calendarOf(tx, projectId);
-        deviationWorkdays = workdayDifference(
-          workdayOffset(project.contractualCompletion, 1, calendar),
-          workdayOffset(computedEnd, 1, calendar),
-          calendar
-        );
-      }
-      return {
-        project,
-        permissions,
-        phases,
-        tasks,
-        computedEnd,
-        contractualEnd: project.contractualCompletion,
-        deviationWorkdays
-      };
-    });
+    const schedule = await withUserTx(c.get("claims"), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
   });
   app.route("/v1", v1);
@@ -14815,7 +14969,7 @@ async function loadTasks(tx, projectId) {
     `select t.id, t.name, t.phase_key, tr.code as trade_code, tr.name as trade_name,
             t.sort_order, t.is_milestone, t.is_wait, t.duration_days, t.duration_unit,
             t.current_start, t.current_end, t.baseline_start, t.baseline_end,
-            t.actual_start, t.actual_end, t.status, t.confirmation,
+            t.earliest_start, t.actual_start, t.actual_end, t.status, t.confirmation,
             t.total_float_days, t.is_critical
      from task t
      left join trade tr on tr.id = t.trade_id
@@ -14838,6 +14992,7 @@ async function loadTasks(tx, projectId) {
     currentEnd: row.current_end,
     baselineStart: row.baseline_start,
     baselineEnd: row.baseline_end,
+    earliestStart: row.earliest_start,
     actualStart: row.actual_start,
     actualEnd: row.actual_end,
     status: row.status,
@@ -14845,6 +15000,32 @@ async function loadTasks(tx, projectId) {
     totalFloatDays: row.total_float_days,
     isCritical: row.is_critical
   }));
+}
+async function loadSchedule(tx, projectId) {
+  const project = await loadProject(tx, projectId);
+  const permissions = await loadPermissions(tx, projectId);
+  const tasks = await loadTasks(tx, projectId);
+  const phases = await loadPhases(tx, projectId);
+  const ends = tasks.map((task) => task.currentEnd).filter((end) => end !== null);
+  const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => a > b ? a : b);
+  let deviationWorkdays = null;
+  if (project.contractualCompletion !== null && computedEnd !== null) {
+    const calendar = await calendarOf(tx, projectId);
+    deviationWorkdays = workdayDifference(
+      workdayOffset(project.contractualCompletion, 1, calendar),
+      workdayOffset(computedEnd, 1, calendar),
+      calendar
+    );
+  }
+  return {
+    project,
+    permissions,
+    phases,
+    tasks,
+    computedEnd,
+    contractualEnd: project.contractualCompletion,
+    deviationWorkdays
+  };
 }
 async function calendarOf(tx, projectId) {
   const result = await tx.query("select federal_state, catholic_municipality from project where id = $1", [projectId]);

@@ -18,6 +18,7 @@ import {
 } from '@meinbaulotse/schedule';
 import {
   onboardingRequest,
+  taskUpdateRequest,
   type PhaseProgress,
   type ProjectSchedule,
   type ProjectSummary,
@@ -26,6 +27,7 @@ import {
 import { requireAuth, type AuthedVariables } from './auth.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { createProjectFromAnswers } from './onboarding.js';
+import { recomputeProject } from './scheduling.js';
 
 type App = { Variables: AuthedVariables };
 
@@ -212,42 +214,78 @@ export function createApp(): Hono<App> {
     return c.json({ tasks });
   });
 
+  // -- Ändern ----------------------------------------------------------------
+
+  // Ein Vorgang verschiebt sich, oder es wird gemeldet, was auf der Baustelle
+  // wirklich passiert ist. Beides führt zur selben Frage — sind wir noch im
+  // Plan? —, deshalb antwortet die Route mit dem neu gerechneten Plan und
+  // nicht mit dem geänderten Vorgang.
+  //
+  // Wer das darf, entscheidet die Datenbank: Die Policy `task_update` verlangt
+  // `task.schedule` und beschränkt Einzelgewerke zusätzlich auf ihre eigenen
+  // Vorgänge. Hier wird nichts geprüft, was eine Policy prüfen kann.
+  v1.patch('/projects/:id/tasks/:taskId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const change = parsed.data;
+
+    const schedule = await withUserTx(
+      c.get('claims'),
+      async (tx): Promise<ProjectSchedule> => {
+        // Erst die Aussage festhalten, dann neu rechnen. Beides in derselben
+        // Transaktion: Scheitert die Rechnung, gab es auch die Aussage nicht.
+        const felder: string[] = [];
+        const werte: unknown[] = [taskId, projectId];
+        const setze = (spalte: string, wert: unknown): void => {
+          werte.push(wert);
+          felder.push(`${spalte} = $${werte.length}`);
+        };
+
+        if (change.earliestStart !== undefined) setze('earliest_start', change.earliestStart);
+        if (change.actualStart !== undefined) setze('actual_start', change.actualStart);
+        if (change.actualEnd !== undefined) setze('actual_end', change.actualEnd);
+        if (change.status !== undefined) setze('status', change.status);
+
+        const result = await tx.query(
+          `update task set ${felder.join(', ')} where id = $1 and project_id = $2`,
+          werte,
+        );
+
+        // Kein Treffer heißt: Es gibt den Vorgang nicht, oder die RLS lässt
+        // diese Kennung nicht an ihn heran. Von außen ist das dasselbe, und
+        // das ist Absicht — sonst verrät ein 403, dass es ihn gibt.
+        if (result.rowCount === 0) {
+          throw new HTTPException(404, {
+            message: 'Diesen Vorgang gibt es in deinem Bauvorhaben nicht.',
+          });
+        }
+
+        await recomputeProject(tx, projectId);
+        return loadSchedule(tx, projectId);
+      },
+      {
+        // Der Grund wandert über die Transaktion in jeden Historieneintrag,
+        // den der Trigger schreibt.
+        ...(change.reason === undefined ? {} : { changeReason: change.reason }),
+        ...(change.reasonText === undefined || change.reasonText === ''
+          ? {}
+          : { changeReasonText: change.reasonText }),
+      },
+    );
+
+    return c.json(schedule);
+  });
+
   v1.get('/projects/:id/schedule', async (c) => {
     const projectId = parseId(c.req.param('id'));
-    const schedule = await withUserTx(c.get('claims'), async (tx): Promise<ProjectSchedule> => {
-      const project = await loadProject(tx, projectId);
-      const permissions = await loadPermissions(tx, projectId);
-      const tasks = await loadTasks(tx, projectId);
-      const phases = await loadPhases(tx, projectId);
-
-      const ends = tasks
-        .map((task) => task.currentEnd)
-        .filter((end): end is string => end !== null);
-      const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => (a > b ? a : b));
-
-      // Die Abweichung wird gerechnet, nicht aus einem Puffer abgeleitet: Der
-      // Puffer je Vorgang misst gegen den eigenen Plan, die Abweichung gegen
-      // den Vertrag. Das sind zwei verschiedene Zahlen.
-      let deviationWorkdays: number | null = null;
-      if (project.contractualCompletion !== null && computedEnd !== null) {
-        const calendar = await calendarOf(tx, projectId);
-        deviationWorkdays = workdayDifference(
-          workdayOffset(project.contractualCompletion, 1, calendar),
-          workdayOffset(computedEnd, 1, calendar),
-          calendar,
-        );
-      }
-
-      return {
-        project,
-        permissions,
-        phases,
-        tasks,
-        computedEnd,
-        contractualEnd: project.contractualCompletion,
-        deviationWorkdays,
-      };
-    });
+    const schedule = await withUserTx(c.get('claims'), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
   });
 
@@ -382,6 +420,7 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     current_end: string | null;
     baseline_start: string | null;
     baseline_end: string | null;
+    earliest_start: string | null;
     actual_start: string | null;
     actual_end: string | null;
     status: ScheduledTaskDto['status'];
@@ -392,7 +431,7 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     `select t.id, t.name, t.phase_key, tr.code as trade_code, tr.name as trade_name,
             t.sort_order, t.is_milestone, t.is_wait, t.duration_days, t.duration_unit,
             t.current_start, t.current_end, t.baseline_start, t.baseline_end,
-            t.actual_start, t.actual_end, t.status, t.confirmation,
+            t.earliest_start, t.actual_start, t.actual_end, t.status, t.confirmation,
             t.total_float_days, t.is_critical
      from task t
      left join trade tr on tr.id = t.trade_id
@@ -416,6 +455,7 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     currentEnd: row.current_end,
     baselineStart: row.baseline_start,
     baselineEnd: row.baseline_end,
+    earliestStart: row.earliest_start,
     actualStart: row.actual_start,
     actualEnd: row.actual_end,
     status: row.status,
@@ -426,6 +466,47 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
 }
 
 /** Der Feiertagskalender des Projekts — Bundesland plus Gemeindetyp. */
+/**
+ * Die vollständige Planansicht eines Bauvorhabens.
+ *
+ * Sie steht hier und nicht in der Route, weil zwei Wege sie brauchen: das
+ * Lesen und — nach einer Verschiebung — die Antwort auf das Ändern. Beide
+ * müssen dasselbe liefern, sonst zeigt die Oberfläche nach dem Speichern etwas
+ * anderes als nach dem Neuladen.
+ */
+async function loadSchedule(tx: Tx, projectId: string): Promise<ProjectSchedule> {
+  const project = await loadProject(tx, projectId);
+  const permissions = await loadPermissions(tx, projectId);
+  const tasks = await loadTasks(tx, projectId);
+  const phases = await loadPhases(tx, projectId);
+
+  const ends = tasks.map((task) => task.currentEnd).filter((end): end is string => end !== null);
+  const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => (a > b ? a : b));
+
+  // Die Abweichung wird gerechnet, nicht aus einem Puffer abgeleitet: Der
+  // Puffer je Vorgang misst gegen den eigenen Plan, die Abweichung gegen den
+  // Vertrag. Das sind zwei verschiedene Zahlen.
+  let deviationWorkdays: number | null = null;
+  if (project.contractualCompletion !== null && computedEnd !== null) {
+    const calendar = await calendarOf(tx, projectId);
+    deviationWorkdays = workdayDifference(
+      workdayOffset(project.contractualCompletion, 1, calendar),
+      workdayOffset(computedEnd, 1, calendar),
+      calendar,
+    );
+  }
+
+  return {
+    project,
+    permissions,
+    phases,
+    tasks,
+    computedEnd,
+    contractualEnd: project.contractualCompletion,
+    deviationWorkdays,
+  };
+}
+
 async function calendarOf(tx: Tx, projectId: string): Promise<Calendar> {
   const result = await tx.query<{
     federal_state: FederalState;

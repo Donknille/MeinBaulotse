@@ -39,6 +39,66 @@ export const confirmationLevel = z.enum([
  * Die fünf Onboarding-Fragen aus der Abnahme von AP 1.
  * Mehr wird nicht gefragt — alles Weitere ergibt sich aus der Ablaufvorlage.
  */
+/**
+ * Warum sich ein Termin verschoben hat.
+ *
+ * Ein Grund ist Pflicht, sobald jemand von Hand verschiebt — nicht aus
+ * Bürokratie, sondern weil die Historie sonst wertlos ist: „12.05. → 26.05."
+ * beantwortet keine einzige Frage, „12.05. → 26.05., Lieferzeit" beantwortet
+ * fast alle. Dieselben Werte wie `mbl.schedule_change_reason`.
+ */
+export const scheduleChangeReason = z.enum([
+  'witterung',
+  'lieferzeit',
+  'kapazitaet',
+  'planungsaenderung',
+  'bauherren_entscheidung',
+  'vorgewerk_verzug',
+  'behoerde',
+  'mangelbeseitigung',
+  'nachtrag',
+  'sonstiges',
+]);
+export type ScheduleChangeReason = z.infer<typeof scheduleChangeReason>;
+
+/**
+ * Was sich an einem Vorgang ändern lässt.
+ *
+ * Drei verschiedene Aussagen, bewusst getrennt gehalten:
+ *
+ * - `earliestStart` — **eine Absicht.** „Nicht vor diesem Tag." Der Vorgang
+ *   kann trotzdem später liegen, wenn ein Vorgänger ihn schiebt.
+ * - `actualStart`/`actualEnd` — **eine Tatsache.** Sie überschreiben die
+ *   Rechnung, statt sie zu beschränken.
+ * - `status` — **eine Einschätzung.** Sie ändert keinen Termin.
+ *
+ * `null` löscht den jeweiligen Wert; ein fehlendes Feld lässt ihn stehen. Das
+ * ist der Unterschied zwischen „ich nehme die Verschiebung zurück" und „ich
+ * sage dazu nichts".
+ */
+export const taskUpdateRequest = z
+  .object({
+    earliestStart: isoDate.nullable().optional(),
+    actualStart: isoDate.nullable().optional(),
+    actualEnd: isoDate.nullable().optional(),
+    status: taskStatus.optional(),
+    reason: scheduleChangeReason.optional(),
+    reasonText: z.string().trim().max(500).optional(),
+  })
+  .refine(
+    (value) =>
+      value.earliestStart !== undefined ||
+      value.actualStart !== undefined ||
+      value.actualEnd !== undefined ||
+      value.status !== undefined,
+    { message: 'Es gibt nichts zu ändern.' },
+  )
+  .refine((value) => value.earliestStart === undefined || value.reason !== undefined, {
+    message: 'Für eine Verschiebung brauchen wir den Grund.',
+    path: ['reason'],
+  });
+export type TaskUpdateRequest = z.infer<typeof taskUpdateRequest>;
+
 export const onboardingRequest = z.object({
   /** Frage 0, nicht gezählt: Wie soll das Projekt heißen? */
   name: z.string().trim().min(2).max(120),
@@ -87,6 +147,8 @@ export const scheduledTask = z.object({
   currentEnd: isoDate.nullable(),
   baselineStart: isoDate.nullable(),
   baselineEnd: isoDate.nullable(),
+  /** Von Hand gesetzt: nicht früher als. `null` heißt: frei gerechnet. */
+  earliestStart: isoDate.nullable(),
   actualStart: isoDate.nullable(),
   actualEnd: isoDate.nullable(),
   status: taskStatus,

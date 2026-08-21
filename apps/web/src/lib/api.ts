@@ -6,7 +6,12 @@
  * CORS und keine Konfiguration, die zwischen den Umgebungen abweichen könnte.
  */
 
-import type { OnboardingRequest, ProjectSchedule, ProjectSummary } from '@meinbaulotse/shared';
+import type {
+  OnboardingRequest,
+  ProjectSchedule,
+  ProjectSummary,
+  TaskUpdateRequest,
+} from '@meinbaulotse/shared';
 import { clearDemoSession, readDemoSession } from './demo-auth';
 import { supabase } from './supabase';
 
@@ -124,4 +129,12 @@ export const api = {
       body: JSON.stringify(answers),
     }),
   schedule: (projectId: string) => request<ProjectSchedule>(`/projects/${projectId}/schedule`),
+  // Antwortet mit dem neu gerechneten Plan, nicht mit dem geänderten Vorgang:
+  // Die Frage nach einer Verschiebung ist nie „was steht jetzt in der Zeile",
+  // sondern „sind wir noch im Plan".
+  updateTask: (projectId: string, taskId: string, change: TaskUpdateRequest) =>
+    request<ProjectSchedule>(`/projects/${projectId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
 };

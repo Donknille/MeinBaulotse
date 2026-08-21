@@ -37,6 +37,7 @@ function task(overrides: Partial<ScheduledTaskDto>): ScheduledTaskDto {
     durationUnit: 'werktage',
     currentStart: '2026-07-31',
     currentEnd: '2026-08-04',
+    earliestStart: null,
     baselineStart: '2026-07-31',
     baselineEnd: '2026-08-04',
     actualStart: null,

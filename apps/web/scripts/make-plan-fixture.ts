@@ -62,6 +62,7 @@ const tasks: ScheduledTaskDto[] = plan.tasks.map((task, index) => {
     currentEnd: scheduled.end,
     baselineStart: scheduled.start,
     baselineEnd: scheduled.end,
+    earliestStart: null,
     actualStart: null,
     actualEnd: null,
     status: 'terminiert',

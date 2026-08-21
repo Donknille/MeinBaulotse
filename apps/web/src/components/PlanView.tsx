@@ -9,15 +9,25 @@
  * was kommt.
  */
 
+import { useState } from 'react';
 import { CalendarDays, Check, GanttChartSquare } from 'lucide-react';
-import type { ProjectSchedule } from '@meinbaulotse/shared';
+import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
 import { Card, Pill, SectionPill } from './ui';
 import { PhaseBar, TaskRow } from './schedule';
 import { Timeline } from './Timeline';
+import { TaskSheet } from './TaskSheet';
 import { formatDate } from '../lib/format';
 import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
 
-export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
+export function PlanView({
+  schedule,
+  onChangeTask,
+}: {
+  schedule: ProjectSchedule;
+  /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
+  onChangeTask?: (taskId: string, change: TaskUpdateRequest) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
   const currentPhase = currentPhaseKey(schedule);
   const byPhase = schedule.phases.filter((phase) => phase.taskCount > 0);
@@ -104,7 +114,12 @@ export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
               <Card className="py-0">
                 <ul>
                   {tasks.map((task) => (
-                    <TaskRow key={task.id} task={task} referenceYear={referenceYear} />
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      referenceYear={referenceYear}
+                      {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
+                    />
                   ))}
                 </ul>
               </Card>
@@ -112,6 +127,14 @@ export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
           );
         })}
       </section>
+      {selected !== null && onChangeTask !== undefined ? (
+        <TaskSheet
+          task={selected}
+          schedule={schedule}
+          onClose={() => setSelected(null)}
+          onSave={(change) => onChangeTask(selected.id, change)}
+        />
+      ) : null}
     </>
   );
 }
@@ -192,8 +215,11 @@ function Metric({
 /** Auch die schlechte Zahl kommt als Satz, nicht als nacktes Vorzeichen. */
 function deviationInWords(workdays: number): string {
   if (workdays === 0) return 'genau im Plan';
-  if (workdays > 0) return `${workdays} Werktage später`;
-  return `${Math.abs(workdays)} Werktage früher`;
+  // „1 Werktage später" hat im Betrieb gestanden, sobald eine Verschiebung
+  // knapp über den Vertragstermin führte. Genau dann liest jemand die Zahl
+  // besonders genau — und einen Grammatikfehler gleich mit.
+  const tage = Math.abs(workdays) === 1 ? '1 Werktag' : `${Math.abs(workdays)} Werktage`;
+  return workdays > 0 ? `${tage} später` : `${tage} früher`;
 }
 
 /**

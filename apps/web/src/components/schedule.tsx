@@ -6,7 +6,7 @@
 import { Clock, Flag } from 'lucide-react';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 import { floatInPlainWords } from '@meinbaulotse/shared';
-import { CONFIRMATION_LABEL, formatDuration, formatRange } from '../lib/format';
+import { CONFIRMATION_LABEL, formatDuration, formatRange, STATUS_LABEL } from '../lib/format';
 
 /**
  * Der gefüllte Punkt bedeutet: beide Seiten sind sich einig. Diese Füllung ist
@@ -101,15 +101,20 @@ export function PhaseBar({ phases, currentKey }: { phases: PhaseProgress[]; curr
 export function TaskRow({
   task,
   referenceYear,
+  onSelect,
 }: {
   task: ScheduledTaskDto;
   referenceYear: number;
+  onSelect?: (task: ScheduledTaskDto) => void;
 }) {
+  // Die ganze Zeile ist die Schaltfläche, nicht ein Stiftsymbol am Rand: Auf
+  // einer Baustelle wird mit Handschuhen getippt. Ohne `onSelect` bleibt sie
+  // ein `div` — im Styleguide gibt es nichts zu ändern.
+  const Zeile = onSelect === undefined ? 'div' : 'button';
+
   return (
     <li
-      className={`flex flex-col gap-1.5 border-b border-ash py-3 last:border-b-0 ${
-        task.isWait ? 'border-b-dashed' : ''
-      } ${
+      className={`border-b border-ash last:border-b-0 ${task.isWait ? 'border-b-dashed' : ''} ${
         // Der kritische Pfad bekommt eine Tangerine-Kante links, kein farbiges
         // Feld und keinen farbigen Text. Sonst leuchten bei einem langen
         // kritischen Pfad zwei Drittel der Liste orange — und wer ständig
@@ -117,44 +122,65 @@ export function TaskRow({
         task.isCritical ? 'border-l-2 border-l-tangerine pl-3' : ''
       }`}
     >
-      {/* Mobil steht das Datum über dem Namen. Die feste Spalte daneben riss auf
-          375 px eine Lücke auf, sobald ein Name kurz war — und drückte ihn in
-          die nächste Zeile, sobald er lang war. */}
-      <div className="flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
-        <span className="text-body text-steel sm:min-w-[7.5rem]">
-          {formatRange(task.currentStart, task.currentEnd, referenceYear)}
+      <Zeile
+        {...(onSelect === undefined
+          ? {}
+          : { type: 'button' as const, onClick: () => onSelect(task) })}
+        className={`flex w-full flex-col gap-1.5 py-3 text-left ${
+          onSelect === undefined
+            ? ''
+            : 'cursor-pointer transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist'
+        }`}
+      >
+        {/* Mobil steht das Datum über dem Namen. Die feste Spalte daneben riss
+            auf 375 px eine Lücke auf, sobald ein Name kurz war — und drückte
+            ihn in die nächste Zeile, sobald er lang war. */}
+        <span className="flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
+          <span className="text-body text-steel sm:min-w-[7.5rem]">
+            {formatRange(task.currentStart, task.currentEnd, referenceYear)}
+          </span>
+          <span className="flex items-center gap-2 text-body-lg font-medium text-charcoal">
+            {task.isMilestone ? (
+              <Flag size={16} className="text-electric-blue" aria-hidden />
+            ) : null}
+            {task.isWait ? <Clock size={16} className="text-silver" aria-hidden /> : null}
+            {task.name}
+          </span>
+          {task.tradeCode !== null ? (
+            <span className="text-caption font-medium tracking-wide text-steel uppercase">
+              {task.tradeCode}
+            </span>
+          ) : null}
         </span>
-        <span className="flex items-center gap-2 text-body-lg font-medium text-charcoal">
-          {task.isMilestone ? <Flag size={16} className="text-electric-blue" aria-hidden /> : null}
-          {task.isWait ? <Clock size={16} className="text-silver" aria-hidden /> : null}
-          {task.name}
+
+        <span className="flex flex-wrap items-center gap-2">
+          {task.isWait ? (
+            // Der Nutzer soll sofort verstehen, dass dieser Zeitraum nicht
+            // verhandelbar ist.
+            <span className="text-caption text-steel">
+              {formatDuration(task.durationDays, task.durationUnit)} · Trocknung — nicht verkürzbar
+            </span>
+          ) : task.isMilestone ? (
+            <span className="text-caption text-steel">Meilenstein</span>
+          ) : (
+            <span className="text-caption text-steel">
+              {formatDuration(task.durationDays, task.durationUnit)}
+            </span>
+          )}
+          <ConfirmationChip value={task.confirmation} />
+          {/* Eine Verschiebung von Hand muss man sehen, sonst sucht man den
+              Grund im Berechnungskern. */}
+          {task.earliestStart !== null ? (
+            <span className="text-caption text-tangerine">verschoben</span>
+          ) : null}
+          {task.status !== 'terminiert' && task.status !== 'geplant' ? (
+            <span className="text-caption text-steel">{STATUS_LABEL[task.status]}</span>
+          ) : null}
         </span>
-        {task.tradeCode !== null ? (
-          <span className="text-caption font-medium tracking-wide text-steel uppercase">
-            {task.tradeCode}
-          </span>
-        ) : null}
-      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {task.isWait ? (
-          // Der Nutzer soll sofort verstehen, dass dieser Zeitraum nicht
-          // verhandelbar ist.
-          <span className="text-caption text-steel">
-            {formatDuration(task.durationDays, task.durationUnit)} · Trocknung — nicht verkürzbar
-          </span>
-        ) : task.isMilestone ? (
-          <span className="text-caption text-steel">Meilenstein</span>
-        ) : (
-          <span className="text-caption text-steel">
-            {formatDuration(task.durationDays, task.durationUnit)}
-          </span>
-        )}
-        <ConfirmationChip value={task.confirmation} />
-      </div>
-
-      {/* Puffer nie als nackte Zahl, sondern als Satz — Abschnitt 3.6. */}
-      <p className="text-caption text-fog">{floatInPlainWords(task.totalFloatDays)}</p>
+        {/* Puffer nie als nackte Zahl, sondern als Satz — Abschnitt 3.6. */}
+        <span className="text-caption text-fog">{floatInPlainWords(task.totalFloatDays)}</span>
+      </Zeile>
     </li>
   );
 }

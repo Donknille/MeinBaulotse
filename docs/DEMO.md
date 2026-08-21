@@ -107,11 +107,35 @@ Fehlanzeige nennt die Grenze beim Namen: Mängel erfassen, Entscheidungen
 pflegen, Mitglieder einladen, Zahlungen freigeben — „Das entscheidet der
 Bauherr."
 
+## Termine ändern
+
+Ein Klick auf einen Vorgang öffnet ein Blatt mit zwei Abschnitten, und die
+Trennung ist der ganze Punkt:
+
+- **Verschieben** ist eine Absicht: „nicht vor dem 02.11." Die Folgevorgänge
+  ziehen nach, der Endtermin rechnet sich neu, und ohne Grund geht es nicht.
+- **Was wirklich passiert ist** sind Tatsachen: Stand, Ist-Beginn, Ist-Ende.
+  Sie überschreiben die Rechnung, statt sie zu beschränken. Ein Vorgang, der
+  schon begonnen hat, lässt sich deshalb nicht mehr verschieben — das Blatt
+  sagt es.
+
+Zum Ausprobieren: *Estrich* im Bauvorhaben Ahornweg vier Wochen nach hinten
+schieben. Danach steht oben statt „20 Werktage früher" in Grün ein „1 Werktag
+später" in Tangerine, und alles ab dem Estrich liegt später — bis in den Januar.
+
+Jede Verschiebung landet mit ihrem Grund in `schedule_change`. Diese Historie
+ist append-only; nachträglich ändern lässt sich dort nichts.
+
+Wer verschieben darf, entscheidet die Datenbank über `task.schedule`. Bauherr
+und GU dürfen es beide; wer es nicht darf, sieht statt der Felder einen Satz,
+der sagt warum.
+
 ## Was noch fehlt
 
-- **Schreibende Ansichten.** Rechte werden angezeigt, aber noch nirgends
-  ausgeübt: Die API kennt bisher nur Onboarding und Lesen. Ein GU sieht also,
-  dass er Termine ändern dürfte, kann es aber noch nicht.
+- **Termine abstimmen.** Die vier Bestätigungsgrade werden angezeigt, aber
+  niemand kann sie setzen — grau bleibt grau.
+- **Entscheidungen mit Fristen.** „Fliesen bis 12.05. auswählen, sonst
+  verschiebt sich der Estrich."
 - **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
   (`member.invite`) steht, die Route dazu fehlt noch.
 

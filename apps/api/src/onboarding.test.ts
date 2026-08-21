@@ -19,7 +19,12 @@ import {
   SUPABASE_ROOT_CA_2021,
   withAdminTx,
 } from '@meinbaulotse/db';
-import { projectSchedule, type ProjectSchedule } from '@meinbaulotse/shared';
+import {
+  projectSchedule,
+  type ProjectSchedule,
+  type ScheduledTaskDto,
+} from '@meinbaulotse/shared';
+import { addDays } from '@meinbaulotse/schedule';
 import { createApp, withoutSecrets } from './app.js';
 
 const SECRET = 'super-secret-jwt-token-with-at-least-32-characters-long';
@@ -555,5 +560,132 @@ describe('Zwei Rollen in einem Projekt', () => {
     expect(alsGu.permissions).toContain('task.schedule');
     expect(alsGu.permissions).not.toContain('payment.release');
     expect(alsGu.permissions).not.toContain('member.invite');
+  });
+});
+
+/**
+ * Abnahme von AP 4, Kern: „Ein verschobener Vorgang schlaegt korrekt
+ * Folgevorgaenge vor, der Endtermin verschiebt sich um den erwarteten Wert,
+ * der Aenderungseintrag ist per SQL nicht aenderbar."
+ *
+ * Geprueft wird der ganze Weg — HTTP, RLS, Berechnungskern, Trigger —, nicht
+ * die Einzelteile.
+ */
+describe('Verschieben und Fortschritt melden', () => {
+  let projectId: string;
+  let tasks: ScheduledTaskDto[];
+
+  async function planLaden(token: string): Promise<ProjectSchedule> {
+    const response = await request(`/api/v1/projects/${projectId}/schedule`, { token });
+    return projectSchedule.parse(await response.json());
+  }
+
+  beforeAll(async () => {
+    const response = await request('/api/v1/projects/onboarding', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ ...ANTWORTEN, name: 'Verschiebeprobe' }),
+    });
+    projectId = ((await response.json()) as { projectId: string }).projectId;
+    tasks = (await planLaden(token)).tasks;
+  });
+
+  it('zieht die Folgevorgänge nach und verschiebt den Endtermin', async () => {
+    const vorher = await planLaden(token);
+    // Der erste Vorgang auf dem kritischen Pfad: Was hier passiert, muss bis
+    // ans Ende durchschlagen.
+    const vorgang = vorher.tasks.find((t) => t.isCritical && !t.isMilestone)!;
+    const nachfolger = vorher.tasks.filter(
+      (t) => t.currentStart !== null && t.currentStart > vorgang.currentEnd!,
+    ).length;
+    expect(nachfolger).toBeGreaterThan(0);
+
+    const verschobenAuf = addDays(vorgang.currentStart!, 14);
+    const response = await request(`/api/v1/projects/${projectId}/tasks/${vorgang.id}`, {
+      method: 'PATCH',
+      token,
+      body: JSON.stringify({ earliestStart: verschobenAuf, reason: 'lieferzeit' }),
+    });
+    expect(response.status).toBe(200);
+
+    const nachher = projectSchedule.parse(await response.json());
+    const neu = nachher.tasks.find((t) => t.id === vorgang.id)!;
+
+    // Der Vorgang liegt nicht mehr vor der Beschränkung.
+    expect(neu.currentStart! >= verschobenAuf).toBe(true);
+    // Und das Bauvorhaben endet später als vorher.
+    expect(nachher.computedEnd! > vorher.computedEnd!).toBe(true);
+    // Die Antwort ist derselbe Plan, den ein erneutes Lesen liefert.
+    expect(await planLaden(token)).toEqual(nachher);
+  });
+
+  it('schreibt die Verschiebung mit Grund in die Historie', async () => {
+    const eintraege = await withAdminTx(async (tx) =>
+      tx.query<{ field: string; reason_code: string | null; actor_channel: string }>(
+        `select field, reason_code, actor_channel from schedule_change
+          where project_id = $1 and field in ('current_start', 'current_end')
+          order by created_at desc limit 5`,
+        [projectId],
+      ),
+    );
+    expect(eintraege.rows.length).toBeGreaterThan(0);
+    expect(eintraege.rows.every((r) => r.reason_code === 'lieferzeit')).toBe(true);
+    expect(eintraege.rows.every((r) => r.actor_channel === 'app')).toBe(true);
+  });
+
+  it('verlangt für eine Verschiebung einen Grund', async () => {
+    const response = await request(`/api/v1/projects/${projectId}/tasks/${tasks[0]!.id}`, {
+      method: 'PATCH',
+      token,
+      body: JSON.stringify({ earliestStart: '2027-01-04' }),
+    });
+    expect(response.status).toBe(422);
+  });
+
+  it('nimmt einen gemeldeten Ist-Beginn als Tatsache, nicht als Wunsch', async () => {
+    const vorher = await planLaden(token);
+    const vorgang = vorher.tasks[0]!;
+    // Zwei Werktage vor dem gerechneten Beginn: Eine Beschränkung koennte das
+    // nicht, ein Ist-Termin schon — er ueberschreibt die Rechnung.
+    const frueher = addDays(vorgang.currentStart!, -4);
+
+    const response = await request(`/api/v1/projects/${projectId}/tasks/${vorgang.id}`, {
+      method: 'PATCH',
+      token,
+      body: JSON.stringify({ actualStart: frueher, status: 'laeuft' }),
+    });
+    expect(response.status).toBe(200);
+
+    const nachher = projectSchedule.parse(await response.json());
+    const neu = nachher.tasks.find((t) => t.id === vorgang.id)!;
+    expect(neu.actualStart).toBe(frueher);
+    expect(neu.currentStart).toBe(frueher);
+    expect(neu.status).toBe('laeuft');
+  });
+
+  it('lässt einen Unbeteiligten nicht an fremde Vorgänge', async () => {
+    const response = await request(`/api/v1/projects/${projectId}/tasks/${tasks[0]!.id}`, {
+      method: 'PATCH',
+      token: fremderToken,
+      body: JSON.stringify({ status: 'entfallen' }),
+    });
+    // Nicht 403: Ein 403 verriete, dass es diesen Vorgang gibt.
+    expect(response.status).toBe(404);
+  });
+
+  it('nimmt eine Verschiebung zurück, wenn die Beschränkung gelöscht wird', async () => {
+    const vorgang = (await planLaden(token)).tasks.find((t) => t.isCritical && !t.isMilestone)!;
+    const response = await request(`/api/v1/projects/${projectId}/tasks/${vorgang.id}`, {
+      method: 'PATCH',
+      token,
+      body: JSON.stringify({ earliestStart: null, reason: 'planungsaenderung' }),
+    });
+    expect(response.status).toBe(200);
+
+    const nachher = projectSchedule.parse(await response.json());
+    const neu = nachher.tasks.find((t) => t.id === vorgang.id)!;
+    // Ohne Beschränkung rechnet der Kern wieder frei — der Vorgang rutscht
+    // nach vorn, soweit seine Vorgaenger es zulassen.
+    expect(neu.currentStart! < vorgang.currentStart!).toBe(true);
   });
 });
