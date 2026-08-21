@@ -64,8 +64,7 @@ export function decisionDueDates(
     if (taskStart === undefined) continue;
 
     const dueDate = decisionDueDate(decision, taskStart, calendar);
-    const remainingWorkdays =
-      today === undefined ? 0 : workdayDifference(today, dueDate, calendar);
+    const remainingWorkdays = today === undefined ? 0 : workdayDifference(today, dueDate, calendar);
 
     result.set(decision.id, {
       decisionId: decision.id,

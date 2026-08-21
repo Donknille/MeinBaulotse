@@ -111,7 +111,5 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
 
 /** Alle Rechte einer Rolle — nur für Tests und die Oberfläche, nie für Autorisierung. */
 export function permissionsOf(role: MemberRole): readonly string[] {
-  return PERMISSIONS.filter((entry) => entry.roles.includes(role)).map(
-    (entry) => entry.permission,
-  );
+  return PERMISSIONS.filter((entry) => entry.roles.includes(role)).map((entry) => entry.permission);
 }

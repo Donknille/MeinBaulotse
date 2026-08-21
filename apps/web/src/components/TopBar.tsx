@@ -20,7 +20,7 @@
 import { ChevronLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from './ui';
-import { clearDemoSession, readDemoSession } from '../lib/demo-auth';
+import { forgetDemoAccess, readDemoSession } from '../lib/demo-auth';
 import { signOut } from '../lib/supabase';
 import { Topmark } from '../routes/SignIn';
 
@@ -59,7 +59,7 @@ export function TopBar({ back }: { back?: { to: string; label: string } }) {
         <Button
           variant="ghost"
           onClick={() => {
-            clearDemoSession();
+            forgetDemoAccess();
             void signOut();
           }}
         >

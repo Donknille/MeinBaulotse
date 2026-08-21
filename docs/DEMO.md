@@ -91,8 +91,10 @@ und dort genügt wieder ein Klick: Der Schlüssel aus dem Link ist gemerkt.
 *Abmelden* wirft beide Anmeldungen weg, die echte wie die Test-Anmeldung, und
 vergisst den Schlüssel.
 
-Das Testtoken gilt zwölf Stunden. Läuft es ab, landest du wieder auf der
-Anmeldemaske.
+Das Testtoken gilt zwölf Stunden. Läuft es ab — über Nacht also zwangsläufig —,
+landest du wieder auf der Anmeldemaske. Der Schlüssel bleibt dabei gemerkt: Auf
+`/demo` stehen die beiden Knöpfe, ein Klick genügt, den Link brauchst du nicht
+noch einmal. Nur *Abmelden* vergisst ihn, und zwar mit Absicht.
 
 ## Was du sehen wirst
 

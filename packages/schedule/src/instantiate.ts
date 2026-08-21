@@ -9,12 +9,7 @@
  * Varianten dazukommen — Fertighaus ohne Rohbau, Sanierung ohne Gründung.
  */
 
-import type {
-  DependencyType,
-  DurationUnit,
-  ScheduleDependency,
-  ScheduleTask,
-} from './types.js';
+import type { DependencyType, DurationUnit, ScheduleDependency, ScheduleTask } from './types.js';
 
 export type IncludeWhen = 'always' | 'with_basement' | 'without_basement';
 

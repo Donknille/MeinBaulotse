@@ -86,7 +86,7 @@ export function DemoLogin() {
           <p className="text-body-lg text-steel">
             {hasKey
               ? 'Dasselbe Bauvorhaben aus zwei Sichten. Wähl deine Rolle — wechseln kannst du jederzeit.'
-              : 'Dieser Link ist nicht vollständig.'}
+              : 'Zum Anmelden fehlt der Schlüssel aus dem Link.'}
           </p>
         </div>
 
@@ -110,10 +110,13 @@ export function DemoLogin() {
           ) : (
             // Der seltene Fall: Der Schlüssel fehlt im Link. Statt einer
             // Sackgasse ein Feld, in das er sich einfügen lässt.
-            <form className="flex flex-col gap-4" onSubmit={(event) => void enter('bauherr', event)}>
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(event) => void enter('bauherr', event)}
+            >
               <Field
                 label="Zugangsschlüssel"
-                hint="Er steht im Link hinter key=. Frag nach dem vollständigen Link, wenn du ihn nicht hast."
+                hint="Er steht im Link hinter key=. Nach dem Abmelden ist er hier vergessen — dann brauchst du den Link noch einmal."
               >
                 <TextInput
                   autoComplete="off"

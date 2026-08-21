@@ -18,9 +18,9 @@ describe('decisionDueDate', () => {
   });
 
   it('rechnet auf Wunsch in Kalendertagen', () => {
-    expect(
-      decisionDueDate({ ...fliesen, leadTimeUnit: 'kalendertage' }, '2026-07-13', BY),
-    ).toBe('2026-06-03');
+    expect(decisionDueDate({ ...fliesen, leadTimeUnit: 'kalendertage' }, '2026-07-13', BY)).toBe(
+      '2026-06-03',
+    );
   });
 
   it('berücksichtigt Feiertage des Bundeslands', () => {

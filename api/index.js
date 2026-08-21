@@ -12808,7 +12808,13 @@ function criticalPath(input) {
     const isCritical = totalFloatDays <= 0;
     if (isCritical)
       critical.push(id);
-    floats.set(id, { taskId: id, lateStart: start, lateFinish: finish, totalFloatDays, isCritical });
+    floats.set(id, {
+      taskId: id,
+      lateStart: start,
+      lateFinish: finish,
+      totalFloatDays,
+      isCritical
+    });
   }
   const deviationWorkdays = contractualEnd === void 0 ? 0 : workdayDifference(workdayOffset(contractualEnd, 1, calendar), workdayOffset(schedule.projectEnd, 1, calendar), calendar);
   return { floats, critical, targetEnd, deviationWorkdays };
@@ -12898,26 +12904,71 @@ function instantiateTemplate(template, options) {
 // ../../packages/schedule/dist/templates/efh-massiv-unterkellert.js
 var ROWS = [
   ["t01", "Baugrundgutachten", "gutachter", "vorbereitung", 10, "werktage", "", "always"],
-  ["t02", "Vermessung, Absteckung, Schnurger\xFCst", "vermesser", "vorbereitung", 1, "werktage", "", "always"],
-  ["t03", "Baustelleneinrichtung, Bauwasser, Baustrom", "gu", "vorbereitung", 2, "werktage", "", "always"],
+  [
+    "t02",
+    "Vermessung, Absteckung, Schnurger\xFCst",
+    "vermesser",
+    "vorbereitung",
+    1,
+    "werktage",
+    "",
+    "always"
+  ],
+  [
+    "t03",
+    "Baustelleneinrichtung, Bauwasser, Baustrom",
+    "gu",
+    "vorbereitung",
+    2,
+    "werktage",
+    "",
+    "always"
+  ],
   ["t04", "Erdarbeiten, Baugrube", "erdbau", "gruendung", 3, "werktage", "", "always"],
   ["t05", "Sauberkeitsschicht, Fundamenterder", "rohbau", "gruendung", 2, "werktage", "", "always"],
   ["t06", "Bodenplatte", "rohbau", "gruendung", 4, "werktage", "", "always"],
   ["t07", "Aush\xE4rtung Bodenplatte", null, "gruendung", 3, "kalendertage", "wait", "always"],
   ["t08", "Kellerw\xE4nde", "rohbau", "gruendung", 8, "werktage", "", "with_basement"],
   ["t09", "Kellerdecke", "rohbau", "gruendung", 4, "werktage", "", "with_basement"],
-  ["t10", "Abdichtung, Perimeterd\xE4mmung, Drainage", "rohbau", "gruendung", 3, "werktage", "", "with_basement"],
+  [
+    "t10",
+    "Abdichtung, Perimeterd\xE4mmung, Drainage",
+    "rohbau",
+    "gruendung",
+    3,
+    "werktage",
+    "",
+    "with_basement"
+  ],
   ["t11", "Verf\xFCllung Arbeitsraum", "erdbau", "gruendung", 2, "werktage", "", "with_basement"],
   ["t12", "Erdgeschoss-Mauerwerk", "rohbau", "rohbau", 8, "werktage", "", "always"],
   ["t13", "Geschossdecke EG", "rohbau", "rohbau", 4, "werktage", "", "always"],
   ["t14", "Obergeschoss, Drempel, Ringanker", "rohbau", "rohbau", 7, "werktage", "", "always"],
   ["t15", "Rohbau fertig, Richtfest", null, "rohbau", 0, "werktage", "milestone", "always"],
   ["t16", "Dachstuhl", "zimmerer", "dach_huelle", 4, "werktage", "", "always"],
-  ["t17", "Dacheindeckung, Klempnerarbeiten", "dachdecker", "dach_huelle", 6, "werktage", "", "always"],
+  [
+    "t17",
+    "Dacheindeckung, Klempnerarbeiten",
+    "dachdecker",
+    "dach_huelle",
+    6,
+    "werktage",
+    "",
+    "always"
+  ],
   ["t18", "Fenster und Haust\xFCr", "fensterbau", "dach_huelle", 3, "werktage", "", "always"],
   ["t19", "Geb\xE4ude dicht", null, "dach_huelle", 0, "werktage", "milestone", "always"],
   ["t20", "Rohinstallation Elektro", "elektro", "rohinstallation", 8, "werktage", "", "always"],
-  ["t21", "Rohinstallation Sanit\xE4r und Heizung", "shk", "rohinstallation", 8, "werktage", "", "always"],
+  [
+    "t21",
+    "Rohinstallation Sanit\xE4r und Heizung",
+    "shk",
+    "rohinstallation",
+    8,
+    "werktage",
+    "",
+    "always"
+  ],
   ["t22", "L\xFCftungsanlage", "shk", "rohinstallation", 4, "werktage", "", "always"],
   ["t23", "Blower-Door-Vorabtest", "pruefer", "rohinstallation", 1, "werktage", "", "always"],
   ["t24", "Innenputz", "putzer", "ausbau", 8, "werktage", "", "always"],
@@ -12931,7 +12982,16 @@ var ROWS = [
   ["t32", "Treppe", "treppenbau", "endausbau", 2, "werktage", "", "always"],
   ["t33", "Endmontage Elektro", "elektro", "endausbau", 4, "werktage", "", "always"],
   ["t34", "Endmontage Sanit\xE4r", "shk", "endausbau", 4, "werktage", "", "always"],
-  ["t35", "Au\xDFenanlagen, Zufahrt, Pflaster", "galabau", "aussenanlagen", 10, "werktage", "", "always"],
+  [
+    "t35",
+    "Au\xDFenanlagen, Zufahrt, Pflaster",
+    "galabau",
+    "aussenanlagen",
+    10,
+    "werktage",
+    "",
+    "always"
+  ],
   ["t36", "Baureinigung", "reinigung", "abnahme", 2, "werktage", "", "always"],
   ["t37", "Abnahme und \xDCbergabe", null, "abnahme", 0, "werktage", "milestone", "always"],
   ["t38", "Schlussrechnung, Restzahlung", null, "abnahme", 0, "werktage", "milestone", "always"]

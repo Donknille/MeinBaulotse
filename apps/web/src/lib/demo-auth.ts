@@ -51,9 +51,33 @@ export function writeDemoSession(session: DemoSession): void {
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
+/**
+ * Wirft die Sitzung weg, **behält aber den Schlüssel**.
+ *
+ * Für den Fall, dass ein Token abgelaufen ist. Das passiert nach zwölf Stunden
+ * zwangsläufig, und es ist kein Grund, den Türschlüssel wegzuwerfen: Das Token
+ * ist verbraucht, der Schlüssel aus dem Link nicht. Wer ihn behält, ist einen
+ * Klick von einem neuen Token entfernt; wer ihn verliert, steht vor
+ * „Dieser Link ist nicht vollständig" und muss den Link suchen gehen.
+ *
+ * Genau das ist im Betrieb passiert — über Nacht lief das Token ab, der erste
+ * Aufruf am Morgen kam mit 401 zurück, und die Aufräumaktion nahm den
+ * Schlüssel gleich mit.
+ */
 export function clearDemoSession(): void {
   window.localStorage.removeItem(STORAGE_KEY);
-  // Abmelden räumt vollständig auf, sonst käme man ohne Link wieder hinein.
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+/**
+ * Räumt vollständig auf: Sitzung **und** Schlüssel.
+ *
+ * Nur für „Abmelden". Wer sich bewusst abmeldet, soll ohne den Link nicht
+ * wieder hineinkommen — sonst wäre das Abmelden auf einem geteilten Rechner
+ * eine Geste ohne Wirkung.
+ */
+export function forgetDemoAccess(): void {
+  window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(KEY_STORAGE);
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
