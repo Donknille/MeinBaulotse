@@ -9,10 +9,11 @@
  * was kommt.
  */
 
-import { CalendarDays, Check } from 'lucide-react';
+import { CalendarDays, Check, GanttChartSquare } from 'lucide-react';
 import type { ProjectSchedule } from '@meinbaulotse/shared';
 import { Card, Pill, SectionPill } from './ui';
 import { PhaseBar, TaskRow } from './schedule';
+import { Timeline } from './Timeline';
 import { formatDate } from '../lib/format';
 import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
 
@@ -35,8 +36,8 @@ export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
           </div>
           <p className="text-body text-steel">
             Baubeginn {formatDate(schedule.project.plannedStart)} ·{' '}
-            {schedule.project.hasBasement ? 'mit Keller' : 'ohne Keller'} ·{' '}
-            {schedule.tasks.length} Vorgänge
+            {schedule.project.hasBasement ? 'mit Keller' : 'ohne Keller'} · {schedule.tasks.length}{' '}
+            Vorgänge
           </p>
         </div>
 
@@ -76,6 +77,17 @@ export function PlanView({ schedule }: { schedule: ProjectSchedule }) {
 
         <RoleCard schedule={schedule} />
       </header>
+
+      {/* Die Zeitachse erst ab 768 px. Mobil bleibt die Liste die Grundansicht
+          (CI 10.1): Ein halbes Jahr Bauzeit auf 360 px ist kein Überblick. */}
+      <section className="hidden flex-col gap-4 md:flex">
+        <SectionPill tone="blue" icon={<GanttChartSquare size={18} />}>
+          Die Zeitachse
+        </SectionPill>
+        <Card>
+          <Timeline schedule={schedule} />
+        </Card>
+      </section>
 
       <section className="flex flex-col gap-8">
         <SectionPill tone="blue" icon={<CalendarDays size={18} />}>
@@ -123,9 +135,7 @@ function RoleCard({ schedule }: { schedule: ProjectSchedule }) {
   return (
     <Card tone="muted" className="flex flex-col gap-3">
       <div>
-        <p className="text-body-lg font-medium text-charcoal">
-          Deine Rolle: {ROLE_LABEL[role]}
-        </p>
+        <p className="text-body-lg font-medium text-charcoal">Deine Rolle: {ROLE_LABEL[role]}</p>
         <p className="mt-1 text-body text-steel">{ROLE_DESCRIPTION[role]}</p>
       </div>
 

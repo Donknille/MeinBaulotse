@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@supabase/supabase-js';
@@ -15,6 +15,21 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
+/**
+ * Leert den Abfragespeicher, sobald ein anderer Nutzer fragt.
+ *
+ * Der erste Aufruf leert nichts: Da hat sich nichts geaendert, es ist nur der
+ * erste bekannte Zustand.
+ */
+function useIdentityReset(identity: string | null): void {
+  const previous = useRef(identity);
+  useEffect(() => {
+    if (previous.current === identity) return;
+    previous.current = identity;
+    queryClient.clear();
+  }, [identity]);
+}
+
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(!isSupabaseConfigured);
@@ -24,6 +39,16 @@ export function App() {
   const [demo, setDemo] = useState<DemoSession | null>(() => readDemoSession());
 
   useEffect(() => onDemoSessionChange(() => setDemo(readDemoSession())), []);
+
+  // Wer die Identität wechselt, ist ein anderer Nutzer — und darf nichts mehr
+  // von der vorigen sehen.
+  //
+  // TanStack Query haelt eine Antwort 30 Sekunden fuer frisch, und die Anfrage
+  // sieht nach einem Rollenwechsel unveraendert aus; nur das Token dahinter ist
+  // ein anderes. Ohne diesen Griff traegt die Projektliste nach „Rolle
+  // wechseln" weiter die Pille der alten Rolle, und die Planansicht zeigt deren
+  // Rechte — bis jemand hart neu laedt. Genau so ist es im Betrieb aufgefallen.
+  useIdentityReset(demo?.token ?? session?.user.id ?? null);
 
   useEffect(() => {
     if (supabase === null) return;
@@ -47,7 +72,10 @@ export function App() {
           <Route path="/demo" element={<DemoLogin />} />
           <Route path="/auth/callback" element={<Navigate to="/" replace />} />
           {!ready ? (
-            <Route path="*" element={<div className="p-6 text-body text-steel">Einen Moment.</div>} />
+            <Route
+              path="*"
+              element={<div className="p-6 text-body text-steel">Einen Moment.</div>}
+            />
           ) : session === null && demo === null ? (
             <Route path="*" element={<SignIn />} />
           ) : (
