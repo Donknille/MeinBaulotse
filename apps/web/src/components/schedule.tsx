@@ -3,10 +3,11 @@
  * Vorgangszeile. Aufbau und Wortwahl nach Abschnitt 9 des Gestaltungssystems.
  */
 
-import { Clock, Flag } from 'lucide-react';
+import { Check, Circle, CircleDot, Clock, Flag, Minus } from 'lucide-react';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 import { floatInPlainWords } from '@meinbaulotse/shared';
-import { CONFIRMATION_LABEL, formatDuration, formatRange, STATUS_LABEL } from '../lib/format';
+import { CONFIRMATION_LABEL, formatDuration, formatRange } from '../lib/format';
+import { progressOf, type Progress } from '../lib/progress';
 
 /**
  * Der gefüllte Punkt bedeutet: beide Seiten sind sich einig. Diese Füllung ist
@@ -98,6 +99,29 @@ export function PhaseBar({ phases, currentKey }: { phases: PhaseProgress[]; curr
   );
 }
 
+/**
+ * Der Fortschritt als Zeichen, nicht als Wort.
+ *
+ * Vier Zustände, vier Formen — erkennbar, bevor man liest, und mit Text für
+ * alles, was nicht sehen kann.
+ */
+function StatusZeichen({ progress }: { progress: Progress }) {
+  const [Icon, farbe, text] =
+    progress === 'fertig'
+      ? [Check, 'text-vivid-green', 'fertig']
+      : progress === 'laeuft'
+        ? [CircleDot, 'text-electric-blue', 'läuft gerade']
+        : progress === 'entfallen'
+          ? [Minus, 'text-fog', 'entfallen']
+          : [Circle, 'text-smoke', 'steht noch aus'];
+  return (
+    <span className="inline-flex shrink-0 items-center" title={text}>
+      <Icon size={16} className={farbe} aria-hidden />
+      <span className="sr-only">{text}</span>
+    </span>
+  );
+}
+
 export function TaskRow({
   task,
   referenceYear,
@@ -111,6 +135,7 @@ export function TaskRow({
   // einer Baustelle wird mit Handschuhen getippt. Ohne `onSelect` bleibt sie
   // ein `div` — im Styleguide gibt es nichts zu ändern.
   const Zeile = onSelect === undefined ? 'div' : 'button';
+  const fortschritt = progressOf(task);
 
   return (
     <li
@@ -136,10 +161,22 @@ export function TaskRow({
             auf 375 px eine Lücke auf, sobald ein Name kurz war — und drückte
             ihn in die nächste Zeile, sobald er lang war. */}
         <span className="flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
-          <span className="text-body text-steel sm:min-w-[7.5rem]">
+          {/* Was fertig ist, muss man sehen, ohne zu lesen. Vorher stand der
+              Status nur als kleiner grauer Text irgendwo hinten — auf 34
+              Zeilen findet ihn niemand. */}
+          <span className="flex items-center gap-2 text-body text-steel sm:min-w-[9.5rem]">
+            <StatusZeichen progress={fortschritt} />
             {formatRange(task.currentStart, task.currentEnd, referenceYear)}
           </span>
-          <span className="flex items-center gap-2 text-body-lg font-medium text-charcoal">
+          <span
+            className={`flex items-center gap-2 text-body-lg font-medium ${
+              fortschritt === 'entfallen'
+                ? 'text-fog line-through'
+                : fortschritt === 'fertig'
+                  ? 'text-steel'
+                  : 'text-charcoal'
+            }`}
+          >
             {task.isMilestone ? (
               <Flag size={16} className="text-electric-blue" aria-hidden />
             ) : null}
@@ -173,8 +210,11 @@ export function TaskRow({
           {task.earliestStart !== null ? (
             <span className="text-caption text-tangerine">verschoben</span>
           ) : null}
-          {task.status !== 'terminiert' && task.status !== 'geplant' ? (
-            <span className="text-caption text-steel">{STATUS_LABEL[task.status]}</span>
+          {/* „Abgenommen" ist mehr als „fertig", und das Zeichen kann es nicht
+              zeigen — vier Formen fuer vier Zustaende, mehr traegt es nicht.
+              Also steht es als Wort daneben, aber nur dort, wo es zutrifft. */}
+          {task.status === 'abgenommen' ? (
+            <span className="text-caption text-vivid-green">abgenommen</span>
           ) : null}
         </span>
 

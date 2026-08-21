@@ -5,22 +5,94 @@
  */
 
 import { CalendarDays, Camera, ClipboardList, Scale } from 'lucide-react';
-import { Button, Card, EmptyState, Field, Pill, SectionPill, Select, TextInput } from '../components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Pill,
+  SectionPill,
+  Select,
+  TextInput,
+} from '../components/ui';
 import { ConfirmationChip, PhaseBar, TaskRow } from '../components/schedule';
 import { PlanView } from '../components/PlanView';
 import { PLAN_FIXTURE } from './plan-fixture';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 
 const PHASES: PhaseProgress[] = [
-  { key: 'vorbereitung', name: 'Vorbereitung und Vertrag', ordinal: 1, taskCount: 3, firstStart: '2026-04-01', lastEnd: '2026-04-16' },
-  { key: 'gruendung', name: 'Gründung und Keller', ordinal: 2, taskCount: 8, firstStart: '2026-04-08', lastEnd: '2026-05-20' },
-  { key: 'rohbau', name: 'Rohbau', ordinal: 3, taskCount: 4, firstStart: '2026-05-13', lastEnd: '2026-06-12' },
-  { key: 'dach_huelle', name: 'Dach und Gebäudehülle', ordinal: 4, taskCount: 4, firstStart: '2026-06-15', lastEnd: '2026-06-29' },
-  { key: 'rohinstallation', name: 'Rohinstallationen', ordinal: 5, taskCount: 4, firstStart: '2026-06-30', lastEnd: '2026-07-16' },
-  { key: 'ausbau', name: 'Innenausbau', ordinal: 6, taskCount: 4, firstStart: '2026-07-17', lastEnd: '2026-09-08' },
-  { key: 'endausbau', name: 'Endausbau', ordinal: 7, taskCount: 7, firstStart: '2026-07-29', lastEnd: '2026-10-13' },
-  { key: 'aussenanlagen', name: 'Außenanlagen', ordinal: 8, taskCount: 1, firstStart: '2026-06-30', lastEnd: '2026-07-13' },
-  { key: 'abnahme', name: 'Abnahme und Übergabe', ordinal: 9, taskCount: 3, firstStart: '2026-10-14', lastEnd: '2026-10-19' },
+  {
+    key: 'vorbereitung',
+    name: 'Vorbereitung und Vertrag',
+    ordinal: 1,
+    taskCount: 3,
+    firstStart: '2026-04-01',
+    lastEnd: '2026-04-16',
+  },
+  {
+    key: 'gruendung',
+    name: 'Gründung und Keller',
+    ordinal: 2,
+    taskCount: 8,
+    firstStart: '2026-04-08',
+    lastEnd: '2026-05-20',
+  },
+  {
+    key: 'rohbau',
+    name: 'Rohbau',
+    ordinal: 3,
+    taskCount: 4,
+    firstStart: '2026-05-13',
+    lastEnd: '2026-06-12',
+  },
+  {
+    key: 'dach_huelle',
+    name: 'Dach und Gebäudehülle',
+    ordinal: 4,
+    taskCount: 4,
+    firstStart: '2026-06-15',
+    lastEnd: '2026-06-29',
+  },
+  {
+    key: 'rohinstallation',
+    name: 'Rohinstallationen',
+    ordinal: 5,
+    taskCount: 4,
+    firstStart: '2026-06-30',
+    lastEnd: '2026-07-16',
+  },
+  {
+    key: 'ausbau',
+    name: 'Innenausbau',
+    ordinal: 6,
+    taskCount: 4,
+    firstStart: '2026-07-17',
+    lastEnd: '2026-09-08',
+  },
+  {
+    key: 'endausbau',
+    name: 'Endausbau',
+    ordinal: 7,
+    taskCount: 7,
+    firstStart: '2026-07-29',
+    lastEnd: '2026-10-13',
+  },
+  {
+    key: 'aussenanlagen',
+    name: 'Außenanlagen',
+    ordinal: 8,
+    taskCount: 1,
+    firstStart: '2026-06-30',
+    lastEnd: '2026-07-13',
+  },
+  {
+    key: 'abnahme',
+    name: 'Abnahme und Übergabe',
+    ordinal: 9,
+    taskCount: 3,
+    firstStart: '2026-10-14',
+    lastEnd: '2026-10-19',
+  },
 ];
 
 function task(overrides: Partial<ScheduledTaskDto>): ScheduledTaskDto {
@@ -72,7 +144,8 @@ export function Styleguide() {
         <p className="text-caption text-fog">Caption 11 — Mikrobeschriftungen.</p>
         <p className="text-body-lg">
           Zahlen laufen tabellarisch: <span className="font-medium">01.04.2026</span> ·{' '}
-          <span className="font-medium">11.11.2026</span> · <span className="font-medium">30.09.2026</span>
+          <span className="font-medium">11.11.2026</span> ·{' '}
+          <span className="font-medium">30.09.2026</span>
         </p>
       </Section>
 
@@ -120,7 +193,8 @@ export function Styleguide() {
           </Button>
         </div>
         <p className="text-body text-steel">
-          Feldaktionen sind 56 Pixel hoch — die Spezifikation verlangt Bedienbarkeit mit Handschuhen.
+          Feldaktionen sind 56 Pixel hoch — die Spezifikation verlangt Bedienbarkeit mit
+          Handschuhen.
         </p>
       </Section>
 
@@ -222,6 +296,59 @@ export function Styleguide() {
                 confirmation: 'disputed',
                 currentStart: '2026-10-16',
                 currentEnd: '2026-10-16',
+              })}
+              referenceYear={2026}
+            />
+          </ul>
+        </Card>
+      </Section>
+
+      {/* Der Fortschritt ist die erste Frage an eine Vorgangsliste — „was ist
+          durch?" — und stand vorher nirgends. Vier Zustaende, vier Formen,
+          jede mit Text fuer alles, was nicht sehen kann. */}
+      <Section title="Fortschritt in der Zeile">
+        <Card className="py-0">
+          <ul>
+            <TaskRow
+              task={task({
+                name: 'Bodenplatte',
+                tradeCode: 'rohbau',
+                tradeName: 'Rohbau',
+                status: 'fertig',
+                confirmation: 'mutual',
+                actualStart: '2026-07-31',
+                actualEnd: '2026-08-04',
+              })}
+              referenceYear={2026}
+            />
+            <TaskRow
+              task={task({
+                name: 'Erdgeschoss-Mauerwerk',
+                tradeCode: 'rohbau',
+                tradeName: 'Rohbau',
+                status: 'abgenommen',
+                confirmation: 'mutual',
+                actualStart: '2026-07-31',
+                actualEnd: '2026-08-04',
+              })}
+              referenceYear={2026}
+            />
+            <TaskRow
+              task={task({
+                name: 'Dachstuhl',
+                tradeCode: 'zimmerer',
+                tradeName: 'Zimmerer',
+                status: 'laeuft',
+                actualStart: '2026-07-31',
+              })}
+              referenceYear={2026}
+            />
+            <TaskRow
+              task={task({
+                name: 'Kaminanschluss',
+                tradeCode: 'ofenbau',
+                tradeName: 'Ofenbau',
+                status: 'entfallen',
               })}
               referenceYear={2026}
             />

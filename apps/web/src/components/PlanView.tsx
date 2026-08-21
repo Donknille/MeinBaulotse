@@ -10,10 +10,11 @@
  */
 
 import { useState } from 'react';
-import { CalendarDays, Check, GanttChartSquare } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, GanttChartSquare } from 'lucide-react';
 import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
 import { Card, Pill, SectionPill } from './ui';
-import { PhaseBar, TaskRow } from './schedule';
+import { TaskRow } from './schedule';
+import { Cockpit } from './Cockpit';
 import { Timeline } from './Timeline';
 import { TaskSheet } from './TaskSheet';
 import { formatDate } from '../lib/format';
@@ -51,41 +52,14 @@ export function PlanView({
           </p>
         </div>
 
-        <Card className="flex flex-col gap-5">
-          <PhaseBar
-            phases={schedule.phases}
-            {...(currentPhase === undefined ? {} : { currentKey: currentPhase })}
-          />
-
-          <dl className="flex flex-wrap gap-x-10 gap-y-4">
-            <Metric label="Errechnetes Ende" value={formatDate(schedule.computedEnd)} strong />
-            <Metric
-              label="Geschuldet"
-              value={
-                schedule.contractualEnd === null
-                  ? 'nicht erfasst'
-                  : formatDate(schedule.contractualEnd)
-              }
-            />
-            {schedule.deviationWorkdays !== null ? (
-              <Metric
-                label="Abweichung"
-                value={deviationInWords(schedule.deviationWorkdays)}
-                tone={schedule.deviationWorkdays > 0 ? 'warn' : 'ok'}
-              />
-            ) : null}
-          </dl>
-
-          {schedule.contractualEnd === null ? (
-            // Auch der Hinweis auf eine Lücke trägt den nächsten Schritt.
-            <p className="text-caption text-steel">
-              Sobald du den vertraglich geschuldeten Fertigstellungstermin erfasst, sagen wir dir,
-              wie weit der errechnete Plan davon abweicht.
-            </p>
-          ) : null}
-        </Card>
-
-        <RoleCard schedule={schedule} />
+        {/* Das Cockpit steht vor allem anderen. Reihenfolge nach CI 10.2:
+            erst wo wir stehen, dann was kommt, dann was du tun musst, dann
+            erst was schiefgeht. */}
+        <Cockpit
+          schedule={schedule}
+          currentPhase={currentPhase}
+          {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
+        />
       </header>
 
       {/* Die Zeitachse erst ab 768 px. Mobil bleibt die Liste die Grundansicht
@@ -99,34 +73,67 @@ export function PlanView({
         </Card>
       </section>
 
-      <section className="flex flex-col gap-8">
-        <SectionPill tone="blue" icon={<CalendarDays size={18} />}>
-          Der ganze Ablauf
-        </SectionPill>
+      {/* Der vollständige Ablauf ist zugeklappt. 34 Vorgänge am Stück sind
+          die Tiefe dieser Anwendung, nicht ihr Einstieg — wer zum ersten Mal
+          baut, sieht darin alles und weiß nichts. Wer sie braucht, klappt sie
+          auf; der Browser merkt sich das nicht, und das ist richtig so: Der
+          Einstieg soll bei jedem Öffnen derselbe sein. */}
+      <details className="group flex flex-col gap-8">
+        <summary className="cursor-pointer list-none">
+          <SectionPill tone="blue" icon={<CalendarDays size={18} />}>
+            Der ganze Ablauf · {schedule.tasks.length} Vorgänge
+            <ChevronDown
+              size={16}
+              className="ml-1 transition-transform duration-[var(--motion-micro)] group-open:rotate-180"
+              aria-hidden
+            />
+          </SectionPill>
+        </summary>
+        <div className="mt-6 flex flex-col gap-8">
+          {byPhase.map((phase) => {
+            const tasks = schedule.tasks.filter((task) => task.phaseKey === phase.key);
+            return (
+              <div key={phase.key} className="flex flex-col gap-2">
+                <h2 className="text-subheading font-medium text-charcoal">
+                  {phase.ordinal}. {phase.name}
+                </h2>
+                <Card className="py-0">
+                  <ul>
+                    {tasks.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        referenceYear={referenceYear}
+                        {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
+                      />
+                    ))}
+                  </ul>
+                </Card>
+              </div>
+            );
+          })}
+        </div>
+      </details>
+      {/* Die Rechte stehen weiterhin da, nur nicht mehr als Erstes: dreizehn
+          Zeilen „was du darfst" beantworten keine der Fragen, mit denen jemand
+          die Anwendung öffnet. Wer wissen will, was seine Rolle bedeutet,
+          klappt es auf. */}
+      <details>
+        <summary className="cursor-pointer list-none">
+          <SectionPill tone="neutral" icon={<Check size={18} />}>
+            Was du in diesem Bauvorhaben tun kannst
+            <ChevronDown
+              size={16}
+              className="ml-1 transition-transform duration-[var(--motion-micro)]"
+              aria-hidden
+            />
+          </SectionPill>
+        </summary>
+        <div className="mt-4">
+          <RoleCard schedule={schedule} />
+        </div>
+      </details>
 
-        {byPhase.map((phase) => {
-          const tasks = schedule.tasks.filter((task) => task.phaseKey === phase.key);
-          return (
-            <div key={phase.key} className="flex flex-col gap-2">
-              <h2 className="text-subheading font-medium text-charcoal">
-                {phase.ordinal}. {phase.name}
-              </h2>
-              <Card className="py-0">
-                <ul>
-                  {tasks.map((task) => (
-                    <TaskRow
-                      key={task.id}
-                      task={task}
-                      referenceYear={referenceYear}
-                      {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
-                    />
-                  ))}
-                </ul>
-              </Card>
-            </div>
-          );
-        })}
-      </section>
       {selected !== null && onChangeTask !== undefined ? (
         <TaskSheet
           task={selected}
@@ -187,39 +194,6 @@ function RoleCard({ schedule }: { schedule: ProjectSchedule }) {
       )}
     </Card>
   );
-}
-
-function Metric({
-  label,
-  value,
-  strong,
-  tone,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-  tone?: 'ok' | 'warn';
-}) {
-  const color =
-    tone === 'warn' ? 'text-tangerine' : tone === 'ok' ? 'text-vivid-green' : 'text-charcoal';
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-caption text-steel">{label}</dt>
-      <dd className={`${strong ? 'text-heading-sm' : 'text-subheading'} font-medium ${color}`}>
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-/** Auch die schlechte Zahl kommt als Satz, nicht als nacktes Vorzeichen. */
-function deviationInWords(workdays: number): string {
-  if (workdays === 0) return 'genau im Plan';
-  // „1 Werktage später" hat im Betrieb gestanden, sobald eine Verschiebung
-  // knapp über den Vertragstermin führte. Genau dann liest jemand die Zahl
-  // besonders genau — und einen Grammatikfehler gleich mit.
-  const tage = Math.abs(workdays) === 1 ? '1 Werktag' : `${Math.abs(workdays)} Werktage`;
-  return workdays > 0 ? `${tage} später` : `${tage} früher`;
 }
 
 /**

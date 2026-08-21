@@ -22,6 +22,7 @@ import { Flag } from 'lucide-react';
 import type { PhaseProgress, ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
 import { daysInMonth, makeIsoDate, parseIsoDate, toEpochDay } from '@meinbaulotse/schedule';
 import { formatRange } from '../lib/format';
+import { progressOf } from '../lib/progress';
 
 /** Ein Vorgang ohne Termine hat auf einer Zeitachse nichts zu suchen. */
 interface Span {
@@ -233,6 +234,7 @@ function TaskBar({ task, axis }: { task: ScheduledTaskDto; axis: Axis }) {
   if (current === null) return null;
 
   const referenceYear = Number(axis.from.slice(0, 4));
+  const fortschritt = progressOf(task);
   const beschriftung = `${task.name} · ${formatRange(current.from, current.to, referenceYear)}`;
 
   return (
@@ -271,20 +273,42 @@ function TaskBar({ task, axis }: { task: ScheduledTaskDto; axis: Axis }) {
           // Ein Meilenstein hat keine Dauer. Ein Balken von null Breite wäre
           // unsichtbar, also eine Raute auf dem Tag.
           <span
-            className="absolute top-2 size-2.5 -translate-x-1/2 rotate-45 border border-electric-blue bg-canvas-white"
+            className={`absolute top-2 size-2.5 -translate-x-1/2 rotate-45 border ${
+              fortschritt === 'fertig'
+                ? 'border-vivid-green bg-vivid-green'
+                : 'border-electric-blue bg-canvas-white'
+            }`}
             style={{ left: `${positionOf(axis, current.from)}%` }}
             aria-hidden
           />
         ) : (
           <span
-            // Die Farbe bleibt Blau, auch auf dem kritischen Pfad. CI 9.8:
-            // „Tangerine-Kante links, kein rotes Feld." Auf einem Bau ist der
-            // kritische Pfad oft die halbe Liste — färbte man die Balken, wäre
-            // die halbe Ansicht orange, und Dauerwarnung wird nicht gelesen.
+            // Zwei Regeln überlagern sich hier, und beide sind Absicht.
+            //
+            // **Fertig ist grün** — `--color-vivid-green` trägt laut CI 3.5
+            // genau diese Bedeutung: Einigkeit und Fertigstellung. Ohne das
+            // sah ein abgeschlossener Vorgang aus wie ein geplanter, und die
+            // Zeitachse beantwortete die erste Frage nicht, die man an sie
+            // stellt: Wie weit sind wir?
+            //
+            // **Der kritische Pfad bleibt blau** — CI 9.8: „Tangerine-Kante
+            // links, kein rotes Feld." Auf einem Bau ist der kritische Pfad
+            // oft die halbe Liste; färbte man die Balken, wäre die halbe
+            // Ansicht orange, und Dauerwarnung wird nicht gelesen.
             className={`absolute top-2.5 h-2.5 rounded-[var(--radius-pill)] ${
               task.isWait
                 ? 'border border-dashed border-silver bg-canvas-white'
-                : 'bg-electric-blue'
+                : fortschritt === 'fertig'
+                  ? 'bg-vivid-green'
+                  : fortschritt === 'entfallen'
+                    ? 'bg-ash'
+                    : fortschritt === 'laeuft'
+                      ? 'bg-electric-blue'
+                      : // Geplant, aber noch nicht angefangen: dieselbe Farbe,
+                        // schwächer. Der Unterschied zwischen „läuft" und
+                        // „kommt noch" ist auf einen Blick sichtbar, ohne eine
+                        // dritte Farbe einzuführen.
+                        'bg-electric-blue/35'
             }`}
             style={{
               left: `${positionOf(axis, current.from)}%`,
@@ -305,7 +329,9 @@ function TaskBar({ task, axis }: { task: ScheduledTaskDto; axis: Axis }) {
 function Legend() {
   return (
     <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-ash pt-3 text-caption text-fog">
-      <LegendItem className="bg-electric-blue">Vorgang</LegendItem>
+      <LegendItem className="bg-vivid-green">fertig</LegendItem>
+      <LegendItem className="bg-electric-blue">läuft gerade</LegendItem>
+      <LegendItem className="bg-electric-blue/35">steht noch aus</LegendItem>
       <span className="flex items-center gap-2">
         <span className="h-3.5 w-0.5 bg-tangerine" aria-hidden />
         ohne Puffer — jeder Tag Verzug verschiebt den Endtermin

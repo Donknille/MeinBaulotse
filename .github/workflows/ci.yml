@@ -68,6 +68,9 @@ jobs:
       - name: Onboarding von Ende zu Ende
         run: pnpm --filter @meinbaulotse/api test
 
+      - name: Fortschritt und Klartext im Web
+        run: pnpm --filter @meinbaulotse/web test
+
       - name: Erzeugte Dateien sind aktuell
         run: |
           pnpm --filter @meinbaulotse/db seed:generate
