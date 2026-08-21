@@ -102,10 +102,7 @@ export function fromEpochDay(epochDay: number): IsoDate {
   const era = Math.floor(z / 146097);
   const dayOfEra = z - era * 146097;
   const yearOfEra = Math.floor(
-    (dayOfEra -
-      Math.floor(dayOfEra / 1460) +
-      Math.floor(dayOfEra / 36524) -
-      Math.floor(dayOfEra / 146096)) /
+    (dayOfEra - Math.floor(dayOfEra / 1460) + Math.floor(dayOfEra / 36524) - Math.floor(dayOfEra / 146096)) /
       365,
   );
   const y = yearOfEra + era * 400;
@@ -147,7 +144,7 @@ export function minDate(...dates: readonly IsoDate[]): IsoDate {
 /** ISO-Wochentag. 1970-01-01 war ein Donnerstag, daher der Versatz von 3. */
 export function dayOfWeek(date: IsoDate): IsoWeekday {
   const epochDay = toEpochDay(date);
-  return (((((epochDay + 3) % 7) + 7) % 7) + 1) as IsoWeekday;
+  return ((((epochDay + 3) % 7) + 7) % 7 + 1) as IsoWeekday;
 }
 
 export function isWeekend(date: IsoDate): boolean {

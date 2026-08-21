@@ -187,9 +187,7 @@ export function workdayEnd(
   tradeCode?: string,
 ): IsoDate {
   if (durationWorkdays < 1) {
-    throw new RangeError(
-      `Dauer eines Arbeitsvorgangs muss mindestens 1 betragen: ${durationWorkdays}`,
-    );
+    throw new RangeError(`Dauer eines Arbeitsvorgangs muss mindestens 1 betragen: ${durationWorkdays}`);
   }
   return workdayOffset(start, durationWorkdays - 1, calendar, tradeCode);
 }

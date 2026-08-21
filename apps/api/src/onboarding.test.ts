@@ -19,7 +19,11 @@ import {
   SUPABASE_ROOT_CA_2021,
   withAdminTx,
 } from '@meinbaulotse/db';
-import { projectSchedule, type ProjectSchedule, type ScheduledTaskDto } from '@meinbaulotse/shared';
+import {
+  projectSchedule,
+  type ProjectSchedule,
+  type ScheduledTaskDto,
+} from '@meinbaulotse/shared';
 import { addDays } from '@meinbaulotse/schedule';
 import { createApp, withoutSecrets } from './app.js';
 

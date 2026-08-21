@@ -10,11 +10,7 @@ const NI: Calendar = { federalState: 'NI' };
 /** 13.04.2026 ist ein Montag. */
 const MONTAG = '2026-04-13';
 
-const task = (
-  id: string,
-  durationDays: number,
-  extra: Partial<ScheduleTask> = {},
-): ScheduleTask => ({
+const task = (id: string, durationDays: number, extra: Partial<ScheduleTask> = {}): ScheduleTask => ({
   id,
   durationDays,
   ...extra,
@@ -96,7 +92,10 @@ describe('computeSchedule — Anordnungsbeziehungen', () => {
   });
 
   it('nimmt bei mehreren Vorgängern den spätesten', () => {
-    const result = run([task('a', 2), task('b', 6), task('c', 1)], [fs('a', 'c'), fs('b', 'c')]);
+    const result = run(
+      [task('a', 2), task('b', 6), task('c', 1)],
+      [fs('a', 'c'), fs('b', 'c')],
+    );
     expect(result.tasks.get('b')?.end).toBe('2026-04-20');
     expect(result.tasks.get('c')?.start).toBe('2026-04-21');
   });
@@ -151,12 +150,11 @@ describe('computeSchedule — Wartezeiten', () => {
 
 describe('computeSchedule — Ist-Termine', () => {
   it('ein gemeldeter Beginn schlägt die Rechnung und pflanzt sich fort', () => {
-    const result = run([task('a', 3, { actualStart: '2026-04-20' }), task('b', 2)], [fs('a', 'b')]);
-    expect(result.tasks.get('a')).toMatchObject({
-      start: '2026-04-20',
-      end: '2026-04-22',
-      pinned: true,
-    });
+    const result = run(
+      [task('a', 3, { actualStart: '2026-04-20' }), task('b', 2)],
+      [fs('a', 'b')],
+    );
+    expect(result.tasks.get('a')).toMatchObject({ start: '2026-04-20', end: '2026-04-22', pinned: true });
     expect(result.tasks.get('b')?.start).toBe('2026-04-23');
   });
 

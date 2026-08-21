@@ -7,11 +7,7 @@ import type { ScheduleDependency, ScheduleTask } from './types.js';
 const BY: Calendar = { federalState: 'BY' };
 const MONTAG = '2026-04-13';
 
-const task = (
-  id: string,
-  durationDays: number,
-  extra: Partial<ScheduleTask> = {},
-): ScheduleTask => ({
+const task = (id: string, durationDays: number, extra: Partial<ScheduleTask> = {}): ScheduleTask => ({
   id,
   durationDays,
   ...extra,
@@ -65,13 +61,7 @@ describe('criticalPath', () => {
   });
 
   it('verteilt Puffer über eine ganze Nebenkette', () => {
-    const tasks = [
-      task('start', 1),
-      task('lang', 10),
-      task('n1', 2),
-      task('n2', 2),
-      task('ende', 1),
-    ];
+    const tasks = [task('start', 1), task('lang', 10), task('n1', 2), task('n2', 2), task('ende', 1)];
     const dependencies = [
       fs('start', 'lang'),
       fs('start', 'n1'),

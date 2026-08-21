@@ -85,17 +85,17 @@ describe('holidaysForYear', () => {
 
   it('führt Fronleichnam in Sachsen nur in katholischen Gemeinden', () => {
     expect(holidaysForYear(2026, 'SN').has('2026-06-04')).toBe(false);
-    expect(holidaysForYear(2026, 'SN', { catholicMunicipality: true }).get('2026-06-04')).toBe(
-      'Fronleichnam',
-    );
+    expect(
+      holidaysForYear(2026, 'SN', { catholicMunicipality: true }).get('2026-06-04'),
+    ).toBe('Fronleichnam');
   });
 
   it('führt Mariä Himmelfahrt im Saarland immer, in Bayern nur katholisch', () => {
     expect(holidaysForYear(2026, 'SL').get('2026-08-15')).toBe('Mariä Himmelfahrt');
     expect(holidaysForYear(2026, 'BY').has('2026-08-15')).toBe(false);
-    expect(holidaysForYear(2026, 'BY', { catholicMunicipality: true }).get('2026-08-15')).toBe(
-      'Mariä Himmelfahrt',
-    );
+    expect(
+      holidaysForYear(2026, 'BY', { catholicMunicipality: true }).get('2026-08-15'),
+    ).toBe('Mariä Himmelfahrt');
   });
 
   it('kennt den Buß- und Bettag nur in Sachsen', () => {

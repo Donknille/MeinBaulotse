@@ -161,7 +161,9 @@ export function computeSchedule(input: ComputeScheduleInput): ScheduleResult {
   }
 
   const projectEnd =
-    order.length === 0 ? projectStart : maxDate(...order.map((id) => scheduled.get(id)!.end));
+    order.length === 0
+      ? projectStart
+      : maxDate(...order.map((id) => scheduled.get(id)!.end));
 
   return { tasks: scheduled, order, projectStart, projectEnd };
 }

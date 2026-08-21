@@ -28,14 +28,14 @@ const asOwner = <T>(run: Parameters<typeof withUserTx<T>>[1], options = {}): Pro
 describe('(1) schedule_change ist append-only', () => {
   it('lässt sich als Anwendungsrolle nicht ändern', async () => {
     await expect(
-      asOwner(async (tx) =>
-        tx.query('update schedule_change set reason_text = $1', ['manipuliert']),
-      ),
+      asOwner(async (tx) => tx.query('update schedule_change set reason_text = $1', ['manipuliert'])),
     ).rejects.toThrow();
   });
 
   it('lässt sich als Anwendungsrolle nicht löschen', async () => {
-    await expect(asOwner(async (tx) => tx.query('delete from schedule_change'))).rejects.toThrow();
+    await expect(
+      asOwner(async (tx) => tx.query('delete from schedule_change')),
+    ).rejects.toThrow();
   });
 
   it('lässt sich auch mit den Rechten des Eigentümers nicht ändern', async () => {
@@ -60,15 +60,14 @@ describe('(1) schedule_change ist append-only', () => {
 
 describe('(4) Jede Terminänderung erzeugt einen Eintrag', () => {
   it('protokolliert das Anlegen eines Vorgangs', async () => {
-    const entries = await withAdminTx(
-      async (tx) =>
-        (
-          await tx.query<{ field: string; reason_code: string }>(
-            `select field, reason_code from schedule_change
+    const entries = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ field: string; reason_code: string }>(
+          `select field, reason_code from schedule_change
            where task_id = $1 and field = 'task_created'`,
-            [fixture.tileTaskId],
-          )
-        ).rows,
+          [fixture.tileTaskId],
+        )
+      ).rows,
     );
     expect(entries).toHaveLength(1);
     expect(entries[0]!.reason_code).toBe('planinitialisierung');
@@ -83,24 +82,23 @@ describe('(4) Jede Terminänderung erzeugt einen Eintrag', () => {
       { changeReason: 'lieferzeit', changeReasonText: 'Fliesen kommen später' },
     );
 
-    const entry = await withAdminTx(
-      async (tx) =>
-        (
-          await tx.query<{
-            old_value: string;
-            new_value: string;
-            reason_code: string;
-            reason_text: string;
-            actor_role: string;
-            actor_channel: string;
-          }>(
-            `select old_value, new_value, reason_code, reason_text, actor_role, actor_channel
+    const entry = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{
+          old_value: string;
+          new_value: string;
+          reason_code: string;
+          reason_text: string;
+          actor_role: string;
+          actor_channel: string;
+        }>(
+          `select old_value, new_value, reason_code, reason_text, actor_role, actor_channel
            from schedule_change
            where task_id = $1 and field = 'current_start'
            order by created_at desc limit 1`,
-            [fixture.tileTaskId],
-          )
-        ).rows[0],
+          [fixture.tileTaskId],
+        )
+      ).rows[0],
     );
 
     expect(entry).toBeDefined();
@@ -122,16 +120,15 @@ describe('(4) Jede Terminänderung erzeugt einen Eintrag', () => {
       { actorChannel: 'guest_link' },
     );
 
-    const channel = await withAdminTx(
-      async (tx) =>
-        (
-          await tx.query<{ actor_channel: string }>(
-            `select actor_channel from schedule_change
+    const channel = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ actor_channel: string }>(
+          `select actor_channel from schedule_change
            where task_id = $1 and field = 'current_end'
            order by created_at desc limit 1`,
-            [fixture.tileTaskId],
-          )
-        ).rows[0]!.actor_channel,
+          [fixture.tileTaskId],
+        )
+      ).rows[0]!.actor_channel,
     );
     expect(channel).toBe('guest_link');
   });
@@ -227,15 +224,14 @@ describe('(5) Abhängigkeiten dürfen keinen Zyklus schließen', () => {
   });
 
   it('verweigert einen Zyklus über drei Ecken', async () => {
-    const thirdId = await withAdminTx(
-      async (tx) =>
-        (
-          await tx.query<{ id: string }>(
-            `insert into task (project_id, name, phase_key, duration_days)
+    const thirdId = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `insert into task (project_id, name, phase_key, duration_days)
            values ($1, 'Bodenbeläge', 'endausbau', 5) returning id`,
-            [fixture.projectId],
-          )
-        ).rows[0]!.id,
+          [fixture.projectId],
+        )
+      ).rows[0]!.id,
     );
 
     await asOwner(async (tx) =>
@@ -293,9 +289,10 @@ describe('Prüfregeln des Schemas', () => {
   });
 
   it('lässt eine Mandantenzuordnung nur bei der Rolle expert zu', async () => {
-    const orgId = await withAdminTx(
-      async (tx) =>
-        (await tx.query<{ id: string }>('select id from expert_org limit 1')).rows[0]!.id,
+    const orgId = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ id: string }>('select id from expert_org limit 1')
+      ).rows[0]!.id,
     );
     await expect(
       withAdminTx(async (tx) =>
@@ -310,10 +307,11 @@ describe('Prüfregeln des Schemas', () => {
 });
 
 async function countChanges(): Promise<number> {
-  return withAdminTx(async (tx) =>
-    Number(
-      (await tx.query<{ count: string }>('select count(*)::text as count from schedule_change'))
-        .rows[0]!.count,
-    ),
+  return withAdminTx(
+    async (tx) =>
+      Number(
+        (await tx.query<{ count: string }>('select count(*)::text as count from schedule_change'))
+          .rows[0]!.count,
+      ),
   );
 }

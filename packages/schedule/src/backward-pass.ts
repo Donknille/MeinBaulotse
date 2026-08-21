@@ -8,7 +8,12 @@
  */
 
 import { addDays, compareDates, minDate, type IsoDate } from './civil-date.js';
-import { previousWorkday, workdayDifference, workdayOffset, type Calendar } from './calendar.js';
+import {
+  previousWorkday,
+  workdayDifference,
+  workdayOffset,
+  type Calendar,
+} from './calendar.js';
 import { buildGraph } from './graph.js';
 import { startFromEnd, endFromStart } from './forward-pass.js';
 import type {
@@ -124,11 +129,7 @@ export function criticalPath(input: CriticalPathInput): CriticalPathResult {
       const successor = byId.get(dependency.successorId);
       const successorLateStart = lateStart.get(dependency.successorId);
       const successorLateFinish = lateFinish.get(dependency.successorId);
-      if (
-        successor === undefined ||
-        successorLateStart === undefined ||
-        successorLateFinish === undefined
-      ) {
+      if (successor === undefined || successorLateStart === undefined || successorLateFinish === undefined) {
         continue;
       }
       candidates.push(
@@ -173,13 +174,7 @@ export function criticalPath(input: CriticalPathInput): CriticalPathResult {
     const isCritical = totalFloatDays <= 0;
     if (isCritical) critical.push(id);
 
-    floats.set(id, {
-      taskId: id,
-      lateStart: start,
-      lateFinish: finish,
-      totalFloatDays,
-      isCritical,
-    });
+    floats.set(id, { taskId: id, lateStart: start, lateFinish: finish, totalFloatDays, isCritical });
   }
 
   const deviationWorkdays =

@@ -111,7 +111,12 @@ describe('Kontraktion im Einzelnen', () => {
       row('b', 'always', 4),
       row('c', 'always', 5),
     ],
-    dependencies: [link('a', 'x'), link('x', 'y'), link('y', 'b'), link('y', 'c')],
+    dependencies: [
+      link('a', 'x'),
+      link('x', 'y'),
+      link('y', 'b'),
+      link('y', 'c'),
+    ],
   };
 
   it('überbrückt eine Kette entfallender Vorgänge', () => {
