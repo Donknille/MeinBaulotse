@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { EmptyState } from '../components/ui';
+import { Button } from '../components/ui';
 import { PlanView } from '../components/PlanView';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
@@ -40,15 +40,34 @@ export function Plan() {
       {query.isPending ? (
         <p className="text-body text-steel">Der Plan wird geladen.</p>
       ) : query.isError || query.data === undefined ? (
-        // Den Grund nennen, nicht nur das Scheitern: „Prüf bitte den Link"
-        // schickt in die Irre, wenn in Wahrheit die Datenbank nicht antwortet.
-        <EmptyState
-          text={`Dieses Projekt konnten wir nicht laden. ${
-            query.error instanceof ApiError
+        // Den Grund nennen, nicht nur das Scheitern.
+        //
+        // Hier stand einmal nur `message`, und das war „Das hat nicht
+        // geklappt" — der Sammeltext der API für jeden unerwarteten Fehler.
+        // Die eigentliche Auskunft steckte daneben in `detail` und wurde
+        // verschwiegen, ausgerechnet auf der Seite, auf der der Fehler
+        // auftauchte. Die Projektliste zeigte sie längst; diese hier nicht.
+        <div className="flex flex-col items-start gap-3 py-8">
+          <p className="max-w-[34rem] text-body text-charcoal">
+            Dieses Bauvorhaben ließ sich gerade nicht laden. Deine Daten sind davon nicht betroffen.
+          </p>
+          <p className="max-w-[34rem] text-body text-steel">
+            {query.error instanceof ApiError
               ? query.error.message
-              : 'Prüf bitte den Link, oder öffne es noch einmal aus deiner Übersicht.'
-          }`}
-        />
+              : 'Prüf bitte den Link, oder öffne es noch einmal aus deiner Übersicht.'}
+          </p>
+          {query.error instanceof ApiError && query.error.detail !== undefined ? (
+            <p className="max-w-[34rem] font-mono text-caption break-words text-steel">
+              {query.error.detail}
+            </p>
+          ) : null}
+          {query.error instanceof ApiError && query.error.schemaHint !== undefined ? (
+            <p className="max-w-[34rem] text-caption text-steel">{query.error.schemaHint}</p>
+          ) : null}
+          <Button variant="primary" size="field" onClick={() => void query.refetch()}>
+            Erneut versuchen
+          </Button>
+        </div>
       ) : (
         <PlanView
           schedule={query.data}

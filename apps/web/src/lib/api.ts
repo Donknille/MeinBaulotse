@@ -31,6 +31,8 @@ export class ApiError extends Error {
   readonly detail: string | undefined;
   /** Die Form der Datenbankadresse, ohne Host, Benutzer oder Passwort. */
   readonly connection: ConnectionShape | undefined;
+  /** Gesetzt, wenn der Fehler nach einer nicht eingespielten Migration riecht. */
+  readonly schemaHint: string | undefined;
 
   constructor(
     status: number,
@@ -38,6 +40,7 @@ export class ApiError extends Error {
     hint?: string,
     detail?: string,
     connection?: ConnectionShape,
+    schemaHint?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -45,6 +48,7 @@ export class ApiError extends Error {
     this.hint = hint;
     this.detail = detail;
     this.connection = connection;
+    this.schemaHint = schemaHint;
   }
 }
 
@@ -83,6 +87,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       hint?: string;
       detail?: string;
       connection?: ConnectionShape;
+      schemaHint?: string;
     } | null;
     // Ohne JSON-Körper bleibt nur der Statuscode — und der ist mehr wert als
     // ein allgemeiner Satz: Ein 502 vom Router und ein 401 der API führen zu
@@ -93,6 +98,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       body?.hint,
       body?.detail,
       body?.connection,
+      body?.schemaHint,
     );
   }
 

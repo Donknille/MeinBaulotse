@@ -194,6 +194,9 @@ function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
       {advice !== undefined ? (
         <p className="max-w-[34rem] text-caption text-steel">{advice}</p>
       ) : null}
+      {error instanceof ApiError && error.schemaHint !== undefined ? (
+        <p className="max-w-[34rem] text-caption text-steel">{error.schemaHint}</p>
+      ) : null}
       <Button variant="primary" size="field" onClick={onRetry}>
         Erneut versuchen
       </Button>

@@ -210,6 +210,50 @@ describe('Auskunft über Verbindung und Identität', () => {
     }
   });
 
+  it('meldet eine nicht eingespielte Migration, statt „ok" zu sagen', async () => {
+    // Der teuerste Fehler dieser Sitzung: Migration 0004 fügte
+    // `task.earliest_start` hinzu, die Auslieferung ging live, die Migration
+    // fehlte — und jede Planansicht endete in „column t.earliest_start does
+    // not exist". Diese Prüfung meldete dabei `ok: true`, weil sie nur die
+    // Verbindung ansah. Eine stehende Verbindung ist keine brauchbare
+    // Datenbank.
+    // Eine eigene Kennung mit eigenem Bauvorhaben, damit dieser Test keine
+    // Datenlage hinterlässt, über die spätere Fälle stolpern.
+    const eigener = await tokenFor(await createUser('schemaprobe@example.test'));
+    const angelegt = await request('/api/v1/projects/onboarding', {
+      method: 'POST',
+      token: eigener,
+      body: JSON.stringify({ ...ANTWORTEN, name: 'Schemaprobe' }),
+    });
+    const { projectId } = (await angelegt.json()) as { projectId: string };
+
+    await withAdminTx((tx) => tx.query('alter table task drop column earliest_start'));
+    try {
+      const response = await request('/api/health/db');
+      expect(response.status).toBe(503);
+
+      const body = (await response.json()) as {
+        ok: boolean;
+        detail: string;
+        schema: { current: boolean; missingMigrations: string[] };
+      };
+      expect(body.ok).toBe(false);
+      expect(body.schema.current).toBe(false);
+      // Nicht die Spalte nennen, sondern die Datei — daraus folgt eine
+      // Handlung.
+      expect(body.schema.missingMigrations).toEqual(['0004_task_constraint.sql']);
+      expect(body.detail).toContain('0004_task_constraint.sql');
+
+      // Und der 500er einer echten Route nennt denselben Zusammenhang.
+      const plan = await request(`/api/v1/projects/${projectId}/schedule`, { token: eigener });
+      expect(plan.status).toBe(500);
+      const fehler = (await plan.json()) as { schemaHint?: string };
+      expect(fehler.schemaHint).toContain('earliest_start');
+    } finally {
+      await withAdminTx((tx) => tx.query('alter table task add column earliest_start date'));
+    }
+  });
+
   it('verlangt für die Identität eine Anmeldung', async () => {
     expect((await request('/api/v1/me')).status).toBe(401);
   });

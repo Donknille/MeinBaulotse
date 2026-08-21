@@ -14731,9 +14731,41 @@ async function recomputeProject(tx, projectId) {
   };
 }
 
+// src/schema-check.ts
+var EXPECTED = [
+  { migration: "0004_task_constraint.sql", table: "task", column: "earliest_start" }
+];
+async function checkSchema(tx) {
+  if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
+  const found = await tx.query(
+    `select table_name, column_name
+       from information_schema.columns
+      where table_schema = 'public'
+        and (table_name, column_name) in (${EXPECTED.map(
+      (_, index) => `($${index * 2 + 1}, $${index * 2 + 2})`
+    ).join(", ")})`,
+    EXPECTED.flatMap((expectation) => [expectation.table, expectation.column])
+  );
+  const vorhanden = new Set(found.rows.map((row) => `${row.table_name}.${row.column_name}`));
+  const missing = [
+    ...new Set(
+      EXPECTED.filter(
+        (expectation) => !vorhanden.has(`${expectation.table}.${expectation.column}`)
+      ).map((expectation) => expectation.migration)
+    )
+  ];
+  return { current: missing.length === 0, missingMigrations: missing };
+}
+
 // src/app.ts
 var uuid = external_exports.string().uuid();
 var HEALTH_PROBE_USER = "00000000-0000-0000-0000-000000000000";
+function missingColumnHint(error) {
+  const text = error instanceof Error ? error.message : String(error);
+  const treffer = /column\s+(?:\w+\.)?(\w+)\s+does not exist/i.exec(text);
+  if (treffer === null) return null;
+  return `Die Datenbank kennt die Spalte \u201E${treffer[1]}" nicht. Vermutlich fehlt eine Migration aus supabase/migrations \u2014 /api/health/db sagt welche.`;
+}
 function withoutSecrets(text) {
   return text.replace(/:\/\/[^@\s]*@/g, "://***@");
 }
@@ -14742,17 +14774,30 @@ function createApp() {
   app.get("/health", (c) => c.json({ ok: true, path: c.req.path }));
   app.get("/health/db", async (c) => {
     try {
-      const counts = await withUserTx({ sub: HEALTH_PROBE_USER }, async (tx) => {
+      const zustand = await withUserTx({ sub: HEALTH_PROBE_USER }, async (tx) => {
         const result = await tx.query(
           `select (select count(*) from phase)::text           as phases,
                   (select count(*) from role_permission)::text as roles`
         );
-        return result.rows[0];
+        return { counts: result.rows[0], schema: await checkSchema(tx) };
       });
+      if (!zustand.schema.current) {
+        return c.json(
+          {
+            ok: false,
+            error: "Die Datenbank ist nicht auf dem Stand dieser Fassung.",
+            detail: `Fehlende Migration: ${zustand.schema.missingMigrations.join(", ")}. Einzuspielen im SQL-Editor, aus supabase/migrations.`,
+            schema: zustand.schema,
+            connection: describeConnection()
+          },
+          503
+        );
+      }
       return c.json({
         ok: true,
-        phases: Number(counts.phases),
-        roles: Number(counts.roles),
+        phases: Number(zustand.counts.phases),
+        roles: Number(zustand.counts.roles),
+        schema: zustand.schema,
         connection: describeConnection()
       });
     } catch (error) {
@@ -14908,7 +14953,10 @@ function createApp() {
         // Auch hier, nicht nur unter /api/health/db: Wer einen Fehler sieht,
         // erreicht womoeglich keine zweite Adresse mehr. Die Auskunft muss an
         // der Stelle stehen, an der der Fehler auftaucht.
-        connection: describeConnection()
+        connection: describeConnection(),
+        // „column t.earliest_start does not exist" ist fuer den Betreiber ein
+        // Raetsel, „spiel Migration 0004 ein" eine Anweisung.
+        ...missingColumnHint(error) === null ? {} : { schemaHint: missingColumnHint(error) }
       },
       500
     );

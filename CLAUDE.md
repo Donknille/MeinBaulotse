@@ -72,9 +72,18 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 
    Die Gegenprobe nach jedem Deployment sind zwei Aufrufe, beide ohne
    Anmeldung: `/api/health` muss `{"ok":true,"path":"/api/health"}` liefern —
-   dann läuft die Function. `/api/health/db` muss `{"ok":true,"phases":9,…}`
-   liefern — dann kommt sie auch an die Datenbank. Ohne den zweiten sieht eine
+   dann läuft die Function. `/api/health/db` muss `{"ok":true,…,"schema":
+   {"current":true}}` liefern — dann kommt sie an die Datenbank **und** das
+   Schema passt zur ausgelieferten Fassung. Ohne den zweiten sieht eine
    fehlende Verbindung aus wie eine leere Datenlage.
+
+9. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
+   Sonst geht eine Auslieferung live, bevor die Migration eingespielt ist, und
+   jede betroffene Ansicht endet in `column … does not exist` — während
+   `/api/health/db` fröhlich `ok` meldet, denn die Verbindung stand ja. Genau
+   so ist es bei 0004 passiert. Die Liste in `apps/api/src/schema-check.ts` ist
+   kein Abbild des Schemas, sondern die Aussage „ohne das läuft nichts";
+   dadurch nennt die Fehlermeldung den Dateinamen statt einer Spalte.
 
 ## Befehle
 

@@ -28,6 +28,7 @@ import { requireAuth, type AuthedVariables } from './auth.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { recomputeProject } from './scheduling.js';
+import { checkSchema } from './schema-check.js';
 
 type App = { Variables: AuthedVariables };
 
@@ -42,6 +43,19 @@ const uuid = z.string().uuid();
  * privilegierte Rolle — Regel 1 gilt auch für eine Gesundheitsprüfung.
  */
 const HEALTH_PROBE_USER = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Riecht dieser Fehler nach einer nicht eingespielten Migration?
+ *
+ * Postgres nennt die Spalte, nicht die Datei. Der Sprung von der einen zur
+ * anderen hat im Betrieb eine ganze Runde gekostet.
+ */
+function missingColumnHint(error: unknown): string | null {
+  const text = error instanceof Error ? error.message : String(error);
+  const treffer = /column\s+(?:\w+\.)?(\w+)\s+does not exist/i.exec(text);
+  if (treffer === null) return null;
+  return `Die Datenbank kennt die Spalte „${treffer[1]}" nicht. Vermutlich fehlt eine Migration aus supabase/migrations — /api/health/db sagt welche.`;
+}
 
 /**
  * Zugangsdaten dürfen nicht in einer Fehlermeldung landen. Postgres-Adressen
@@ -88,17 +102,36 @@ export function createApp(): Hono<App> {
   // Supabase-Projekts steht als `VITE_SUPABASE_URL` ohnehin im Browser-Bundle.
   app.get('/health/db', async (c) => {
     try {
-      const counts = await withUserTx({ sub: HEALTH_PROBE_USER }, async (tx) => {
+      const zustand = await withUserTx({ sub: HEALTH_PROBE_USER }, async (tx) => {
         const result = await tx.query<{ phases: string; roles: string }>(
           `select (select count(*) from phase)::text           as phases,
                   (select count(*) from role_permission)::text as roles`,
         );
-        return result.rows[0]!;
+        return { counts: result.rows[0]!, schema: await checkSchema(tx) };
       });
+
+      // Eine stehende Verbindung ist nicht dasselbe wie eine brauchbare
+      // Datenbank. Fehlt eine Migration, die der Code voraussetzt, laeuft jede
+      // Planansicht in einen 500er — und diese Pruefung meldete trotzdem
+      // „ok". Genau so ist es im Betrieb passiert.
+      if (!zustand.schema.current) {
+        return c.json(
+          {
+            ok: false,
+            error: 'Die Datenbank ist nicht auf dem Stand dieser Fassung.',
+            detail: `Fehlende Migration: ${zustand.schema.missingMigrations.join(', ')}. Einzuspielen im SQL-Editor, aus supabase/migrations.`,
+            schema: zustand.schema,
+            connection: describeConnection(),
+          },
+          503,
+        );
+      }
+
       return c.json({
         ok: true,
-        phases: Number(counts.phases),
-        roles: Number(counts.roles),
+        phases: Number(zustand.counts.phases),
+        roles: Number(zustand.counts.roles),
+        schema: zustand.schema,
         connection: describeConnection(),
       });
     } catch (error) {
@@ -319,6 +352,9 @@ export function createApp(): Hono<App> {
         // erreicht womoeglich keine zweite Adresse mehr. Die Auskunft muss an
         // der Stelle stehen, an der der Fehler auftaucht.
         connection: describeConnection(),
+        // „column t.earliest_start does not exist" ist fuer den Betreiber ein
+        // Raetsel, „spiel Migration 0004 ein" eine Anweisung.
+        ...(missingColumnHint(error) === null ? {} : { schemaHint: missingColumnHint(error) }),
       },
       500,
     );
