@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { EmptyState } from '../components/ui';
 import { PlanView } from '../components/PlanView';
+import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
 
 /** Route: holt den Plan und übergibt ihn an die Darstellung. */
@@ -15,6 +16,10 @@ export function Plan() {
 
   return (
     <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-10 px-4 py-8 sm:px-6">
+      {/* Ohne diese Zeile ist die Planansicht eine Sackgasse: Als installierte
+          PWA gibt es keinen Zurück-Knopf des Browsers. */}
+      <TopBar back={{ to: '/', label: 'Deine Bauvorhaben' }} />
+
       {query.isPending ? (
         <p className="text-body text-steel">Der Plan wird geladen.</p>
       ) : query.isError || query.data === undefined ? (

@@ -27,7 +27,11 @@ export function ConfirmationChip({
       fg: 'text-electric-blue',
       dot: 'border-electric-blue',
     },
-    mutual: { bg: 'bg-soft-mint', fg: 'text-vivid-green', dot: 'border-vivid-green bg-vivid-green' },
+    mutual: {
+      bg: 'bg-soft-mint',
+      fg: 'text-vivid-green',
+      dot: 'border-vivid-green bg-vivid-green',
+    },
     // „Zwei Angaben" ist ein Sachverhalt, kein Alarm — deshalb Tangerine, nicht Rot.
     disputed: {
       bg: 'bg-soft-amber',
@@ -65,7 +69,11 @@ export function PhaseBar({ phases, currentKey }: { phases: PhaseProgress[]; curr
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center" role="img" aria-label={`Phase ${currentIndex + 1} von ${withTasks.length}`}>
+      <div
+        className="flex items-center"
+        role="img"
+        aria-label={`Phase ${currentIndex + 1} von ${withTasks.length}`}
+      >
         {withTasks.map((phase, index) => (
           <span key={phase.key} className="flex items-center">
             {index > 0 ? <span className="h-px w-6 bg-ash sm:w-10" aria-hidden /> : null}
@@ -90,7 +98,13 @@ export function PhaseBar({ phases, currentKey }: { phases: PhaseProgress[]; curr
   );
 }
 
-export function TaskRow({ task, referenceYear }: { task: ScheduledTaskDto; referenceYear: number }) {
+export function TaskRow({
+  task,
+  referenceYear,
+}: {
+  task: ScheduledTaskDto;
+  referenceYear: number;
+}) {
   return (
     <li
       className={`flex flex-col gap-1.5 border-b border-ash py-3 last:border-b-0 ${
@@ -103,8 +117,11 @@ export function TaskRow({ task, referenceYear }: { task: ScheduledTaskDto; refer
         task.isCritical ? 'border-l-2 border-l-tangerine pl-3' : ''
       }`}
     >
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="min-w-[7.5rem] text-body text-steel">
+      {/* Mobil steht das Datum über dem Namen. Die feste Spalte daneben riss auf
+          375 px eine Lücke auf, sobald ein Name kurz war — und drückte ihn in
+          die nächste Zeile, sobald er lang war. */}
+      <div className="flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
+        <span className="text-body text-steel sm:min-w-[7.5rem]">
           {formatRange(task.currentStart, task.currentEnd, referenceYear)}
         </span>
         <span className="flex items-center gap-2 text-body-lg font-medium text-charcoal">

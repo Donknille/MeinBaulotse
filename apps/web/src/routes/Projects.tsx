@@ -4,10 +4,9 @@ import { Plus } from 'lucide-react';
 import { Button, Card, EmptyState, Pill } from '../components/ui';
 import { FEDERAL_STATE_LABEL, formatDate } from '../lib/format';
 import { ApiError, api, type ConnectionShape, type Identity } from '../lib/api';
-import { Topmark } from './SignIn';
-import { signOut } from '../lib/supabase';
-import { clearDemoSession, readDemoKey, readDemoSession } from '../lib/demo-auth';
+import { readDemoKey, readDemoSession } from '../lib/demo-auth';
 import { ROLE_LABEL } from '../lib/roles';
+import { TopBar } from '../components/TopBar';
 
 export function Projects() {
   const query = useQuery({ queryKey: ['projects'], queryFn: () => api.listProjects() });
@@ -24,33 +23,13 @@ export function Projects() {
 
   return (
     <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-8 sm:px-6">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-3 text-charcoal">
-          <Topmark size={22} />
-          <span className="text-body font-medium">MeinBaulotse</span>
-        </span>
-        <span className="flex items-center gap-2">
-          {demo !== null ? (
-            <Link to="/demo" className="text-body text-steel underline underline-offset-4">
-              {demo.label} · Rolle wechseln
-            </Link>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              clearDemoSession();
-              void signOut();
-            }}
-          >
-            Abmelden
-          </Button>
-        </span>
-      </div>
+      <TopBar />
 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 className="display-title text-heading-lg text-charcoal">Deine Bauvorhaben</h1>
-        <Link to="/onboarding">
+        {/* Auf dem Rechner steht die Hauptaktion oben rechts. Mobil gehört sie
+            nach unten in Daumenreichweite — CI 10.1. */}
+        <Link to="/onboarding" className="hidden sm:block">
           <Button variant="primary">
             <Plus size={16} aria-hidden />
             Neues Projekt
@@ -110,6 +89,15 @@ export function Projects() {
           ))}
         </ul>
       )}
+
+      {query.isSuccess && query.data.projects.length > 0 ? (
+        <Link to="/onboarding" className="sm:hidden">
+          <Button variant="primary" size="field" className="w-full">
+            <Plus size={16} aria-hidden />
+            Neues Projekt
+          </Button>
+        </Link>
+      ) : null}
     </main>
   );
 }
