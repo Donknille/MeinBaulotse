@@ -7,6 +7,8 @@
  */
 
 import type {
+  ChecklistUpdateRequest,
+  GuideCardView,
   OnboardingRequest,
   ProjectSchedule,
   ProjectSummary,
@@ -109,6 +111,7 @@ export interface OnboardingResult {
   projectId: string;
   taskCount: number;
   dependencyCount: number;
+  guideCardCount: number;
   computedEnd: string;
   deviationWorkdays: number | null;
 }
@@ -141,6 +144,33 @@ export const api = {
   updateTask: (projectId: string, taskId: string, change: TaskUpdateRequest) =>
     request<ProjectSchedule>(`/projects/${projectId}/tasks/${taskId}`, {
       method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  // -- Wissensschicht --------------------------------------------------------
+  //
+  // Beide antworten mit der vollständigen Ansicht. Nach einem Haken muss die
+  // Karte nicht nachgeladen werden, und der Haken kann nicht kurz sichtbar
+  // sein, ohne gespeichert zu sein.
+  //
+  // Ein reines Lesen gibt es hier nicht: Eine Karte zu öffnen *ist* die
+  // Rückmeldung „gesehen", und die gehört nach `guide_card_read`. Die
+  // GET-Route der API bleibt trotzdem — sie ist die Auskunft ohne Nebenwirkung,
+  // und die Gegenproben benutzen sie.
+  markGuideCardRead: (projectId: string, taskId: string, feedback: { helpful?: boolean | null }) =>
+    request<GuideCardView>(`/projects/${projectId}/tasks/${taskId}/guide-card/read`, {
+      method: 'POST',
+      body: JSON.stringify(feedback),
+    }),
+
+  setChecklistItem: (
+    projectId: string,
+    taskId: string,
+    sourceKey: string,
+    change: ChecklistUpdateRequest,
+  ) =>
+    request<GuideCardView>(`/projects/${projectId}/tasks/${taskId}/checklist/${sourceKey}`, {
+      method: 'PUT',
       body: JSON.stringify(change),
     }),
 };

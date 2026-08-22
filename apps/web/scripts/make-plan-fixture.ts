@@ -8,7 +8,7 @@
  * Aufruf: `pnpm --filter @meinbaulotse/web fixture`
  */
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -44,6 +44,42 @@ const floats = criticalPath({
 
 const tradeNameByCode = new Map(TRADES.map((trade) => [trade.code, trade.name]));
 
+/**
+ * Welche Vorgänge eine Lotsenkarte tragen.
+ *
+ * Gelesen wird nur das eine Kopffeld `vorgaenge` aus den Redaktionsdateien —
+ * nicht der ganze Inhalt. Der Styleguide braucht keine Karten, sondern nur die
+ * Auskunft, an welchen Zeilen der Knopf „Was passiert?" steht. Die
+ * Erstbefüllung der Datenbank macht weiterhin allein
+ * `packages/db/scripts/generate-guide-cards.ts`.
+ *
+ * Die Kennung ist erfunden und deterministisch: Im Styleguide gibt es keine
+ * Datenbank, und geladen wird die Karte dort ohnehin nicht.
+ */
+function taskCodesWithGuideCard(): Set<string> {
+  const dir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    '..',
+    'content',
+    'lotsenkarten',
+  );
+  const codes = new Set<string>();
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.md') || file === 'README.md') continue;
+    const treffer = /^vorgaenge:(.*)$/m.exec(readFileSync(join(dir, file), 'utf8'));
+    if (treffer === null) continue;
+    for (const code of treffer[1]!.split(',')) {
+      const bereinigt = code.trim();
+      if (bereinigt !== '') codes.add(bereinigt);
+    }
+  }
+  return codes;
+}
+
+const mitKarte = taskCodesWithGuideCard();
+
 const tasks: ScheduledTaskDto[] = plan.tasks.map((task, index) => {
   const scheduled = schedule.tasks.get(task.id)!;
   const float = floats.floats.get(task.id)!;
@@ -77,6 +113,9 @@ const tasks: ScheduledTaskDto[] = plan.tasks.map((task, index) => {
             : 'self_stated',
     totalFloatDays: float.totalFloatDays,
     isCritical: float.isCritical,
+    guideCardId: mitKarte.has(task.code)
+      ? `00000000-0000-4000-8000-${String(index + 900).padStart(12, '0')}`
+      : null,
   };
 });
 
@@ -130,5 +169,6 @@ writeFileSync(
 console.log(
   `Vorschau geschrieben: ${target}\n` +
     `  ${tasks.length} Vorgänge, Ende ${schedule.projectEnd}, ` +
-    `Abweichung ${floats.deviationWorkdays} Werktage.`,
+    `Abweichung ${floats.deviationWorkdays} Werktage,\n` +
+    `  ${tasks.filter((task) => task.guideCardId !== null).length} davon mit Lotsenkarte.`,
 );

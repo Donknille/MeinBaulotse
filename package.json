@@ -20,6 +20,7 @@
     "db:test": "pnpm --filter @meinbaulotse/db test",
     "demo:seed": "pnpm --filter @meinbaulotse/api demo:seed",
     "demo:sql": "pnpm --filter @meinbaulotse/api demo:sql",
+    "cards:generate": "pnpm --filter @meinbaulotse/db cards:generate",
     "build:function": "pnpm --filter @meinbaulotse/api build:function"
   },
   "devDependencies": {

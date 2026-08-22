@@ -17,18 +17,23 @@ import { TaskRow } from './schedule';
 import { Cockpit } from './Cockpit';
 import { Timeline } from './Timeline';
 import { TaskSheet } from './TaskSheet';
+import { GuideCardSheet, type GuideCardHandlers } from './GuideCard';
 import { formatDate } from '../lib/format';
 import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
 
 export function PlanView({
   schedule,
   onChangeTask,
+  guideCards,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
   onChangeTask?: (taskId: string, change: TaskUpdateRequest) => Promise<void>;
+  /** Fehlen sie, führt keine Zeile zur Lotsenkarte. */
+  guideCards?: GuideCardHandlers;
 }) {
   const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
+  const [guideCardTask, setGuideCardTask] = useState<ScheduledTaskDto | null>(null);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
   const currentPhase = currentPhaseKey(schedule);
   const byPhase = schedule.phases.filter((phase) => phase.taskCount > 0);
@@ -59,6 +64,7 @@ export function PlanView({
           schedule={schedule}
           currentPhase={currentPhase}
           {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
+          {...(guideCards === undefined ? {} : { onGuideCard: setGuideCardTask })}
         />
       </header>
 
@@ -105,6 +111,7 @@ export function PlanView({
                         task={task}
                         referenceYear={referenceYear}
                         {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
+                        {...(guideCards === undefined ? {} : { onGuideCard: setGuideCardTask })}
                       />
                     ))}
                   </ul>
@@ -140,6 +147,15 @@ export function PlanView({
           schedule={schedule}
           onClose={() => setSelected(null)}
           onSave={(change) => onChangeTask(selected.id, change)}
+        />
+      ) : null}
+
+      {guideCardTask !== null && guideCards !== undefined ? (
+        <GuideCardSheet
+          taskId={guideCardTask.id}
+          referenceYear={referenceYear}
+          handlers={guideCards}
+          onClose={() => setGuideCardTask(null)}
         />
       ) : null}
     </>

@@ -131,9 +131,13 @@ export async function createProjectFixture(prefix: string): Promise<ProjectFixtu
 /** Löscht alle Testdaten, ohne das Schema anzufassen. */
 export async function truncateAll(): Promise<void> {
   await withAdminTx(async (tx) => {
+    // `guide_card` steht bewusst nicht dabei: Der Redaktionsinhalt kommt aus
+    // einer Migration und gehört keinem Projekt. Was daran hängt — Gelesen-Stand
+    // und Haken — verschwindet mit dem Projekt.
     await tx.query(`
-      truncate schedule_change, audit_log, dependency, task, project_member, project,
-               expert_org_member, expert_org restart identity cascade
+      truncate schedule_change, audit_log, checklist_item, guide_card_read, dependency,
+               task, project_member, project, expert_org_member, expert_org
+               restart identity cascade
     `);
     await tx.query('delete from trade where project_id is not null');
     await tx.query('delete from auth.users');

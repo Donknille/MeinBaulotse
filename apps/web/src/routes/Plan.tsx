@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/ui';
 import { PlanView } from '../components/PlanView';
+import type { GuideCardHandlers } from '../components/GuideCard';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
 import type { TaskUpdateRequest } from '@meinbaulotse/shared';
@@ -30,6 +32,23 @@ export function Plan() {
       // erneuern außer diesem einen Plan.
     },
   });
+
+  // Die Lotsenkarte holt ihre Daten selbst, wenn sie geöffnet wird — sie
+  // gehört nicht in den Zwischenspeicher des Plans. Zwölf vollständige Karten
+  // mitzuladen, von denen der Nutzer keine liest, wäre auf einer Baustelle mit
+  // schlechtem Netz die falsche Rechnung.
+  //
+  // `useMemo`, weil `GuideCardSheet` beim Öffnen genau einmal laden soll. Ein
+  // bei jedem Rendern neu erzeugtes Objekt löste den Effekt wieder aus, und
+  // die Karte lüde in einer Schleife.
+  const guideCards = useMemo<GuideCardHandlers>(
+    () => ({
+      markRead: (taskId, feedback) => api.markGuideCardRead(projectId!, taskId, feedback),
+      setChecklistItem: (taskId, sourceKey, change) =>
+        api.setChecklistItem(projectId!, taskId, sourceKey, change),
+    }),
+    [projectId],
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-10 px-4 py-8 sm:px-6">
@@ -71,6 +90,7 @@ export function Plan() {
       ) : (
         <PlanView
           schedule={query.data}
+          guideCards={guideCards}
           onChangeTask={async (taskId, body) => {
             await change.mutateAsync({ taskId, body });
           }}

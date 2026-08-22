@@ -34,6 +34,7 @@ function vorgang(overrides: Partial<ScheduledTaskDto> = {}): ScheduledTaskDto {
     confirmation: 'self_stated',
     totalFloatDays: 0,
     isCritical: true,
+    guideCardId: null,
     ...overrides,
   };
 }

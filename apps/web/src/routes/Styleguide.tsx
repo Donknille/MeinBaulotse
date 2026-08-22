@@ -4,7 +4,8 @@
  * Was im Dokument steht und hier nicht erscheint, ist nicht umgesetzt.
  */
 
-import { CalendarDays, Camera, ClipboardList, Scale } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { BookOpen, CalendarDays, Camera, ClipboardList, Scale } from 'lucide-react';
 import {
   Button,
   Card,
@@ -17,8 +18,151 @@ import {
 } from '../components/ui';
 import { ConfirmationChip, PhaseBar, TaskRow } from '../components/schedule';
 import { PlanView } from '../components/PlanView';
+import { GuideCardSheet, type GuideCardHandlers } from '../components/GuideCard';
 import { PLAN_FIXTURE } from './plan-fixture';
-import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
+import type { GuideCardView, PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
+
+/**
+ * Eine gekürzte Lotsenkarte, nur für diese Seite.
+ *
+ * Sie ist **nicht** der Redaktionsinhalt — der liegt in
+ * `content/lotsenkarten/` und in der Datenbank. Hier steht ein Beispiel, damit
+ * Abschnitt 9.9 des Gestaltungssystems eine sichtbare Entsprechung hat: der
+ * Hinweis auf eine Fachprüfung, der Kopieren-Knopf an jeder Frage, die Quellen
+ * am Fuß und der feste Zusatz bei einer Gesetzesstelle.
+ */
+const DEMO_GUIDE_CARD: GuideCardView = {
+  card: {
+    id: '00000000-0000-4000-8000-000000000900',
+    key: 'beispiel',
+    version: 1,
+    title: 'Abnahme und Übergabe',
+    phaseKey: 'abnahme',
+    tradeCode: null,
+    whatsHappening:
+      'Bei der Abnahme erklärst du, dass du das Bauwerk als im Wesentlichen vertragsgemäß annimmst. Das ist kein Termin zum Schlüsselholen, sondern der Zeitpunkt, an dem sich die Rechtslage dreht.',
+    watchFor: [
+      {
+        key: 'w1',
+        text: 'Nimm dir Zeit und lass dich nicht drängen',
+        why: 'die Abnahme ist der einzige Termin des ganzen Baus, den man nicht nachholen kann',
+      },
+      {
+        key: 'w2',
+        text: 'Jeder bekannte Mangel steht im Protokoll, auch der kleine',
+        why: 'was nicht im Protokoll steht, gilt als abgenommen',
+      },
+      {
+        key: 'w3',
+        text: 'Du nimmst ein unterschriebenes Exemplar mit',
+        why: 'ein Protokoll, das nur der andere hat, ist kein Protokoll',
+      },
+    ],
+    questionsForContractor: [
+      {
+        key: 'q1',
+        question: 'Welche Unterlagen bekomme ich bei der Übergabe?',
+        whyItMatters: 'Messprotokolle, Bestandspläne und der Energieausweis gehören dazu',
+      },
+      {
+        key: 'q2',
+        question: 'Welche Restleistungen stehen noch aus, und bis wann sind sie erledigt?',
+        whyItMatters: 'Restleistungen und Mängel sind zwei verschiedene Dinge',
+      },
+    ],
+    commonProblems: [
+      {
+        key: 'c1',
+        problem: 'Die Abnahme wird nebenbei erledigt',
+        howToSpot:
+          'der Termin ist auf eine Stunde angesetzt, das Protokoll ist schon vorausgefüllt',
+      },
+    ],
+    photoPrompts: [
+      {
+        key: 'p1',
+        what: 'Das unterschriebene Abnahmeprotokoll, alle Seiten',
+        why: 'es ist das wichtigste Dokument deines Bauvorhabens',
+        beforeTaskCode: 't38',
+      },
+    ],
+    expertRecommended: true,
+    expertReason:
+      'Die Abnahme verschiebt die Beweislast auf dich. Was an diesem Tag nicht im Protokoll steht, musst du danach selbst nachweisen.',
+    legalNote: true,
+    sources: [
+      { title: '§ 640 BGB, Abnahme', note: 'Wirkung der Abnahme' },
+      { title: '§ 634a BGB, Verjährung der Mängelansprüche', note: 'fünf Jahre bei Bauwerken' },
+    ],
+  },
+  taskId: '00000000-0000-4000-8000-000000000137',
+  taskName: 'Abnahme und Übergabe',
+  taskStart: '2026-10-16',
+  taskEnd: '2026-10-16',
+  checklist: [
+    {
+      sourceKey: 'w1',
+      text: 'Nimm dir Zeit und lass dich nicht drängen',
+      isDone: false,
+      doneAt: null,
+      note: null,
+    },
+    {
+      sourceKey: 'w2',
+      text: 'Jeder bekannte Mangel steht im Protokoll, auch der kleine',
+      isDone: true,
+      doneAt: '2026-10-16T10:00:00Z',
+      note: null,
+    },
+    {
+      sourceKey: 'w3',
+      text: 'Du nimmst ein unterschriebenes Exemplar mit',
+      isDone: false,
+      doneAt: null,
+      note: null,
+    },
+  ],
+  readAt: null,
+  helpful: null,
+  canEditChecklist: true,
+};
+
+/**
+ * Der Styleguide hat keine Datenbank. Die Karte arbeitet deshalb gegen einen
+ * Zustand im Speicher — Haken und Rückmeldung funktionieren, sie überleben nur
+ * das Neuladen der Seite nicht.
+ */
+function useDemoGuideCards(): GuideCardHandlers {
+  const stand = useRef<GuideCardView>(DEMO_GUIDE_CARD);
+  return useMemo(
+    () => ({
+      markRead: async (_taskId, feedback) => {
+        stand.current = {
+          ...stand.current,
+          readAt: '2026-10-16T10:00:00Z',
+          ...('helpful' in feedback ? { helpful: feedback.helpful ?? null } : {}),
+        };
+        return stand.current;
+      },
+      setChecklistItem: async (_taskId, sourceKey, change) => {
+        stand.current = {
+          ...stand.current,
+          checklist: stand.current.checklist.map((eintrag) =>
+            eintrag.sourceKey === sourceKey
+              ? {
+                  ...eintrag,
+                  isDone: change.isDone,
+                  doneAt: change.isDone ? '2026-10-16T10:00:00Z' : null,
+                }
+              : eintrag,
+          ),
+        };
+        return stand.current;
+      },
+    }),
+    [],
+  );
+}
 
 const PHASES: PhaseProgress[] = [
   {
@@ -118,11 +262,14 @@ function task(overrides: Partial<ScheduledTaskDto>): ScheduledTaskDto {
     confirmation: 'self_stated',
     totalFloatDays: 0,
     isCritical: true,
+    guideCardId: null,
     ...overrides,
   };
 }
 
 export function Styleguide() {
+  const demoGuideCards = useDemoGuideCards();
+  const [karteOffen, setKarteOffen] = useState(false);
   return (
     <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-16 px-4 py-10 sm:px-6">
       <header className="flex flex-col gap-2">
@@ -375,14 +522,38 @@ export function Styleguide() {
         </Card>
       </Section>
 
+      <Section title="Lotsenkarte">
+        <p className="max-w-[34rem] text-body text-steel">
+          Vollbildblatt, von unten einfahrend, Lavender als Akzent. Die Fragen an den
+          Generalunternehmer stehen in einem eingebetteten Block mit Kopieren-Knopf, die Quellen am
+          Fuß und nicht hinter einem Aufklapper. Der Beispieltext ist gekürzt; der Redaktionsinhalt
+          liegt in der Datenbank.
+        </p>
+        <div>
+          <Button variant="outline" onClick={() => setKarteOffen(true)}>
+            <BookOpen size={16} aria-hidden />
+            Lotsenkarte öffnen
+          </Button>
+        </div>
+        {karteOffen ? (
+          <GuideCardSheet
+            taskId={DEMO_GUIDE_CARD.taskId}
+            referenceYear={2026}
+            handlers={demoGuideCards}
+            onClose={() => setKarteOffen(false)}
+          />
+        ) : null}
+      </Section>
+
       <Section title="Planübersicht">
         <p className="max-w-[34rem] text-body text-steel">
           Dieselbe Ansicht wie im Projekt, mit fester Datenlage: Baustart 01.04.2026 in Bayern,
           geschuldet der 30.09.2026. Erzeugt aus der Ablaufvorlage und dem Berechnungskern, nicht
-          von Hand geschrieben.
+          von Hand geschrieben. Die Lotsenkarte ist überall dieselbe Beispielkarte — hier zählt der
+          Weg dorthin, nicht der Inhalt.
         </p>
         <div className="flex flex-col gap-10 rounded-[var(--radius-large)] border border-ash p-6">
-          <PlanView schedule={PLAN_FIXTURE} />
+          <PlanView schedule={PLAN_FIXTURE} guideCards={demoGuideCards} />
         </div>
       </Section>
 

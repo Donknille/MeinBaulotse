@@ -252,6 +252,178 @@ describe('(5) Abhängigkeiten dürfen keinen Zyklus schließen', () => {
   });
 });
 
+describe('(6) Eine veröffentlichte Lotsenkarte ist unveränderlich', () => {
+  /**
+   * Die Abnahmebedingung von AP 2 lautet wörtlich: „Eine veröffentlichte Karte
+   * lässt sich per SQL nicht ändern." Deshalb wird hier mit den Rechten des
+   * Eigentümers geprüft und nicht als Anwendungsrolle — die hat ohnehin kein
+   * UPDATE auf `guide_card`. Was die Sperre wert ist, entscheidet sich dort,
+   * wo jemand alle Rechte hat.
+   */
+  const einKartenSchluessel = 'estrich';
+
+  it('lässt sich auch mit den Rechten des Eigentümers nicht ändern', async () => {
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query('update guide_card set title = $1 where key = $2', [
+          'Anders',
+          einKartenSchluessel,
+        ]),
+      ),
+    ).rejects.toThrow(/unveränderlich/i);
+  });
+
+  it('lässt auch eine Änderung am Inhalt nicht zu', async () => {
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query('update guide_card set watch_for = $1 where key = $2', [
+          '[]',
+          einKartenSchluessel,
+        ]),
+      ),
+    ).rejects.toThrow(/unveränderlich/i);
+  });
+
+  it('lässt sich nicht löschen', async () => {
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query('delete from guide_card where key = $1', [einKartenSchluessel]),
+      ),
+    ).rejects.toThrow(/nicht gelöscht/i);
+  });
+
+  it('lässt sich genau einmal ablösen', async () => {
+    // Der ganze Nachweis läuft in einer Transaktion, die am Ende absichtlich
+    // zurückgerollt wird.
+    //
+    // Der Grund ist die Invariante selbst: Eine abgelöste Karte lässt sich
+    // nicht wieder lösen, auch nicht zum Aufräumen. Ein Test, der den
+    // Redaktionsinhalt dauerhaft umhängt, wäre deshalb nicht wiederholbar —
+    // und der zweite Lauf prüfte etwas anderes als der erste.
+    class Zurueckrollen extends Error {}
+
+    const gesehen: { abgeloestMit: string | null; zweiterVersuch: string } = {
+      abgeloestMit: null,
+      zweiterVersuch: '',
+    };
+
+    await expect(
+      withAdminTx(async (tx) => {
+        const neu = await tx.query<{ id: string }>(
+          `insert into guide_card (key, version, phase_key, title, whats_happening)
+           values ($1, 2, 'ausbau', 'Estrich und Belegreife', 'Zweite Fassung.')
+           returning id`,
+          [einKartenSchluessel],
+        );
+        const nachfolger = neu.rows[0]!.id;
+
+        await tx.query('update guide_card set superseded_by = $1 where key = $2 and version = 1', [
+          nachfolger,
+          einKartenSchluessel,
+        ]);
+
+        const gelesen = await tx.query<{ superseded_by: string | null }>(
+          'select superseded_by from guide_card where key = $1 and version = 1',
+          [einKartenSchluessel],
+        );
+        gesehen.abgeloestMit =
+          gelesen.rows[0]!.superseded_by === nachfolger ? 'der neuen Fassung' : 'etwas anderem';
+
+        // Eine bereits abgelöste Karte bleibt, wie sie ist. Sonst ließe sich
+        // die Kette umhängen, und die Frage „welchen Rat bekam der Bauherr
+        // damals" wäre wieder offen.
+        try {
+          await tx.query(
+            'update guide_card set superseded_by = null where key = $1 and version = 1',
+            [einKartenSchluessel],
+          );
+          gesehen.zweiterVersuch = 'ging durch';
+        } catch (cause) {
+          gesehen.zweiterVersuch = cause instanceof Error ? cause.message : String(cause);
+        }
+
+        throw new Zurueckrollen('Absicht: Der Nachweis hinterlässt nichts.');
+      }),
+    ).rejects.toBeInstanceOf(Zurueckrollen);
+
+    expect(gesehen.abgeloestMit).toBe('der neuen Fassung');
+    expect(gesehen.zweiterVersuch).toMatch(/bereits abgelöst/i);
+  });
+
+  it('lässt eine unveröffentlichte Karte in Ruhe ändern', async () => {
+    await withAdminTx(async (tx) => {
+      await tx.query(
+        `insert into guide_card (key, version, phase_key, title, whats_happening)
+         values ('entwurf', 1, 'rohbau', 'Entwurf', 'Noch nicht veröffentlicht.')`,
+      );
+      await tx.query("update guide_card set title = 'Immer noch Entwurf' where key = 'entwurf'");
+      await tx.query("delete from guide_card where key = 'entwurf'");
+    });
+  });
+
+  it('verlangt zu einer empfohlenen Fachprüfung eine Begründung', async () => {
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query(
+          `insert into guide_card (key, version, phase_key, title, whats_happening, expert_recommended)
+           values ('ohne-grund', 1, 'rohbau', 'Ohne Grund', 'Text.', true)`,
+        ),
+      ),
+    ).rejects.toThrow(/guide_card_expert_reason/);
+  });
+});
+
+describe('Die Wissensschicht hängt an den Vorgängen', () => {
+  it('ordnet jeder Karte höchstens einen Vorgang der Vorlage zu', async () => {
+    // Zwei Karten am selben Vorlagenvorgang wären keine Datenfrage, sondern
+    // eine Redaktionsfrage — und sie machten die Zuordnung beim Anlegen eines
+    // Projekts vom Zufall abhängig. Der Generator lehnt das ab; hier steht die
+    // Gegenprobe an den Daten, die tatsächlich eingespielt wurden.
+    const doppelt = await withAdminTx(async (tx) => {
+      const result = await tx.query<{ code: string; anzahl: string }>(
+        `select code, count(*)::text as anzahl
+           from guide_card c, unnest(c.task_codes) as code
+          where c.published_at is not null and c.superseded_by is null
+          group by code having count(*) > 1`,
+      );
+      return result.rows;
+    });
+    expect(doppelt).toEqual([]);
+  });
+
+  it('nennt zu jeder Karte mindestens eine Quelle', async () => {
+    // Keine Aussage ohne Quelle (Abschnitt 6.3). An dieser Stelle steht die
+    // Glaubwürdigkeit des ganzen Produkts.
+    const ohneQuelle = await withAdminTx(async (tx) => {
+      const result = await tx.query<{ key: string }>(
+        "select key from guide_card where jsonb_array_length(sources) = 0",
+      );
+      return result.rows.map((row) => row.key);
+    });
+    expect(ohneQuelle).toEqual([]);
+  });
+
+  it('deckt die fünf Prüftermine aus Abschnitt 7.4 ab', async () => {
+    // Bodenplatte, Kellerabdichtung, Rohinstallation vor Verkleidung,
+    // Blower-Door, Abnahme. Die Rohinstallation steht als zwei Karten da —
+    // Elektro und Sanitär —, gemeint ist ein Termin, an dem beides offen liegt.
+    const empfohlen = await withAdminTx(async (tx) => {
+      const result = await tx.query<{ key: string }>(
+        'select key from guide_card where expert_recommended order by key',
+      );
+      return result.rows.map((row) => row.key);
+    });
+    expect(empfohlen).toContain('bodenplatte');
+    expect(empfohlen).toContain('kellerabdichtung');
+    expect(empfohlen).toContain('blower_door');
+    expect(empfohlen).toContain('abnahme');
+    expect(
+      empfohlen.some((key) => key.startsWith('rohinstallation')),
+      'die Rohinstallation vor der Verkleidung',
+    ).toBe(true);
+  });
+});
+
 describe('Prüfregeln des Schemas', () => {
   it('erzwingt bei Meilensteinen die Dauer 0', async () => {
     await expect(

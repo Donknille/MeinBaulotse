@@ -13089,6 +13089,14 @@ var scheduledTask = external_exports.object({
   baselineEnd: isoDate.nullable(),
   /** Von Hand gesetzt: nicht früher als. `null` heißt: frei gerechnet. */
   earliestStart: isoDate.nullable(),
+  /**
+   * Die Lotsenkarte zu diesem Vorgang, sofern es eine gibt.
+   *
+   * Nur die Kennung, nicht der Inhalt: Eine Planansicht mit 38 Vorgängen würde
+   * sonst zwölf vollständige Karten mitschleppen, von denen der Nutzer keine
+   * liest. Der Inhalt kommt beim Öffnen.
+   */
+  guideCardId: external_exports.string().uuid().nullable(),
   actualStart: isoDate.nullable(),
   actualEnd: isoDate.nullable(),
   status: taskStatus,
@@ -13129,6 +13137,85 @@ var apiError = external_exports.object({
   /** Was der Nutzer als Nächstes tun kann — nie eine Fehlermeldung ohne Ausweg. */
   hint: external_exports.string().optional(),
   details: external_exports.unknown().optional()
+});
+var guideCardWatchItem = external_exports.object({
+  /** Stabil je Karte. Trägt den Haken in der Checkliste. */
+  key: external_exports.string(),
+  text: external_exports.string(),
+  why: external_exports.string().nullable()
+});
+var guideCardQuestion = external_exports.object({
+  key: external_exports.string(),
+  question: external_exports.string(),
+  whyItMatters: external_exports.string().nullable()
+});
+var guideCardProblem = external_exports.object({
+  key: external_exports.string(),
+  problem: external_exports.string(),
+  howToSpot: external_exports.string().nullable()
+});
+var guideCardPhotoPrompt = external_exports.object({
+  key: external_exports.string(),
+  what: external_exports.string(),
+  why: external_exports.string().nullable(),
+  /** Ab welchem Vorgang das Motiv verdeckt ist. */
+  beforeTaskCode: external_exports.string().nullable()
+});
+var guideCardSource = external_exports.object({
+  title: external_exports.string(),
+  note: external_exports.string().nullable()
+});
+var guideCard = external_exports.object({
+  id: external_exports.string().uuid(),
+  key: external_exports.string(),
+  version: external_exports.number().int(),
+  title: external_exports.string(),
+  phaseKey: external_exports.string(),
+  tradeCode: external_exports.string().nullable(),
+  whatsHappening: external_exports.string(),
+  watchFor: external_exports.array(guideCardWatchItem),
+  questionsForContractor: external_exports.array(guideCardQuestion),
+  commonProblems: external_exports.array(guideCardProblem),
+  photoPrompts: external_exports.array(guideCardPhotoPrompt),
+  /** Ob hier eine Fachprüfung sinnvoll ist — mit Begründung, nie ohne. */
+  expertRecommended: external_exports.boolean(),
+  expertReason: external_exports.string().nullable(),
+  /** Trägt die Karte eine Gesetzesstelle, gilt der feste Zusatz aus CI 11.3. */
+  legalNote: external_exports.boolean(),
+  sources: external_exports.array(guideCardSource)
+});
+var checklistEntry = external_exports.object({
+  sourceKey: external_exports.string(),
+  text: external_exports.string(),
+  isDone: external_exports.boolean(),
+  doneAt: external_exports.string().nullable(),
+  note: external_exports.string().nullable()
+});
+var guideCardView = external_exports.object({
+  card: guideCard,
+  taskId: external_exports.string().uuid(),
+  taskName: external_exports.string(),
+  taskStart: isoDate.nullable(),
+  taskEnd: isoDate.nullable(),
+  /** Für jede Zeile aus `watchFor` genau ein Eintrag, auch die ungehakten. */
+  checklist: external_exports.array(checklistEntry),
+  /** `null`, solange niemand die Karte geöffnet hat. */
+  readAt: external_exports.string().nullable(),
+  /** `null` heißt: gelesen, aber nicht bewertet. */
+  helpful: external_exports.boolean().nullable(),
+  /**
+   * Ob der Fragende Haken setzen darf. Nur zur Darstellung — durchgesetzt wird
+   * es in der Policy `checklist_item_insert`.
+   */
+  canEditChecklist: external_exports.boolean()
+});
+var guideCardFeedbackRequest = external_exports.object({
+  /** `null` nimmt eine Bewertung zurück, ohne den Gelesen-Stand zu löschen. */
+  helpful: external_exports.boolean().nullable().optional()
+});
+var checklistUpdateRequest = external_exports.object({
+  isDone: external_exports.boolean(),
+  note: external_exports.string().trim().max(500).nullable().optional()
 });
 
 // ../../node_modules/hono/dist/helper/factory/index.js
@@ -14460,6 +14547,181 @@ function demoRoutes(expectedKey) {
   return demo;
 }
 
+// src/guide-cards.ts
+var CHECKLIST_ROLES = /* @__PURE__ */ new Set(["owner", "co_owner", "expert"]);
+function toCard(row) {
+  return {
+    id: row.id,
+    key: row.key,
+    version: row.version,
+    title: row.title,
+    phaseKey: row.phase_key,
+    tradeCode: row.trade_code,
+    whatsHappening: row.whats_happening,
+    watchFor: row.watch_for,
+    questionsForContractor: row.questions_for_contractor,
+    commonProblems: row.common_problems,
+    photoPrompts: row.photo_prompts,
+    expertRecommended: row.expert_recommended,
+    expertReason: row.expert_reason,
+    legalNote: row.legal_note,
+    sources: row.sources
+  };
+}
+async function loadGuideCardView(tx, projectId, taskId) {
+  const result = await tx.query(
+    `select c.id, c.key, c.version, c.title, c.phase_key, c.trade_code, c.whats_happening,
+            c.watch_for, c.questions_for_contractor, c.common_problems, c.photo_prompts,
+            c.expert_recommended, c.expert_reason, c.legal_note, c.sources,
+            t.name as task_name, t.current_start, t.current_end,
+            mbl.member_role(t.project_id)::text as member_role
+       from task t
+       join guide_card c on c.id = t.guide_card_id
+      where t.id = $1 and t.project_id = $2`,
+    [taskId, projectId]
+  );
+  const row = result.rows[0];
+  if (row === void 0) {
+    throw new HTTPException(404, {
+      message: "Zu diesem Vorgang gibt es noch keine Lotsenkarte."
+    });
+  }
+  const card = toCard(row);
+  const [checklist, read] = await Promise.all([
+    loadChecklist(tx, projectId, taskId, card),
+    loadRead(tx, projectId, card.id)
+  ]);
+  return {
+    card,
+    taskId,
+    taskName: row.task_name,
+    taskStart: row.current_start,
+    taskEnd: row.current_end,
+    checklist,
+    readAt: read.readAt,
+    helpful: read.helpful,
+    canEditChecklist: row.member_role !== null && CHECKLIST_ROLES.has(row.member_role)
+  };
+}
+async function loadChecklist(tx, projectId, taskId, card) {
+  const result = await tx.query(
+    `select source_key, is_done, done_at, note
+       from checklist_item
+      where project_id = $1 and task_id = $2`,
+    [projectId, taskId]
+  );
+  const bySourceKey = new Map(result.rows.map((row) => [row.source_key, row]));
+  return card.watchFor.map((item) => {
+    const stored = bySourceKey.get(item.key);
+    return {
+      sourceKey: item.key,
+      text: item.text,
+      isDone: stored?.is_done ?? false,
+      doneAt: stored?.done_at ?? null,
+      note: stored?.note ?? null
+    };
+  });
+}
+async function loadRead(tx, projectId, cardId) {
+  const result = await tx.query(
+    `select read_at, helpful
+       from guide_card_read
+      where project_id = $1
+        and guide_card_id = $2
+        and member_id = mbl.current_member_id($1)`,
+    [projectId, cardId]
+  );
+  const row = result.rows[0];
+  return { readAt: row?.read_at ?? null, helpful: row?.helpful ?? null };
+}
+async function markGuideCardRead(tx, projectId, taskId, helpful) {
+  const view = await loadGuideCardView(tx, projectId, taskId);
+  if (helpful === void 0) {
+    await tx.query(
+      `insert into guide_card_read (project_id, guide_card_id, member_id)
+       values ($1, $2, mbl.current_member_id($1))
+       on conflict (project_id, guide_card_id, member_id)
+       do update set read_at = now()`,
+      [projectId, view.card.id]
+    );
+  } else {
+    await tx.query(
+      `insert into guide_card_read (project_id, guide_card_id, member_id, helpful)
+       values ($1, $2, mbl.current_member_id($1), $3)
+       on conflict (project_id, guide_card_id, member_id)
+       do update set read_at = now(), helpful = excluded.helpful`,
+      [projectId, view.card.id, helpful]
+    );
+  }
+  return loadGuideCardView(tx, projectId, taskId);
+}
+async function setChecklistItem(tx, projectId, taskId, sourceKey, change) {
+  const view = await loadGuideCardView(tx, projectId, taskId);
+  const item = view.card.watchFor.find((entry) => entry.key === sourceKey);
+  if (item === void 0) {
+    throw new HTTPException(404, {
+      message: "Diesen Punkt gibt es auf dieser Lotsenkarte nicht."
+    });
+  }
+  const noteGiven = change.note !== void 0;
+  try {
+    await upsertChecklistItem(
+      tx,
+      projectId,
+      taskId,
+      view.card.id,
+      sourceKey,
+      item.text,
+      change,
+      noteGiven
+    );
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && cause.code === "42501") {
+      throw new HTTPException(403, {
+        message: "In deiner Rolle l\xE4sst sich diese Liste nicht abhaken. Der Bauherr kann das."
+      });
+    }
+    throw cause;
+  }
+  return loadGuideCardView(tx, projectId, taskId);
+}
+async function upsertChecklistItem(tx, projectId, taskId, cardId, sourceKey, text, change, noteGiven) {
+  await tx.query(
+    `insert into checklist_item
+       (project_id, task_id, guide_card_id, source_key, text, is_done, done_at, done_by, note)
+     values (
+       $1, $2, $3, $4, $5, $6,
+       case when $6 then now() else null end,
+       case when $6 then mbl.current_member_id($1) else null end,
+       $7
+     )
+     on conflict (project_id, task_id, source_key) do update
+        set is_done       = excluded.is_done,
+            done_at       = excluded.done_at,
+            done_by       = excluded.done_by,
+            guide_card_id = excluded.guide_card_id,
+            -- Der Text folgt der Karte: Bekommt sie eine neue Fassung, steht
+            -- an der Zeile wieder das, was der Nutzer gerade liest.
+            text          = excluded.text,
+            note          = case when $8 then excluded.note else checklist_item.note end`,
+    [projectId, taskId, cardId, sourceKey, text, change.isDone, change.note ?? null, noteGiven]
+  );
+}
+async function linkGuideCards(tx, projectId) {
+  const result = await tx.query(
+    `update task t
+        set guide_card_id = c.id
+       from guide_card c
+      where t.project_id = $1
+        and c.published_at is not null
+        and c.superseded_by is null
+        and t.template_task_code = any (c.task_codes)
+        and t.guide_card_id is distinct from c.id`,
+    [projectId]
+  );
+  return result.rowCount ?? 0;
+}
+
 // src/onboarding.ts
 var DEFAULT_TEMPLATE_KEY = "efh_massiv_unterkellert";
 async function loadTemplate(tx, key) {
@@ -14607,6 +14869,7 @@ async function createProjectFromAnswers(tx, claims, answers) {
       ]
     );
   }
+  const guideCardCount = await linkGuideCards(tx, projectId);
   await tx.query(
     `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
      values ($1, 'app', 'project.created', 'project', $1, $2)`,
@@ -14615,7 +14878,8 @@ async function createProjectFromAnswers(tx, claims, answers) {
       JSON.stringify({
         template: template.key,
         hasBasement: answers.hasBasement,
-        taskCount: plan.tasks.length
+        taskCount: plan.tasks.length,
+        guideCardCount
       })
     ]
   );
@@ -14623,6 +14887,7 @@ async function createProjectFromAnswers(tx, claims, answers) {
     projectId,
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
+    guideCardCount,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: answers.contractualCompletion === void 0 ? null : floats.deviationWorkdays
   };
@@ -14733,7 +14998,12 @@ async function recomputeProject(tx, projectId) {
 
 // src/schema-check.ts
 var EXPECTED = [
-  { migration: "0004_task_constraint.sql", table: "task", column: "earliest_start" }
+  { migration: "0004_task_constraint.sql", table: "task", column: "earliest_start" },
+  // Ohne die Wissensschicht endet jeder Aufruf einer Lotsenkarte in
+  // `relation "guide_card" does not exist`. Die Inhalte selbst (0006) stehen
+  // hier bewusst nicht: Fehlen sie, gibt es keine Karten, aber die Anwendung
+  // läuft. Das ist eine leere Datenlage, kein kaputtes Schema.
+  { migration: "0005_guide_card.sql", table: "guide_card", column: "key" }
 ];
 async function checkSchema(tx) {
   if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
@@ -14932,6 +15202,58 @@ function createApp() {
     const schedule = await withUserTx(c.get("claims"), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
   });
+  v1.get("/projects/:id/tasks/:taskId/guide-card", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const taskId = parseId(c.req.param("taskId"));
+    const view = await withUserTx(
+      c.get("claims"),
+      (tx) => loadGuideCardView(tx, projectId, taskId)
+    );
+    return c.json(view);
+  });
+  v1.post("/projects/:id/tasks/:taskId/guide-card/read", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = guideCardFeedbackRequest.safeParse(
+      await c.req.json().catch(() => ({}))
+    );
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese R\xFCckmeldung k\xF6nnen wir nicht deuten.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const view = await withUserTx(
+      c.get("claims"),
+      (tx) => markGuideCardRead(
+        tx,
+        projectId,
+        taskId,
+        "helpful" in parsed.data ? parsed.data.helpful : void 0
+      )
+    );
+    return c.json(view);
+  });
+  v1.put("/projects/:id/tasks/:taskId/checklist/:sourceKey", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const taskId = parseId(c.req.param("taskId"));
+    const sourceKey = c.req.param("sourceKey") ?? "";
+    if (!/^[a-z][a-z0-9]{0,15}$/.test(sourceKey)) {
+      throw new HTTPException(400, { message: "Diesen Punkt gibt es nicht." });
+    }
+    const parsed = checklistUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const view = await withUserTx(
+      c.get("claims"),
+      (tx) => setChecklistItem(tx, projectId, taskId, sourceKey, parsed.data)
+    );
+    return c.json(view);
+  });
   app.route("/v1", v1);
   app.notFound((c) => c.json({ error: "Diese Adresse gibt es nicht." }, 404));
   app.onError((error, c) => {
@@ -15018,7 +15340,7 @@ async function loadTasks(tx, projectId) {
             t.sort_order, t.is_milestone, t.is_wait, t.duration_days, t.duration_unit,
             t.current_start, t.current_end, t.baseline_start, t.baseline_end,
             t.earliest_start, t.actual_start, t.actual_end, t.status, t.confirmation,
-            t.total_float_days, t.is_critical
+            t.total_float_days, t.is_critical, t.guide_card_id
      from task t
      left join trade tr on tr.id = t.trade_id
      where t.project_id = $1
@@ -15046,7 +15368,8 @@ async function loadTasks(tx, projectId) {
     status: row.status,
     confirmation: row.confirmation,
     totalFloatDays: row.total_float_days,
-    isCritical: row.is_critical
+    isCritical: row.is_critical,
+    guideCardId: row.guide_card_id
   }));
 }
 async function loadSchedule(tx, projectId) {

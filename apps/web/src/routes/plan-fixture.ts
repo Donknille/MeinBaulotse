@@ -126,7 +126,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 128,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000101",
@@ -149,7 +150,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000102",
@@ -172,7 +174,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000103",
@@ -195,7 +198,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000104",
@@ -218,7 +222,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000904"
     },
     {
       "id": "00000000-0000-4000-8000-000000000105",
@@ -241,7 +246,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000905"
     },
     {
       "id": "00000000-0000-4000-8000-000000000106",
@@ -264,7 +270,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000107",
@@ -287,7 +294,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000108",
@@ -310,7 +318,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000109",
@@ -333,7 +342,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 106,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": "00000000-0000-4000-8000-000000000909"
     },
     {
       "id": "00000000-0000-4000-8000-000000000110",
@@ -356,7 +366,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 106,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": "00000000-0000-4000-8000-000000000910"
     },
     {
       "id": "00000000-0000-4000-8000-000000000111",
@@ -379,7 +390,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "disputed",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000911"
     },
     {
       "id": "00000000-0000-4000-8000-000000000112",
@@ -402,7 +414,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000912"
     },
     {
       "id": "00000000-0000-4000-8000-000000000113",
@@ -425,7 +438,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000913"
     },
     {
       "id": "00000000-0000-4000-8000-000000000114",
@@ -448,7 +462,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000115",
@@ -471,7 +486,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000915"
     },
     {
       "id": "00000000-0000-4000-8000-000000000116",
@@ -494,7 +510,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000916"
     },
     {
       "id": "00000000-0000-4000-8000-000000000117",
@@ -517,7 +534,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 3,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": "00000000-0000-4000-8000-000000000917"
     },
     {
       "id": "00000000-0000-4000-8000-000000000118",
@@ -540,7 +558,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000119",
@@ -563,7 +582,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 4,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": "00000000-0000-4000-8000-000000000919"
     },
     {
       "id": "00000000-0000-4000-8000-000000000120",
@@ -586,7 +606,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000920"
     },
     {
       "id": "00000000-0000-4000-8000-000000000121",
@@ -609,7 +630,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000921"
     },
     {
       "id": "00000000-0000-4000-8000-000000000122",
@@ -632,7 +654,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "disputed",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000922"
     },
     {
       "id": "00000000-0000-4000-8000-000000000123",
@@ -655,7 +678,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 2,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": "00000000-0000-4000-8000-000000000923"
     },
     {
       "id": "00000000-0000-4000-8000-000000000124",
@@ -678,7 +702,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000125",
@@ -701,7 +726,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000925"
     },
     {
       "id": "00000000-0000-4000-8000-000000000126",
@@ -724,7 +750,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000926"
     },
     {
       "id": "00000000-0000-4000-8000-000000000127",
@@ -747,7 +774,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000927"
     },
     {
       "id": "00000000-0000-4000-8000-000000000128",
@@ -770,7 +798,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 35,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000129",
@@ -793,7 +822,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000130",
@@ -816,7 +846,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000131",
@@ -839,7 +870,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 11,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000132",
@@ -862,7 +894,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000133",
@@ -885,7 +918,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "disputed",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000134",
@@ -908,7 +942,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 70,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000135",
@@ -931,7 +966,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": null
     },
     {
       "id": "00000000-0000-4000-8000-000000000136",
@@ -954,7 +990,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000936"
     },
     {
       "id": "00000000-0000-4000-8000-000000000137",
@@ -977,7 +1014,8 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardId": "00000000-0000-4000-8000-000000000937"
     }
   ],
   "computedEnd": "2026-10-19",

@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import { FEDERAL_STATES } from '@meinbaulotse/schedule';
+import { addDays, compareDates, FEDERAL_STATES } from '@meinbaulotse/schedule';
 
 export const isoDate = z
   .string()
@@ -149,6 +149,14 @@ export const scheduledTask = z.object({
   baselineEnd: isoDate.nullable(),
   /** Von Hand gesetzt: nicht früher als. `null` heißt: frei gerechnet. */
   earliestStart: isoDate.nullable(),
+  /**
+   * Die Lotsenkarte zu diesem Vorgang, sofern es eine gibt.
+   *
+   * Nur die Kennung, nicht der Inhalt: Eine Planansicht mit 38 Vorgängen würde
+   * sonst zwölf vollständige Karten mitschleppen, von denen der Nutzer keine
+   * liest. Der Inhalt kommt beim Öffnen.
+   */
+  guideCardId: z.string().uuid().nullable(),
   actualStart: isoDate.nullable(),
   actualEnd: isoDate.nullable(),
   status: taskStatus,
@@ -197,6 +205,152 @@ export const apiError = z.object({
   details: z.unknown().optional(),
 });
 export type ApiError = z.infer<typeof apiError>;
+
+// -- Wissensschicht ----------------------------------------------------------
+//
+// Die Lotsenkarte aus Abschnitt 3.1. Jedes Feld trägt seinen eigenen Zweck,
+// deshalb ist sie kein Freitextblock: `watch_for` wird zur Checkliste,
+// `questions_for_contractor` bekommt einen Kopieren-Knopf, `photo_prompts`
+// werden später zu Fotoaufträgen. Ein Fließtext könnte davon nichts.
+
+export const guideCardWatchItem = z.object({
+  /** Stabil je Karte. Trägt den Haken in der Checkliste. */
+  key: z.string(),
+  text: z.string(),
+  why: z.string().nullable(),
+});
+export type GuideCardWatchItem = z.infer<typeof guideCardWatchItem>;
+
+export const guideCardQuestion = z.object({
+  key: z.string(),
+  question: z.string(),
+  whyItMatters: z.string().nullable(),
+});
+export type GuideCardQuestion = z.infer<typeof guideCardQuestion>;
+
+export const guideCardProblem = z.object({
+  key: z.string(),
+  problem: z.string(),
+  howToSpot: z.string().nullable(),
+});
+export type GuideCardProblem = z.infer<typeof guideCardProblem>;
+
+export const guideCardPhotoPrompt = z.object({
+  key: z.string(),
+  what: z.string(),
+  why: z.string().nullable(),
+  /** Ab welchem Vorgang das Motiv verdeckt ist. */
+  beforeTaskCode: z.string().nullable(),
+});
+export type GuideCardPhotoPrompt = z.infer<typeof guideCardPhotoPrompt>;
+
+export const guideCardSource = z.object({
+  title: z.string(),
+  note: z.string().nullable(),
+});
+export type GuideCardSource = z.infer<typeof guideCardSource>;
+
+export const guideCard = z.object({
+  id: z.string().uuid(),
+  key: z.string(),
+  version: z.number().int(),
+  title: z.string(),
+  phaseKey: z.string(),
+  tradeCode: z.string().nullable(),
+  whatsHappening: z.string(),
+  watchFor: z.array(guideCardWatchItem),
+  questionsForContractor: z.array(guideCardQuestion),
+  commonProblems: z.array(guideCardProblem),
+  photoPrompts: z.array(guideCardPhotoPrompt),
+  /** Ob hier eine Fachprüfung sinnvoll ist — mit Begründung, nie ohne. */
+  expertRecommended: z.boolean(),
+  expertReason: z.string().nullable(),
+  /** Trägt die Karte eine Gesetzesstelle, gilt der feste Zusatz aus CI 11.3. */
+  legalNote: z.boolean(),
+  sources: z.array(guideCardSource),
+});
+export type GuideCardDto = z.infer<typeof guideCard>;
+
+export const checklistEntry = z.object({
+  sourceKey: z.string(),
+  text: z.string(),
+  isDone: z.boolean(),
+  doneAt: z.string().nullable(),
+  note: z.string().nullable(),
+});
+export type ChecklistEntry = z.infer<typeof checklistEntry>;
+
+export const guideCardView = z.object({
+  card: guideCard,
+  taskId: z.string().uuid(),
+  taskName: z.string(),
+  taskStart: isoDate.nullable(),
+  taskEnd: isoDate.nullable(),
+  /** Für jede Zeile aus `watchFor` genau ein Eintrag, auch die ungehakten. */
+  checklist: z.array(checklistEntry),
+  /** `null`, solange niemand die Karte geöffnet hat. */
+  readAt: z.string().nullable(),
+  /** `null` heißt: gelesen, aber nicht bewertet. */
+  helpful: z.boolean().nullable(),
+  /**
+   * Ob der Fragende Haken setzen darf. Nur zur Darstellung — durchgesetzt wird
+   * es in der Policy `checklist_item_insert`.
+   */
+  canEditChecklist: z.boolean(),
+});
+export type GuideCardView = z.infer<typeof guideCardView>;
+
+export const guideCardFeedbackRequest = z.object({
+  /** `null` nimmt eine Bewertung zurück, ohne den Gelesen-Stand zu löschen. */
+  helpful: z.boolean().nullable().optional(),
+});
+export type GuideCardFeedbackRequest = z.infer<typeof guideCardFeedbackRequest>;
+
+export const checklistUpdateRequest = z.object({
+  isDone: z.boolean(),
+  note: z.string().trim().max(500).nullable().optional(),
+});
+export type ChecklistUpdateRequest = z.infer<typeof checklistUpdateRequest>;
+
+/**
+ * Wann eine Lotsenkarte in den Blick rückt (Abschnitt 3.1): sieben Tage vor
+ * Beginn, während der Ausführung und beim Abschluss.
+ *
+ * Gezählt wird in **Kalendertagen**, nicht in Werktagen. Die Vorlaufzeit einer
+ * Entscheidung hängt an der Arbeitsleistung eines Betriebs und zählt deshalb
+ * Werktage. Wissen zu lesen hängt an nichts davon — ein Bauherr liest auch am
+ * Sonntag.
+ */
+export const GUIDE_CARD_LEAD_DAYS = 7;
+
+export type GuideCardTiming = 'spaeter' | 'bald' | 'laeuft' | 'abschluss' | 'vorbei';
+
+export function guideCardTiming(
+  task: { currentStart: string | null; currentEnd: string | null },
+  today: string,
+): GuideCardTiming {
+  const start = task.currentStart;
+  const end = task.currentEnd ?? start;
+  if (start === null || end === null) return 'spaeter';
+
+  if (compareDates(today, start) < 0) {
+    return compareDates(today, addDays(start, -GUIDE_CARD_LEAD_DAYS)) < 0 ? 'spaeter' : 'bald';
+  }
+  if (compareDates(today, end) <= 0) return 'laeuft';
+  return compareDates(today, addDays(end, GUIDE_CARD_LEAD_DAYS)) <= 0 ? 'abschluss' : 'vorbei';
+}
+
+/** Rückt die Karte gerade in den Blick? */
+export function isGuideCardDue(
+  task: { currentStart: string | null; currentEnd: string | null },
+  today: string,
+): boolean {
+  const timing = guideCardTiming(task, today);
+  return timing === 'bald' || timing === 'laeuft' || timing === 'abschluss';
+}
+
+/** Der feste Zusatz aus CI 11.3. Wird nie verkürzt und nie ausgeblendet. */
+export const LEGAL_NOTE = 'Hinweis auf eine Gesetzesstelle, keine Rechtsberatung.';
 
 /** Klartext für den Gesamtpuffer, wie in Abschnitt 3.6 der Spezifikation. */
 export function floatInPlainWords(totalFloatDays: number | null): string {

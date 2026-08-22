@@ -17,6 +17,8 @@ import {
   type FederalState,
 } from '@meinbaulotse/schedule';
 import {
+  checklistUpdateRequest,
+  guideCardFeedbackRequest,
   onboardingRequest,
   taskUpdateRequest,
   type PhaseProgress,
@@ -26,6 +28,7 @@ import {
 } from '@meinbaulotse/shared';
 import { requireAuth, type AuthedVariables } from './auth.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
+import { loadGuideCardView, markGuideCardRead, setChecklistItem } from './guide-cards.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { recomputeProject } from './scheduling.js';
 import { checkSchema } from './schema-check.js';
@@ -322,6 +325,71 @@ export function createApp(): Hono<App> {
     return c.json(schedule);
   });
 
+  // -- Wissensschicht --------------------------------------------------------
+  //
+  // Die Karte hängt am Vorgang und nicht an der Phase: Ein Bauherr fragt nie
+  // „was passiert in der Gründungsphase", sondern „was passiert am Montag".
+
+  v1.get('/projects/:id/tasks/:taskId/guide-card', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const view = await withUserTx(c.get('claims'), (tx) =>
+      loadGuideCardView(tx, projectId, taskId),
+    );
+    return c.json(view);
+  });
+
+  // Öffnen ist bereits die Rückmeldung „gesehen". Die Bewertung ist optional
+  // und darf fehlen — „War das hilfreich?" ist eine Frage, keine Pflicht.
+  v1.post('/projects/:id/tasks/:taskId/guide-card/read', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = guideCardFeedbackRequest.safeParse(
+      await c.req.json().catch(() => ({}) as unknown),
+    );
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Rückmeldung können wir nicht deuten.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const view = await withUserTx(c.get('claims'), (tx) =>
+      markGuideCardRead(
+        tx,
+        projectId,
+        taskId,
+        'helpful' in parsed.data ? parsed.data.helpful : undefined,
+      ),
+    );
+    return c.json(view);
+  });
+
+  // Der Text der Zeile steht bewusst nicht im Anfragekörper. Er kommt aus der
+  // Karte — sonst schriebe sich jeder eigene Zeilen in seine Bauakte, die
+  // aussehen, als stammten sie aus der Redaktion.
+  v1.put('/projects/:id/tasks/:taskId/checklist/:sourceKey', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const sourceKey = c.req.param('sourceKey') ?? '';
+    if (!/^[a-z][a-z0-9]{0,15}$/.test(sourceKey)) {
+      throw new HTTPException(400, { message: 'Diesen Punkt gibt es nicht.' });
+    }
+
+    const parsed = checklistUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const view = await withUserTx(c.get('claims'), (tx) =>
+      setChecklistItem(tx, projectId, taskId, sourceKey, parsed.data),
+    );
+    return c.json(view);
+  });
+
   app.route('/v1', v1);
 
   app.notFound((c) => c.json({ error: 'Diese Adresse gibt es nicht.' }, 404));
@@ -463,12 +531,13 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     confirmation: ScheduledTaskDto['confirmation'];
     total_float_days: number | null;
     is_critical: boolean;
+    guide_card_id: string | null;
   }>(
     `select t.id, t.name, t.phase_key, tr.code as trade_code, tr.name as trade_name,
             t.sort_order, t.is_milestone, t.is_wait, t.duration_days, t.duration_unit,
             t.current_start, t.current_end, t.baseline_start, t.baseline_end,
             t.earliest_start, t.actual_start, t.actual_end, t.status, t.confirmation,
-            t.total_float_days, t.is_critical
+            t.total_float_days, t.is_critical, t.guide_card_id
      from task t
      left join trade tr on tr.id = t.trade_id
      where t.project_id = $1
@@ -498,6 +567,7 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     confirmation: row.confirmation,
     totalFloatDays: row.total_float_days,
     isCritical: row.is_critical,
+    guideCardId: row.guide_card_id,
   }));
 }
 

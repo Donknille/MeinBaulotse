@@ -7,6 +7,8 @@
  *   Wo stehen wir?   →  Phase, Endtermin, wie viel schon fertig ist
  *   Was ist heute?   →  was gerade läuft
  *   Was kommt?       →  die nächsten Vorgänge, im Klartext „in vier Tagen"
+ *   Was solltest du
+ *   dazu wissen?     →  die Lotsenkarten, die gerade in den Blick rücken
  *   Was klemmt?      →  was verschoben ist und was das kostet
  *
  * Die Reihenfolge ist inhaltlich begründet und laut CI 10.2 nicht
@@ -24,14 +26,16 @@
  * dieselbe Aufforderung.
  *
  * Was noch fehlt und deshalb hier nicht steht: Entscheidungsfristen (AP 3) und
- * Fotoaufträge (AP 5). Ein leerer Kasten mit einer Überschrift wäre ein
+ * die Erfassung der Fotoaufträge (AP 5). Die Aufträge selbst stehen auf der
+ * Lotsenkarte; ein Kameraknopf im Cockpit, der nichts öffnet, wäre ein
  * Versprechen, das die Anwendung nicht hält.
  */
 
-import { ArrowRight, Check, CircleDot, Flag, TriangleAlert } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, CircleDot, Flag, TriangleAlert } from 'lucide-react';
 import type { ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
+import { guideCardTiming, isGuideCardDue } from '@meinbaulotse/shared';
 import { Card } from './ui';
-import { PhaseBar } from './schedule';
+import { GuideCardButton, PhaseBar } from './schedule';
 import { formatDate, formatRange } from '../lib/format';
 import { inTagen, istHeute, meldungOffen, progressOf, todayIso, zaehle } from '../lib/progress';
 
@@ -41,10 +45,12 @@ export function Cockpit({
   schedule,
   currentPhase,
   onSelect,
+  onGuideCard,
 }: {
   schedule: ProjectSchedule;
   currentPhase: string | undefined;
   onSelect?: (task: ScheduledTaskDto) => void;
+  onGuideCard?: (task: ScheduledTaskDto) => void;
 }) {
   const today = todayIso();
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -65,6 +71,14 @@ export function Cockpit({
       (b.actualEnd ?? b.currentEnd ?? '').localeCompare(a.actualEnd ?? a.currentEnd ?? ''),
     )
     .slice(0, 3);
+
+  // Die Karten, die gerade in den Blick rücken (Spezifikation 3.1): sieben
+  // Tage vor Beginn, während der Ausführung und beim Abschluss. Das ist der
+  // eigentliche Zweck der Wissensschicht — nicht ein Nachschlagewerk, das man
+  // suchen muss, sondern ein Hinweis, der von selbst kommt.
+  const wissen = schedule.tasks
+    .filter((task) => task.guideCardId !== null && isGuideCardDue(task, today))
+    .sort((a, b) => (a.currentStart ?? '').localeCompare(b.currentStart ?? ''));
 
   // Was Aufmerksamkeit braucht, unterscheidet sich nach Rolle — und nur hier.
   const offeneMeldungen = schedule.tasks.filter((task) => meldungOffen(task, today));
@@ -160,6 +174,7 @@ export function Cockpit({
                 referenceYear={referenceYear}
                 vorne={formatRange(task.currentStart, task.currentEnd, referenceYear)}
                 {...(onSelect === undefined ? {} : { onSelect })}
+                {...(onGuideCard === undefined ? {} : { onGuideCard })}
               />
             ))}
           </ul>
@@ -180,7 +195,36 @@ export function Cockpit({
                 referenceYear={referenceYear}
                 vorne={inTagen(task.currentStart!, today)}
                 {...(onSelect === undefined ? {} : { onSelect })}
+                {...(onGuideCard === undefined ? {} : { onGuideCard })}
               />
+            ))}
+          </ul>
+        </Abschnitt>
+      ) : null}
+
+      {/* 3.5 Was du dazu wissen solltest.
+             Steht zwischen „was kommt" und „was du tun musst", weil es genau
+             dort hingehört: Wer erst beim Estrich erfährt, dass die
+             Aufbauhöhe vorher feststehen muss, erfährt es zu spät. */}
+      {wissen.length > 0 && onGuideCard !== undefined ? (
+        <Abschnitt
+          titel="Das solltest du jetzt wissen"
+          icon={<BookOpen size={18} className="text-lavender" aria-hidden />}
+        >
+          <ul className="flex flex-col">
+            {wissen.slice(0, MAX_ZEILEN).map((task) => (
+              <li key={task.id} className="border-b border-ash last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => onGuideCard(task)}
+                  className="flex min-h-11 w-full flex-col gap-0.5 py-2.5 text-left transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist sm:flex-row sm:items-baseline sm:gap-3"
+                >
+                  <span className="text-body text-steel sm:min-w-[9rem]">
+                    {wissensAnlass(task, today)}
+                  </span>
+                  <span className="text-body-lg font-medium text-charcoal">{task.name}</span>
+                </button>
+              </li>
             ))}
           </ul>
         </Abschnitt>
@@ -296,11 +340,13 @@ function Zeile({
   vorne,
   referenceYear,
   onSelect,
+  onGuideCard,
 }: {
   task: ScheduledTaskDto;
   vorne: string;
   referenceYear: number;
   onSelect?: (task: ScheduledTaskDto) => void;
+  onGuideCard?: (task: ScheduledTaskDto) => void;
 }) {
   const Element = onSelect === undefined ? 'div' : 'button';
   // Vorne steht je nach Abschnitt etwas anderes: mal der Zeitraum selbst, mal
@@ -309,28 +355,50 @@ function Zeile({
   const zeitraum = formatRange(task.currentStart, task.currentEnd, referenceYear);
   return (
     <li className="border-b border-ash last:border-b-0">
-      <Element
-        {...(onSelect === undefined
-          ? {}
-          : { type: 'button' as const, onClick: () => onSelect(task) })}
-        className={`flex w-full flex-col gap-0.5 py-2.5 text-left sm:flex-row sm:items-baseline sm:gap-3 ${
-          onSelect === undefined
-            ? ''
-            : 'cursor-pointer transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist'
-        }`}
-      >
-        <span className="text-body text-steel sm:min-w-[9rem]">{vorne}</span>
-        <span className="flex flex-wrap items-baseline gap-x-2 text-body-lg font-medium text-charcoal">
-          {task.isMilestone ? <Flag size={14} className="text-electric-blue" aria-hidden /> : null}
-          {task.name}
-          {task.tradeName !== null ? (
-            <span className="text-caption font-normal text-steel">{task.tradeName}</span>
-          ) : null}
-        </span>
-      </Element>
+      <div className="flex items-center justify-between gap-2">
+        <Element
+          {...(onSelect === undefined
+            ? {}
+            : { type: 'button' as const, onClick: () => onSelect(task) })}
+          className={`flex w-full flex-col gap-0.5 py-2.5 text-left sm:flex-row sm:items-baseline sm:gap-3 ${
+            onSelect === undefined
+              ? ''
+              : 'cursor-pointer transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist'
+          }`}
+        >
+          <span className="text-body text-steel sm:min-w-[9rem]">{vorne}</span>
+          <span className="flex flex-wrap items-baseline gap-x-2 text-body-lg font-medium text-charcoal">
+            {task.isMilestone ? (
+              <Flag size={14} className="text-electric-blue" aria-hidden />
+            ) : null}
+            {task.name}
+            {task.tradeName !== null ? (
+              <span className="text-caption font-normal text-steel">{task.tradeName}</span>
+            ) : null}
+          </span>
+        </Element>
+        {/* Genau der Knopf aus dem Entwurf in Abschnitt 5.1: Neben dem, was
+            diese Woche ansteht, steht „Was passiert?". */}
+        {task.guideCardId !== null && onGuideCard !== undefined ? (
+          <GuideCardButton onClick={() => onGuideCard(task)} />
+        ) : null}
+      </div>
       {vorne === zeitraum ? null : <span className="sr-only">{zeitraum}</span>}
     </li>
   );
+}
+
+/**
+ * Warum diese Karte gerade jetzt dasteht.
+ *
+ * Der Anlass gehört dazu: „Beginnt in vier Tagen" beantwortet die Frage, die
+ * ein Hinweis ohne Grund erst aufwirft.
+ */
+function wissensAnlass(task: ScheduledTaskDto, today: string): string {
+  const timing = guideCardTiming(task, today);
+  if (timing === 'laeuft') return 'läuft gerade';
+  if (timing === 'abschluss') return 'zum Abschluss';
+  return task.currentStart === null ? 'steht an' : inTagen(task.currentStart, today);
 }
 
 function Kennzahl({

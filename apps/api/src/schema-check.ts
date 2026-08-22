@@ -31,6 +31,11 @@ interface Expectation {
 /** Nur Spalten aus Migrationen **nach** der ersten Auslieferung. */
 const EXPECTED: readonly Expectation[] = [
   { migration: '0004_task_constraint.sql', table: 'task', column: 'earliest_start' },
+  // Ohne die Wissensschicht endet jeder Aufruf einer Lotsenkarte in
+  // `relation "guide_card" does not exist`. Die Inhalte selbst (0006) stehen
+  // hier bewusst nicht: Fehlen sie, gibt es keine Karten, aber die Anwendung
+  // läuft. Das ist eine leere Datenlage, kein kaputtes Schema.
+  { migration: '0005_guide_card.sql', table: 'guide_card', column: 'key' },
 ];
 
 export interface SchemaState {

@@ -14,6 +14,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `apps/api` | Hono. Lokal Node-Server, auf Vercel Function unter `/api` |
 | `api/index.js` | **Erzeugt.** Die Function auf Vercel, fertig gebündelt |
 | `apps/web` | Vite + React, installierbare PWA |
+| `content/lotsenkarten` | Redaktionsinhalt der Wissensschicht als Markdown. Erstbefüllung, siehe README dort |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
 
@@ -32,7 +33,18 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Rechteentzug *und* Trigger. Änderungen erzeugen Einträge, keine Ersetzungen.
 5. **Redaktionsinhalt und Stammdaten liegen als Daten in der Datenbank**, nicht
    als Konstanten im Code: Bauphasen, Gewerke, Ablaufvorlagen, Rechtematrix,
-   später die Lotsenkarten.
+   Lotsenkarten.
+
+   Für die Lotsenkarten kommt eine Verschärfung dazu: Eine **veröffentlichte**
+   Karte ist unveränderlich, durchgesetzt vom Trigger
+   `mbl.guard_guide_card_published` — auch gegenüber dem Eigentümer im
+   SQL-Editor. Eine Korrektur ist eine neue Fassung, die alte wird über
+   `superseded_by` verkettet. Der Grund ist nicht Ordnungsliebe: Sonst lässt
+   sich hinterher nicht mehr sagen, welchen Rat der Bauherr damals bekommen
+   hat, und genau diese Frage ist die einzige, die im Streitfall zählt.
+
+   Ausgangspunkt sind die Dateien in `content/lotsenkarten`;
+   `pnpm cards:generate` macht daraus `0006_guide_cards.sql`.
 6. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
 7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
@@ -95,6 +107,7 @@ pnpm db:reset       # Shim + Migrationen + Seed
 pnpm db:test        # RLS-Matrix und Invarianten
 pnpm dev            # API und Web parallel
 pnpm build:function # Vercel-Function neu bündeln (nach API-Änderungen)
+pnpm cards:generate # Lotsenkarten aus content/lotsenkarten neu einlesen
 pnpm typecheck && pnpm lint
 ```
 

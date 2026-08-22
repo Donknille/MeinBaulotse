@@ -3,11 +3,31 @@
  * Vorgangszeile. Aufbau und Wortwahl nach Abschnitt 9 des Gestaltungssystems.
  */
 
-import { Check, Circle, CircleDot, Clock, Flag, Minus } from 'lucide-react';
+import { BookOpen, Check, Circle, CircleDot, Clock, Flag, Minus } from 'lucide-react';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 import { floatInPlainWords } from '@meinbaulotse/shared';
 import { CONFIRMATION_LABEL, formatDuration, formatRange } from '../lib/format';
 import { progressOf, type Progress } from '../lib/progress';
+
+/**
+ * „Was passiert?" — der Weg zur Lotsenkarte.
+ *
+ * Er steht neben der Zeile und nicht in ihr: Die Zeile führt zum Ändern eines
+ * Termins, dieser Knopf zum Wissen. Zwei verschiedene Absichten gehören auf
+ * zwei Schaltflächen, sonst trifft man mit dem Daumen die falsche.
+ */
+export function GuideCardButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-[var(--radius-button)] px-3 text-body font-medium text-lavender transition-colors duration-[var(--motion-micro)] hover:bg-soft-violet"
+    >
+      <BookOpen size={16} aria-hidden />
+      Was passiert?
+    </button>
+  );
+}
 
 /**
  * Der gefüllte Punkt bedeutet: beide Seiten sind sich einig. Diese Füllung ist
@@ -126,10 +146,13 @@ export function TaskRow({
   task,
   referenceYear,
   onSelect,
+  onGuideCard,
 }: {
   task: ScheduledTaskDto;
   referenceYear: number;
   onSelect?: (task: ScheduledTaskDto) => void;
+  /** Fehlt sie, führt die Zeile nicht zur Lotsenkarte — so wie im Styleguide. */
+  onGuideCard?: (task: ScheduledTaskDto) => void;
 }) {
   // Die ganze Zeile ist die Schaltfläche, nicht ein Stiftsymbol am Rand: Auf
   // einer Baustelle wird mit Handschuhen getippt. Ohne `onSelect` bleibt sie
@@ -147,80 +170,88 @@ export function TaskRow({
         task.isCritical ? 'border-l-2 border-l-tangerine pl-3' : ''
       }`}
     >
-      <Zeile
-        {...(onSelect === undefined
-          ? {}
-          : { type: 'button' as const, onClick: () => onSelect(task) })}
-        className={`flex w-full flex-col gap-1.5 py-3 text-left ${
-          onSelect === undefined
-            ? ''
-            : 'cursor-pointer transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist'
-        }`}
-      >
-        {/* Mobil steht das Datum über dem Namen. Die feste Spalte daneben riss
+      <div className="flex items-start justify-between gap-2">
+        <Zeile
+          {...(onSelect === undefined
+            ? {}
+            : { type: 'button' as const, onClick: () => onSelect(task) })}
+          className={`flex w-full flex-col gap-1.5 py-3 text-left ${
+            onSelect === undefined
+              ? ''
+              : 'cursor-pointer transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist'
+          }`}
+        >
+          {/* Mobil steht das Datum über dem Namen. Die feste Spalte daneben riss
             auf 375 px eine Lücke auf, sobald ein Name kurz war — und drückte
             ihn in die nächste Zeile, sobald er lang war. */}
-        <span className="flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
-          {/* Was fertig ist, muss man sehen, ohne zu lesen. Vorher stand der
+          <span className="flex flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
+            {/* Was fertig ist, muss man sehen, ohne zu lesen. Vorher stand der
               Status nur als kleiner grauer Text irgendwo hinten — auf 34
               Zeilen findet ihn niemand. */}
-          <span className="flex items-center gap-2 text-body text-steel sm:min-w-[9.5rem]">
-            <StatusZeichen progress={fortschritt} />
-            {formatRange(task.currentStart, task.currentEnd, referenceYear)}
-          </span>
-          <span
-            className={`flex items-center gap-2 text-body-lg font-medium ${
-              fortschritt === 'entfallen'
-                ? 'text-fog line-through'
-                : fortschritt === 'fertig'
-                  ? 'text-steel'
-                  : 'text-charcoal'
-            }`}
-          >
-            {task.isMilestone ? (
-              <Flag size={16} className="text-electric-blue" aria-hidden />
+            <span className="flex items-center gap-2 text-body text-steel sm:min-w-[9.5rem]">
+              <StatusZeichen progress={fortschritt} />
+              {formatRange(task.currentStart, task.currentEnd, referenceYear)}
+            </span>
+            <span
+              className={`flex items-center gap-2 text-body-lg font-medium ${
+                fortschritt === 'entfallen'
+                  ? 'text-fog line-through'
+                  : fortschritt === 'fertig'
+                    ? 'text-steel'
+                    : 'text-charcoal'
+              }`}
+            >
+              {task.isMilestone ? (
+                <Flag size={16} className="text-electric-blue" aria-hidden />
+              ) : null}
+              {task.isWait ? <Clock size={16} className="text-silver" aria-hidden /> : null}
+              {task.name}
+            </span>
+            {task.tradeCode !== null ? (
+              <span className="text-caption font-medium tracking-wide text-steel uppercase">
+                {task.tradeCode}
+              </span>
             ) : null}
-            {task.isWait ? <Clock size={16} className="text-silver" aria-hidden /> : null}
-            {task.name}
           </span>
-          {task.tradeCode !== null ? (
-            <span className="text-caption font-medium tracking-wide text-steel uppercase">
-              {task.tradeCode}
-            </span>
-          ) : null}
-        </span>
 
-        <span className="flex flex-wrap items-center gap-2">
-          {task.isWait ? (
-            // Der Nutzer soll sofort verstehen, dass dieser Zeitraum nicht
-            // verhandelbar ist.
-            <span className="text-caption text-steel">
-              {formatDuration(task.durationDays, task.durationUnit)} · Trocknung — nicht verkürzbar
-            </span>
-          ) : task.isMilestone ? (
-            <span className="text-caption text-steel">Meilenstein</span>
-          ) : (
-            <span className="text-caption text-steel">
-              {formatDuration(task.durationDays, task.durationUnit)}
-            </span>
-          )}
-          <ConfirmationChip value={task.confirmation} />
-          {/* Eine Verschiebung von Hand muss man sehen, sonst sucht man den
+          <span className="flex flex-wrap items-center gap-2">
+            {task.isWait ? (
+              // Der Nutzer soll sofort verstehen, dass dieser Zeitraum nicht
+              // verhandelbar ist.
+              <span className="text-caption text-steel">
+                {formatDuration(task.durationDays, task.durationUnit)} · Trocknung — nicht
+                verkürzbar
+              </span>
+            ) : task.isMilestone ? (
+              <span className="text-caption text-steel">Meilenstein</span>
+            ) : (
+              <span className="text-caption text-steel">
+                {formatDuration(task.durationDays, task.durationUnit)}
+              </span>
+            )}
+            <ConfirmationChip value={task.confirmation} />
+            {/* Eine Verschiebung von Hand muss man sehen, sonst sucht man den
               Grund im Berechnungskern. */}
-          {task.earliestStart !== null ? (
-            <span className="text-caption text-tangerine">verschoben</span>
-          ) : null}
-          {/* „Abgenommen" ist mehr als „fertig", und das Zeichen kann es nicht
+            {task.earliestStart !== null ? (
+              <span className="text-caption text-tangerine">verschoben</span>
+            ) : null}
+            {/* „Abgenommen" ist mehr als „fertig", und das Zeichen kann es nicht
               zeigen — vier Formen fuer vier Zustaende, mehr traegt es nicht.
               Also steht es als Wort daneben, aber nur dort, wo es zutrifft. */}
-          {task.status === 'abgenommen' ? (
-            <span className="text-caption text-vivid-green">abgenommen</span>
-          ) : null}
-        </span>
+            {task.status === 'abgenommen' ? (
+              <span className="text-caption text-vivid-green">abgenommen</span>
+            ) : null}
+          </span>
 
-        {/* Puffer nie als nackte Zahl, sondern als Satz — Abschnitt 3.6. */}
-        <span className="text-caption text-fog">{floatInPlainWords(task.totalFloatDays)}</span>
-      </Zeile>
+          {/* Puffer nie als nackte Zahl, sondern als Satz — Abschnitt 3.6. */}
+          <span className="text-caption text-fog">{floatInPlainWords(task.totalFloatDays)}</span>
+        </Zeile>
+        {task.guideCardId !== null && onGuideCard !== undefined ? (
+          <span className="py-2.5">
+            <GuideCardButton onClick={() => onGuideCard(task)} />
+          </span>
+        ) : null}
+      </div>
     </li>
   );
 }

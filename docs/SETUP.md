@@ -65,8 +65,8 @@ Ein Projekt, `meinbaulotse`.
 Dashboard → **SQL Editor** → *New query* → den Inhalt von
 [`docs/db-setup.sql`](db-setup.sql) vollständig einfügen → **Run**.
 
-Das ist eine erzeugte Datei: die drei Migrationen aus `supabase/migrations/` in
-der richtigen Reihenfolge zusammengefügt. Ein Einfügen, ein Durchlauf.
+Das ist eine erzeugte Datei: alle Migrationen aus `supabase/migrations/` in der
+richtigen Reihenfolge zusammengefügt. Ein Einfügen, ein Durchlauf.
 
 #### Weg B — psql
 
@@ -80,6 +80,9 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/db-setup.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_schema.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_rls.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_seed.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_task_constraint.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_guide_card.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_guide_cards.sql
 ```
 
 **Port 5432, nicht 6543.** Der Transaction-Pooler ist für die laufende
@@ -283,17 +286,18 @@ Ohne diesen Schritt greift die im CI vorgesehene Ersatzwahl: Inter in Gewicht
 
 ---
 
-## 5. Wenn du Stammdaten änderst
+## 5. Wenn du Stammdaten oder Lotsenkarten änderst
 
-Zwei Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
+Vier Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
 
 | Datei | Quelle | Befehl |
 |---|---|---|
 | `supabase/migrations/0003_seed.sql` | Ablaufvorlage und Rechtematrix | `pnpm --filter @meinbaulotse/db seed:generate` |
-| `docs/db-setup.sql` | die drei Migrationen | `pnpm --filter @meinbaulotse/db build:db-setup` |
+| `supabase/migrations/0006_guide_cards.sql` | `content/lotsenkarten/*.md` | `pnpm --filter @meinbaulotse/db cards:generate` |
+| `docs/db-setup.sql` | alle Migrationen | `pnpm --filter @meinbaulotse/db build:db-setup` |
 | `apps/web/src/routes/plan-fixture.ts` | Ablaufvorlage und Berechnungskern | `pnpm --filter @meinbaulotse/web fixture` |
 
-Die Pipeline prüft, dass alle drei zu ihren Quellen passen. **Wer eine Migration
+Die Pipeline prüft, dass alle vier zu ihren Quellen passen. **Wer eine Migration
 ändert, muss `db-setup.sql` neu erzeugen** — sonst spielt der nächste jemand
 ein veraltetes Schema ein.
 
@@ -302,3 +306,10 @@ Datenbank die Autorität: Die Ablaufvorlage soll ohne Deployment pflegbar sein.
 Für ein bereits eingespieltes Projekt gehören Änderungen an den Stammdaten
 deshalb in eine neue Migration oder direkt in die Datenbank, nicht in eine
 Neuerzeugung von `0003`.
+
+Für die Lotsenkarten gilt dasselbe, nur schärfer: Eine veröffentlichte Karte
+ist in der Datenbank **unveränderlich**, der Trigger
+`mbl.guard_guide_card_published` lässt auch im SQL-Editor keine Änderung zu.
+Eine Korrektur ist immer eine neue Fassung — `fassung` in der Redaktionsdatei
+erhöhen, neu erzeugen, einspielen. Warum das so sein muss, steht in
+`content/lotsenkarten/README.md`.

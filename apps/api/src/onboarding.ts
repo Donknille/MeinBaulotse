@@ -19,6 +19,7 @@ import {
 } from '@meinbaulotse/schedule';
 import type { JwtClaims, Transaction } from '@meinbaulotse/db';
 import type { OnboardingRequest } from '@meinbaulotse/shared';
+import { linkGuideCards } from './guide-cards.js';
 
 /**
  * In Stufe 1 gibt es genau eine Vorlage. Fertighaus und Sanierung greifen
@@ -95,6 +96,8 @@ export interface OnboardingResult {
   projectId: string;
   taskCount: number;
   dependencyCount: number;
+  /** Wie viele Vorgänge eine Lotsenkarte bekommen haben. */
+  guideCardCount: number;
   computedEnd: string;
   deviationWorkdays: number | null;
 }
@@ -221,6 +224,14 @@ export async function createProjectFromAnswers(
     );
   }
 
+  // Die Wissensschicht hängt sich an die Vorgänge, sobald es sie gibt.
+  //
+  // Hier und nicht bei jedem Lesen: Die Zuordnung friert die Fassung ein, die
+  // dieser Bauherr zu sehen bekommt. Eine spätere Korrektur an einer Karte
+  // ändert damit nichts an einem laufenden Bauvorhaben — sonst ließe sich
+  // hinterher nicht mehr sagen, welchen Rat er damals bekommen hat.
+  const guideCardCount = await linkGuideCards(tx, projectId);
+
   await tx.query(
     `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
      values ($1, 'app', 'project.created', 'project', $1, $2)`,
@@ -230,6 +241,7 @@ export async function createProjectFromAnswers(
         template: template.key,
         hasBasement: answers.hasBasement,
         taskCount: plan.tasks.length,
+        guideCardCount,
       }),
     ],
   );
@@ -238,6 +250,7 @@ export async function createProjectFromAnswers(
     projectId,
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
+    guideCardCount,
     computedEnd: schedule.projectEnd,
     deviationWorkdays:
       answers.contractualCompletion === undefined ? null : floats.deviationWorkdays,
