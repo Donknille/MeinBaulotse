@@ -3,7 +3,18 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   // `api/index.js` ist erzeugt (pnpm build:function) und enthält fremden Code.
-  { ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '**/dev-dist/**', 'api/index.js'] },
+  // `prototyp/` ist ein eigenständiges Next.js-Projekt außerhalb des Workspace
+  // und bringt seine eigene Lint-Einrichtung mit.
+  {
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '**/dev-dist/**',
+      'api/index.js',
+      'prototyp/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

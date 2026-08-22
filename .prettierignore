@@ -4,3 +4,6 @@ pnpm-lock.yaml
 
 # Erzeugt: pnpm build:function
 api/index.js
+
+# Eigenstaendiges Next.js-Projekt mit eigener Einrichtung
+prototyp

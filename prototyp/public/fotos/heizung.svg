@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-label="Platzhalterbild: Heizung">
+  <rect width="640" height="480" fill="#dde4e9"/>
+  <g fill="#2f4858" opacity="0.16">
+    <rect x="0" y="330" width="640" height="150"/>
+    <polygon points="120,330 320,150 520,330"/>
+    <circle cx="520" cy="110" r="46"/>
+  </g>
+  <g stroke="#2f4858" stroke-width="2" opacity="0.32" fill="none">
+    <rect x="24" y="24" width="592" height="432"/>
+  </g>
+  <text x="40" y="416" font-family="system-ui, sans-serif" font-size="34" fill="#2f4858">Heizung</text>
+  <text x="40" y="446" font-family="system-ui, sans-serif" font-size="17" fill="#2f4858" opacity="0.75">Platzhalterbild im Prototyp</text>
+</svg>
