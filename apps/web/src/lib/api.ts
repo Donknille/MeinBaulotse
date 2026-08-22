@@ -7,6 +7,9 @@
  */
 
 import type {
+  ChecklistItemDto,
+  ChecklistUpdateRequest,
+  GuideCardView,
   OnboardingRequest,
   ProjectSchedule,
   ProjectSummary,
@@ -140,6 +143,24 @@ export const api = {
   // sondern „sind wir noch im Plan".
   updateTask: (projectId: string, taskId: string, change: TaskUpdateRequest) =>
     request<ProjectSchedule>(`/projects/${projectId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  // Die Lotsenkarte zu einem Vorgang. Das Abrufen haelt zugleich fest, dass
+  // sie offen war — deshalb wird der Plan danach ungueltig: In ihm steht,
+  // was noch zu lesen ist.
+  guideCard: (projectId: string, taskId: string) =>
+    request<GuideCardView>(`/projects/${projectId}/tasks/${taskId}/guide-card`),
+
+  rateGuideCard: (projectId: string, taskId: string, helpful: boolean | null) =>
+    request<{ readAt: string; helpful: boolean | null }>(
+      `/projects/${projectId}/tasks/${taskId}/guide-card/feedback`,
+      { method: 'POST', body: JSON.stringify({ helpful }) },
+    ),
+
+  updateChecklistItem: (projectId: string, itemId: string, change: ChecklistUpdateRequest) =>
+    request<ChecklistItemDto>(`/projects/${projectId}/checklist/${itemId}`, {
       method: 'PATCH',
       body: JSON.stringify(change),
     }),

@@ -23,10 +23,19 @@ import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
 export function PlanView({
   schedule,
   onChangeTask,
+  onOpenGuide,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
   onChangeTask?: (taskId: string, change: TaskUpdateRequest) => Promise<void>;
+  /**
+   * Öffnet die Lotsenkarte zu einem Vorgang.
+   *
+   * Die Karte wird nachgeladen, und Nachladen gehört nicht in diese Datei:
+   * Sie ist die Darstellung, nicht die Beschaffung. Deshalb reicht die Route
+   * eine Funktion herein und zeigt das Blatt selbst an.
+   */
+  onOpenGuide?: (task: ScheduledTaskDto) => void;
 }) {
   const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -59,6 +68,7 @@ export function PlanView({
           schedule={schedule}
           currentPhase={currentPhase}
           {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
+          {...(onOpenGuide === undefined ? {} : { onOpenGuide })}
         />
       </header>
 
@@ -140,6 +150,16 @@ export function PlanView({
           schedule={schedule}
           onClose={() => setSelected(null)}
           onSave={(change) => onChangeTask(selected.id, change)}
+          {...(onOpenGuide === undefined
+            ? {}
+            : {
+                onOpenGuide: () => {
+                  // Erst schließen, dann öffnen: Zwei Blätter übereinander
+                  // sind auf dem Telefon eine Falle.
+                  setSelected(null);
+                  onOpenGuide(selected);
+                },
+              })}
         />
       ) : null}
     </>

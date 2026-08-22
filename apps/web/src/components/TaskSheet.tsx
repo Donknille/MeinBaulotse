@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useId, useState, type FormEvent } from 'react';
-import { X } from 'lucide-react';
+import { BookOpen, X } from 'lucide-react';
 import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
 import { Button, Field, Select, TextInput } from './ui';
 import { ApiError } from '../lib/api';
@@ -47,11 +47,14 @@ export function TaskSheet({
   schedule,
   onClose,
   onSave,
+  onOpenGuide,
 }: {
   task: ScheduledTaskDto;
   schedule: ProjectSchedule;
   onClose: () => void;
   onSave: (change: TaskUpdateRequest) => Promise<void>;
+  /** Führt zur Lotsenkarte, sofern es zu diesem Vorgang eine gibt. */
+  onOpenGuide?: () => void;
 }) {
   const darfPlanen = schedule.permissions.includes('task.schedule');
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -146,6 +149,21 @@ export function TaskSheet({
             <X size={18} aria-hidden />
           </Button>
         </div>
+
+        {/* Der Weg zur Karte steht oben, vor den Feldern: Wer ein Blatt zu
+            einem Vorgang öffnet, will oft erst wissen, worum es überhaupt
+            geht — und nicht sofort ein Datum eintragen. */}
+        {onOpenGuide !== undefined && task.guideCardKey !== null ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mb-4 w-full justify-start text-lavender sm:w-auto"
+            onClick={onOpenGuide}
+          >
+            <BookOpen size={16} aria-hidden />
+            Was passiert hier?
+          </Button>
+        ) : null}
 
         {!darfPlanen ? (
           // Fehlanzeige mit Grund, nicht mit gesperrten Feldern: Ein Formular,

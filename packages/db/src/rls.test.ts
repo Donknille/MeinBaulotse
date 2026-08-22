@@ -249,3 +249,130 @@ describe('Die Rechtematrix in der Datenbank entspricht der Quelle', () => {
     }
   });
 });
+
+describe('Wissensschicht', () => {
+  it('jede Rolle liest die veröffentlichten Lotsenkarten', async () => {
+    for (const role of MEMBER_ROLES) {
+      const gelesen = await rowCount(
+        eigenes.actors[role].userId,
+        'select id from guide_card where published_at is not null',
+      );
+      expect(gelesen, `${role} sieht keine Karten`).toBeGreaterThan(0);
+    }
+  });
+
+  it('niemand ändert Redaktionsinhalt aus der Anwendung heraus', async () => {
+    // Erste Sperre: kein Recht. Zweite Sperre: keine Policy. Dritte: der
+    // Trigger aus 0005. Hier wird die erste geprüft.
+    for (const role of MEMBER_ROLES) {
+      const darf = await allowed(
+        eigenes.actors[role].userId,
+        "update guide_card set title = 'übernommen' where key = 'estrich'",
+      );
+      expect(darf, `${role} darf Redaktionsinhalt ändern`).toBe(false);
+    }
+  });
+
+  it('ein unveröffentlichter Entwurf ist für niemanden sichtbar', async () => {
+    const id = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `insert into guide_card (key, version, phase_key, title, whats_happening)
+           values ('probe-unsichtbar', 1, 'ausbau', 'Entwurf', 'Text.')
+           returning id`,
+        )
+      ).rows[0]!.id,
+    );
+
+    for (const role of MEMBER_ROLES) {
+      const sichtbar = await rowCount(
+        eigenes.actors[role].userId,
+        'select id from guide_card where id = $1',
+        [id],
+      );
+      expect(sichtbar, `${role} sieht einen Entwurf`).toBe(0);
+    }
+
+    await withAdminTx(async (tx) => tx.query('delete from guide_card where id = $1', [id]));
+  });
+
+  it('die eigene Rückmeldung darf jedes Mitglied abgeben, eine fremde nicht', async () => {
+    const kartenId = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ id: string }>("select id from guide_card where key = 'estrich'")
+      ).rows[0]!.id,
+    );
+
+    const eigeneRueckmeldung = await allowed(
+      eigenes.actors.owner.userId,
+      `insert into guide_card_read (project_id, guide_card_id, member_id, helpful)
+       values ($1, $2, $3, true)`,
+      [eigenes.projectId, kartenId, eigenes.actors.owner.memberId],
+    );
+    expect(eigeneRueckmeldung).toBe(true);
+
+    // Im Namen eines anderen Mitglieds geht es nicht.
+    const fremdeRueckmeldung = await allowed(
+      eigenes.actors.owner.userId,
+      `insert into guide_card_read (project_id, guide_card_id, member_id, helpful)
+       values ($1, $2, $3, false)`,
+      [eigenes.projectId, kartenId, eigenes.actors.contractor.memberId],
+    );
+    expect(fremdeRueckmeldung).toBe(false);
+  });
+
+  it('abhaken darf derselbe Kreis, der auch ins Tagebuch schreibt', async () => {
+    for (const role of MEMBER_ROLES) {
+      const darf = await allowed(
+        eigenes.actors[role].userId,
+        `insert into checklist_item (project_id, task_id, text, sort_order)
+         values ($1, $2, 'Probe', $3)`,
+        [eigenes.projectId, eigenes.tileTaskId, MEMBER_ROLES.indexOf(role) + 100],
+      );
+      expect(darf, `${role} darf abhaken: ${darf}`).toBe(permissionsOf(role).includes('diary.write'));
+    }
+  });
+
+  it('ein Einzelgewerk sieht keine Checkliste zu einem fremden Vorgang', async () => {
+    await withAdminTx(async (tx) =>
+      tx.query(
+        `insert into checklist_item (project_id, task_id, text, sort_order)
+         values ($1, $2, 'Am Malervorgang', 200)`,
+        [eigenes.projectId, eigenes.paintTaskId],
+      ),
+    );
+
+    const sichtbarFuerFliesen = await rowCount(
+      eigenes.actors.trade.userId,
+      'select id from checklist_item where task_id = $1',
+      [eigenes.paintTaskId],
+    );
+    expect(sichtbarFuerFliesen).toBe(0);
+
+    const sichtbarFuerBauherrn = await rowCount(
+      eigenes.actors.owner.userId,
+      'select id from checklist_item where task_id = $1',
+      [eigenes.paintTaskId],
+    );
+    expect(sichtbarFuerBauherrn).toBe(1);
+  });
+
+  it('kein Mitglied sieht Checklisten eines fremden Projekts', async () => {
+    await withAdminTx(async (tx) =>
+      tx.query(
+        `insert into checklist_item (project_id, task_id, text, sort_order)
+         values ($1, $2, 'Im fremden Projekt', 300)`,
+        [fremdes.projectId, fremdes.tileTaskId],
+      ),
+    );
+
+    for (const role of MEMBER_ROLES) {
+      const sichtbar = await rowCount(
+        eigenes.actors[role].userId,
+        'select id from checklist_item where project_id = $1',
+        [fremdes.projectId],
+      );
+      expect(sichtbar, `${role} sieht fremde Checkliste`).toBe(0);
+    }
+  });
+});

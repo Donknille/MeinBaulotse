@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/ui';
 import { PlanView } from '../components/PlanView';
+import { GuideCardSheet } from '../components/GuideCardSheet';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
-import type { TaskUpdateRequest } from '@meinbaulotse/shared';
+import type { ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
 
 /** Route: holt den Plan und übergibt ihn an die Darstellung. */
 export function Plan() {
   const { projectId } = useParams<{ projectId: string }>();
   const queryClient = useQueryClient();
+  const [guideTask, setGuideTask] = useState<ScheduledTaskDto | null>(null);
   const query = useQuery({
     queryKey: ['schedule', projectId],
     queryFn: () => api.schedule(projectId!),
@@ -28,6 +31,37 @@ export function Plan() {
       // Die Liste zeigt Baubeginn und Bundesland — beides kann sich nicht
       // ändern. Der Endtermin steht dort nicht, also gibt es nichts zu
       // erneuern außer diesem einen Plan.
+    },
+  });
+
+  // Die Karte wird erst beim Öffnen geholt. Zwölf vollständige Karten mit
+  // jedem Plan mitzuliefern wäre ein Vielfaches der Nutzlast für etwas, das
+  // die meisten Besuche nie aufschlagen.
+  const guide = useQuery({
+    queryKey: ['guide-card', projectId, guideTask?.id],
+    queryFn: () => api.guideCard(projectId!, guideTask!.id),
+    enabled: guideTask !== null,
+  });
+
+  // Das Abrufen der Karte hält fest, dass sie gelesen wurde — und genau das
+  // steht im Plan („lies dich ein"). Ohne dieses Nachladen bliebe die
+  // Aufforderung stehen, bis jemand die Seite neu lädt.
+  const planErneuern = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['schedule', projectId] });
+  };
+
+  const bewerten = useMutation({
+    mutationFn: (helpful: boolean | null) =>
+      api.rateGuideCard(projectId!, guideTask!.id, helpful),
+  });
+
+  const abhaken = useMutation({
+    mutationFn: ({ itemId, isDone }: { itemId: string; isDone: boolean }) =>
+      api.updateChecklistItem(projectId!, itemId, { isDone }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['guide-card', projectId, guideTask?.id],
+      });
     },
   });
 
@@ -74,8 +108,44 @@ export function Plan() {
           onChangeTask={async (taskId, body) => {
             await change.mutateAsync({ taskId, body });
           }}
+          onOpenGuide={(task) => setGuideTask(task)}
         />
       )}
+
+      {guideTask !== null && guide.data !== undefined ? (
+        <GuideCardSheet
+          view={guide.data}
+          onClose={() => {
+            setGuideTask(null);
+            planErneuern();
+          }}
+          onRate={async (helpful) => {
+            await bewerten.mutateAsync(helpful);
+          }}
+          onToggle={async (item, isDone) => {
+            await abhaken.mutateAsync({ itemId: item.id, isDone });
+          }}
+        />
+      ) : null}
+
+      {/* Solange die Karte lädt, steht da ein Satz und kein Blatt: Ein leeres
+          Blatt, das sich gleich füllt, springt beim Erscheinen. */}
+      {guideTask !== null && guide.isPending ? (
+        <p className="fixed inset-x-0 bottom-6 mx-auto w-fit rounded-[var(--radius-pill)] bg-charcoal px-4 py-2 text-body text-canvas-white">
+          Die Lotsenkarte wird geholt.
+        </p>
+      ) : null}
+
+      {guideTask !== null && guide.isError ? (
+        <p className="fixed inset-x-0 bottom-6 mx-auto w-fit max-w-[90vw] rounded-[var(--radius-pill)] bg-charcoal px-4 py-2 text-body text-canvas-white">
+          {guide.error instanceof ApiError
+            ? guide.error.message
+            : 'Die Lotsenkarte ließ sich gerade nicht laden.'}{' '}
+          <button type="button" className="underline" onClick={() => setGuideTask(null)}>
+            Schließen
+          </button>
+        </p>
+      ) : null}
     </main>
   );
 }

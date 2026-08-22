@@ -132,6 +132,32 @@ Wer verschieben darf, entscheidet die Datenbank über `task.schedule`. Bauherr
 und GU dürfen es beide; wer es nicht darf, sieht statt der Felder einen Satz,
 der sagt warum.
 
+## Die Lotsenkarten
+
+Zu sechzehn der Vorgänge gibt es eine Karte: was dort passiert, worauf du
+selbst achten kannst, welche Fragen an den GU sinnvoll sind, was typischerweise
+schiefgeht und was jetzt fotografiert werden sollte.
+
+Sie meldet sich von selbst, sieben Tage vor Beginn des Vorgangs — im Cockpit
+unter **Lies dich ein**. Wer sie gelesen hat, sieht die Aufforderung nicht mehr;
+über **Was passiert?** ist die Karte trotzdem jederzeit erreichbar.
+
+Am *Stadthaus Ahornweg* ist das gleich zu sehen: Der Bau steht mitten in der
+Gebäudehülle, und Dacheindeckung wie Fenstereinbau haben beide eine Karte. Am
+*Musterhaus Sonnenweg* steht der Abschnitt nicht — dort beginnt der Bau erst in
+vier Wochen, und nichts rückt in den Blick. Das ist kein Fehler, sondern die
+Regel aus Abschnitt 3.1 der Spezifikation.
+
+Zum Ausprobieren: eine Karte öffnen, einen Punkt unter *Worauf du achten
+kannst* abhaken, eine Frage über den Knopf kopieren, am Fuß **War das
+hilfreich?** beantworten. Der Haken gehört dem Bauvorhaben und bleibt; die
+Rückmeldung gehört dir und steht beim nächsten Öffnen wieder da.
+
+Fünf Karten empfehlen eine Fachprüfung — Bodenplatte, Kellerabdichtung,
+Rohinstallation, Blower-Door und Abnahme. Dort steht auch, was eine
+Baubegleitung ungefähr kostet. Das ist Absicht: Die Grenze des Produkts wird
+offen benannt, statt sie zu verschweigen.
+
 ## Was noch fehlt
 
 - **Termine abstimmen.** Die vier Bestätigungsgrade werden angezeigt, aber
@@ -140,6 +166,10 @@ der sagt warum.
   verschiebt sich der Estrich."
 - **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
   (`member.invite`) steht, die Route dazu fehlt noch.
+- **Lotsenkarten für die übrigen Vorgänge.** Zwölf Karten decken die Phasen ab,
+  in denen am meisten schiefgeht; die anderen 22 Vorgänge sagen ehrlich, dass es
+  zu ihnen noch keine gibt. Und die fachliche Prüfung durch einen
+  Sachverständigen steht aus, siehe `docs/REDAKTION.md`.
 
 ## Nach `pnpm db:test`
 

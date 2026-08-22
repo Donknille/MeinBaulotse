@@ -31,6 +31,11 @@ interface Expectation {
 /** Nur Spalten aus Migrationen **nach** der ersten Auslieferung. */
 const EXPECTED: readonly Expectation[] = [
   { migration: '0004_task_constraint.sql', table: 'task', column: 'earliest_start' },
+  // Ohne diese Tabelle scheitert bereits die Planansicht: Sie fragt zu jedem
+  // Vorgang, ob es dazu etwas zu lesen gibt. Die Karten selbst kommen erst mit
+  // 0006 — fehlen die, bleibt die Anwendung heil und sagt „noch keine
+  // Lotsenkarte". Das Schema aus 0005 dagegen ist Voraussetzung.
+  { migration: '0005_guide_cards.sql', table: 'guide_card', column: 'template_task_codes' },
 ];
 
 export interface SchemaState {

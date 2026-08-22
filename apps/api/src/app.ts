@@ -17,6 +17,8 @@ import {
   type FederalState,
 } from '@meinbaulotse/schedule';
 import {
+  checklistUpdateRequest,
+  guideFeedbackRequest,
   onboardingRequest,
   taskUpdateRequest,
   type PhaseProgress,
@@ -25,6 +27,12 @@ import {
   type ScheduledTaskDto,
 } from '@meinbaulotse/shared';
 import { requireAuth, type AuthedVariables } from './auth.js';
+import {
+  GUIDE_CARD_KEY_JOIN,
+  loadGuideCardView,
+  recordFeedback,
+  updateChecklistItem,
+} from './guide-cards.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { recomputeProject } from './scheduling.js';
@@ -322,6 +330,54 @@ export function createApp(): Hono<App> {
     return c.json(schedule);
   });
 
+  // -- Wissensschicht --------------------------------------------------------
+
+  // Die Lotsenkarte zu einem Vorgang. Das Abrufen hält zugleich fest, dass sie
+  // offen war — sonst stünde sie weiter unter „lies dich ein", obwohl der
+  // Bauherr sie längst gelesen hat.
+  v1.get('/projects/:id/tasks/:taskId/guide-card', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const view = await withUserTx(c.get('claims'), (tx) =>
+      loadGuideCardView(tx, projectId, taskId),
+    );
+    return c.json(view);
+  });
+
+  v1.post('/projects/:id/tasks/:taskId/guide-card/feedback', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = guideFeedbackRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const read = await withUserTx(c.get('claims'), (tx) =>
+      recordFeedback(tx, projectId, taskId, parsed.data.helpful),
+    );
+    return c.json(read);
+  });
+
+  v1.patch('/projects/:id/checklist/:itemId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const itemId = parseId(c.req.param('itemId'));
+    const parsed = checklistUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const item = await withUserTx(c.get('claims'), (tx) =>
+      updateChecklistItem(tx, projectId, itemId, parsed.data),
+    );
+    return c.json(item);
+  });
+
   app.route('/v1', v1);
 
   app.notFound((c) => c.json({ error: 'Diese Adresse gibt es nicht.' }, 404));
@@ -463,14 +519,18 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     confirmation: ScheduledTaskDto['confirmation'];
     total_float_days: number | null;
     is_critical: boolean;
+    guide_card_key: string | null;
+    guide_card_read: boolean;
   }>(
     `select t.id, t.name, t.phase_key, tr.code as trade_code, tr.name as trade_name,
             t.sort_order, t.is_milestone, t.is_wait, t.duration_days, t.duration_unit,
             t.current_start, t.current_end, t.baseline_start, t.baseline_end,
             t.earliest_start, t.actual_start, t.actual_end, t.status, t.confirmation,
-            t.total_float_days, t.is_critical
+            t.total_float_days, t.is_critical, guide.key as guide_card_key,
+            (gelesen.id is not null) as guide_card_read
      from task t
      left join trade tr on tr.id = t.trade_id
+     ${GUIDE_CARD_KEY_JOIN}
      where t.project_id = $1
      order by t.sort_order, t.current_start`,
     [projectId],
@@ -498,6 +558,8 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     confirmation: row.confirmation,
     totalFloatDays: row.total_float_days,
     isCritical: row.is_critical,
+    guideCardKey: row.guide_card_key,
+    guideCardRead: row.guide_card_read,
   }));
 }
 

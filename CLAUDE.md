@@ -14,6 +14,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `apps/api` | Hono. Lokal Node-Server, auf Vercel Function unter `/api` |
 | `api/index.js` | **Erzeugt.** Die Function auf Vercel, fertig gebündelt |
 | `apps/web` | Vite + React, installierbare PWA |
+| `content/lotsenkarten` | Redaktionsinhalt der Wissensschicht als Markdown. Quelle für `0006_lotsenkarten.sql` |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
 
@@ -32,7 +33,15 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Rechteentzug *und* Trigger. Änderungen erzeugen Einträge, keine Ersetzungen.
 5. **Redaktionsinhalt und Stammdaten liegen als Daten in der Datenbank**, nicht
    als Konstanten im Code: Bauphasen, Gewerke, Ablaufvorlagen, Rechtematrix,
-   später die Lotsenkarten.
+   Lotsenkarten.
+
+   Die Karten kommen aus `content/lotsenkarten/*.md` über
+   `pnpm --filter @meinbaulotse/db guide-cards:generate`. **Veröffentlicht ist
+   unveränderlich**: Wer Inhalt ändert, erhöht `fassung` in der Markdown-Datei,
+   statt die Zeile in der Datenbank anzufassen — ein Trigger lässt das ohnehin
+   nicht zu. Sonst ließe sich später nicht mehr sagen, welchen Rat der Bauherr
+   damals bekommen hat, und genau diese Frage stellt sich bei Streit.
+   Einzelheiten in `docs/REDAKTION.md`.
 6. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
 7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
@@ -95,6 +104,7 @@ pnpm db:reset       # Shim + Migrationen + Seed
 pnpm db:test        # RLS-Matrix und Invarianten
 pnpm dev            # API und Web parallel
 pnpm build:function # Vercel-Function neu bündeln (nach API-Änderungen)
+pnpm --filter @meinbaulotse/db guide-cards:generate   # nach Änderungen an den Lotsenkarten
 pnpm typecheck && pnpm lint
 ```
 

@@ -8,7 +8,7 @@
  * Aufruf: `pnpm --filter @meinbaulotse/web fixture`
  */
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -20,8 +20,13 @@ import {
   TRADES,
   type Calendar,
 } from '@meinbaulotse/schedule';
-import { permissionsOf } from '@meinbaulotse/db';
-import type { PhaseProgress, ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
+import { parseGuideCard, permissionsOf } from '@meinbaulotse/db';
+import type {
+  GuideCardView,
+  PhaseProgress,
+  ProjectSchedule,
+  ScheduledTaskDto,
+} from '@meinbaulotse/shared';
 
 const PLANNED_START = '2026-04-01';
 const CONTRACTUAL_END = '2026-09-30';
@@ -43,6 +48,30 @@ const floats = criticalPath({
 });
 
 const tradeNameByCode = new Map(TRADES.map((trade) => [trade.code, trade.name]));
+
+/**
+ * Welcher Vorgang trägt eine Lotsenkarte?
+ *
+ * Aus denselben Markdown-Dateien, aus denen die Import-Migration entsteht.
+ * Eine zweite Liste im Skript wäre still veraltet, sobald eine Karte
+ * dazukommt — und dann zeigte der Styleguide Knöpfe, die es nicht gibt, oder
+ * keine, wo es welche gibt.
+ */
+const kartenVerzeichnis = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'content',
+  'lotsenkarten',
+);
+const guideCardKeyByTaskCode = new Map<string, string>();
+const karten = readdirSync(kartenVerzeichnis)
+  .filter((name) => name.endsWith('.md'))
+  .map((datei) => parseGuideCard(datei, readFileSync(join(kartenVerzeichnis, datei), 'utf8')));
+for (const karte of karten) {
+  for (const code of karte.templateTaskCodes) guideCardKeyByTaskCode.set(code, karte.key);
+}
 
 const tasks: ScheduledTaskDto[] = plan.tasks.map((task, index) => {
   const scheduled = schedule.tasks.get(task.id)!;
@@ -77,6 +106,10 @@ const tasks: ScheduledTaskDto[] = plan.tasks.map((task, index) => {
             : 'self_stated',
     totalFloatDays: float.totalFloatDays,
     isCritical: float.isCritical,
+    guideCardKey: guideCardKeyByTaskCode.get(task.code) ?? null,
+    // Im Styleguide ist nichts gelesen: Er soll die Einblendung zeigen, nicht
+    // ihren Ruhezustand.
+    guideCardRead: false,
   };
 });
 
@@ -116,19 +149,67 @@ const fixture: ProjectSchedule = {
   deviationWorkdays: floats.deviationWorkdays,
 };
 
+/**
+ * Eine echte Lotsenkarte für den Styleguide.
+ *
+ * Aus derselben Markdown-Datei, aus der die Import-Migration entsteht — der
+ * Styleguide ist die lebende Gegenprobe zum Gestaltungssystem (CI 15), und
+ * eine nachgebaute Beispielkarte wäre genau das nicht.
+ */
+const beispielKarte = karten.find((karte) => karte.key === 'estrich');
+if (beispielKarte === undefined) {
+  throw new Error('Die Karte „estrich" fehlt — ohne sie hat der Styleguide keine Lotsenkarte.');
+}
+const beispielVorgang = tasks.find((task) => task.guideCardKey === beispielKarte.key)!;
+
+const guideFixture: GuideCardView = {
+  card: {
+    id: '00000000-0000-4000-8000-000000000900',
+    key: beispielKarte.key,
+    version: beispielKarte.version,
+    title: beispielKarte.title,
+    phaseKey: beispielKarte.phaseKey,
+    tradeCode: beispielKarte.tradeCode,
+    whatsHappening: beispielKarte.whatsHappening,
+    watchFor: [...beispielKarte.watchFor],
+    questionsForContractor: [...beispielKarte.questionsForContractor],
+    commonProblems: [...beispielKarte.commonProblems],
+    photoPrompts: [...beispielKarte.photoPrompts],
+    expertRecommended: beispielKarte.expertRecommended,
+    expertReason: beispielKarte.expertReason,
+    sources: [...beispielKarte.sources],
+  },
+  taskId: beispielVorgang.id,
+  taskName: beispielVorgang.name,
+  // Der erste Punkt abgehakt: So zeigt der Styleguide beide Zustände.
+  checklist: beispielKarte.watchFor.map((point, index) => ({
+    id: `00000000-0000-4000-8000-${String(index + 910).padStart(12, '0')}`,
+    text: point.text,
+    why: point.why,
+    sortOrder: index,
+    isDone: index === 0,
+    doneAt: index === 0 ? '2026-07-30T09:12:00.000Z' : null,
+    note: null,
+  })),
+  read: null,
+  canCheck: true,
+};
+
 const here = dirname(fileURLToPath(import.meta.url));
 const target = join(here, '..', 'src', 'routes', 'plan-fixture.ts');
 
 writeFileSync(
   target,
   `/* Erzeugt von scripts/make-plan-fixture.ts — nicht von Hand bearbeiten. */\n\n` +
-    `import type { ProjectSchedule } from '@meinbaulotse/shared';\n\n` +
-    `export const PLAN_FIXTURE: ProjectSchedule = ${JSON.stringify(fixture, null, 2)};\n`,
+    `import type { GuideCardView, ProjectSchedule } from '@meinbaulotse/shared';\n\n` +
+    `export const PLAN_FIXTURE: ProjectSchedule = ${JSON.stringify(fixture, null, 2)};\n\n` +
+    `export const GUIDE_CARD_FIXTURE: GuideCardView = ${JSON.stringify(guideFixture, null, 2)};\n`,
   'utf8',
 );
 
 console.log(
   `Vorschau geschrieben: ${target}\n` +
     `  ${tasks.length} Vorgänge, Ende ${schedule.projectEnd}, ` +
-    `Abweichung ${floats.deviationWorkdays} Werktage.`,
+    `Abweichung ${floats.deviationWorkdays} Werktage.\n` +
+    `  Lotsenkarte für den Styleguide: „${beispielKarte.title}".`,
 );

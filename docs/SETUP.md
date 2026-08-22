@@ -65,8 +65,9 @@ Ein Projekt, `meinbaulotse`.
 Dashboard → **SQL Editor** → *New query* → den Inhalt von
 [`docs/db-setup.sql`](db-setup.sql) vollständig einfügen → **Run**.
 
-Das ist eine erzeugte Datei: die drei Migrationen aus `supabase/migrations/` in
-der richtigen Reihenfolge zusammengefügt. Ein Einfügen, ein Durchlauf.
+Das ist eine erzeugte Datei: die Migrationen aus `supabase/migrations/` in der
+richtigen Reihenfolge zusammengefügt, Schema und Stammdaten samt Lotsenkarten.
+Ein Einfügen, ein Durchlauf.
 
 #### Weg B — psql
 
@@ -285,17 +286,22 @@ Ohne diesen Schritt greift die im CI vorgesehene Ersatzwahl: Inter in Gewicht
 
 ## 5. Wenn du Stammdaten änderst
 
-Zwei Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
+Diese Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
 
 | Datei | Quelle | Befehl |
 |---|---|---|
 | `supabase/migrations/0003_seed.sql` | Ablaufvorlage und Rechtematrix | `pnpm --filter @meinbaulotse/db seed:generate` |
-| `docs/db-setup.sql` | die drei Migrationen | `pnpm --filter @meinbaulotse/db build:db-setup` |
-| `apps/web/src/routes/plan-fixture.ts` | Ablaufvorlage und Berechnungskern | `pnpm --filter @meinbaulotse/web fixture` |
+| `supabase/migrations/0006_lotsenkarten.sql` | `content/lotsenkarten/*.md` | `pnpm --filter @meinbaulotse/db guide-cards:generate` |
+| `docs/db-setup.sql` | alle Migrationen | `pnpm --filter @meinbaulotse/db build:db-setup` |
+| `apps/web/src/routes/plan-fixture.ts` | Ablaufvorlage, Berechnungskern und Lotsenkarten | `pnpm --filter @meinbaulotse/web fixture` |
 
-Die Pipeline prüft, dass alle drei zu ihren Quellen passen. **Wer eine Migration
+Die Pipeline prüft, dass alle zu ihren Quellen passen. **Wer eine Migration
 ändert, muss `db-setup.sql` neu erzeugen** — sonst spielt der nächste jemand
 ein veraltetes Schema ein.
+
+Für die Lotsenkarten gilt eine eigene Regel, weil veröffentlichte Karten
+unveränderlich sind: Inhalt ändern heißt `fassung` erhöhen. Siehe
+`docs/REDAKTION.md`.
 
 `0003_seed.sql` ist die **Erstbefüllung**. Sobald sie eingespielt ist, ist die
 Datenbank die Autorität: Die Ablaufvorlage soll ohne Deployment pflegbar sein.

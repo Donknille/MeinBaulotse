@@ -155,6 +155,22 @@ export const scheduledTask = z.object({
   confirmation: confirmationLevel,
   totalFloatDays: z.number().int().nullable(),
   isCritical: z.boolean(),
+  /**
+   * Schlüssel der Lotsenkarte zu diesem Vorgang, sofern es eine gibt.
+   *
+   * Nur der Schlüssel, nicht die Karte: Die Planansicht braucht die Auskunft
+   * „hierzu gibt es etwas zu lesen", und 38 vollständige Karten in jeder
+   * Antwort wären ein Vielfaches der Nutzlast für einen Knopf.
+   */
+  guideCardKey: z.string().nullable(),
+  /**
+   * Ob der Fragende diese Karte schon offen hatte.
+   *
+   * Steht hier, damit die Einblendung wieder verschwindet. Eine Aufforderung,
+   * die auch nach dem Lesen stehen bleibt, erzieht zum Wegsehen — und das ist
+   * genau das Gegenteil dessen, wofür die Wissensschicht da ist.
+   */
+  guideCardRead: z.boolean(),
 });
 export type ScheduledTaskDto = z.infer<typeof scheduledTask>;
 
@@ -212,3 +228,88 @@ export function floatInPlainWords(totalFloatDays: number | null): string {
   }
   return `Darf sich um ${totalFloatDays} Werktage verschieben, ohne dass der Endtermin kippt.`;
 }
+
+// ---------------------------------------------------------------------------
+// Wissensschicht (Abschnitt 3.1 und 5.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Jede Aussage der Lotsenkarte trägt ihre Begründung mit.
+ *
+ * Das ist keine Formsache: „Randdämmstreifen prüfen" ist eine Anweisung, der
+ * ein Laie folgt oder nicht. „Randdämmstreifen prüfen, sonst überträgt der
+ * Estrich Schall" ist eine Auskunft, mit der er selbst entscheiden kann.
+ */
+export const guidePoint = z.object({ text: z.string(), why: z.string() });
+export const guideQuestion = z.object({ question: z.string(), whyItMatters: z.string() });
+export const guideProblem = z.object({ problem: z.string(), howToSpot: z.string() });
+export const guidePhotoPrompt = z.object({ what: z.string(), why: z.string() });
+export const guideSource = z.object({ reference: z.string(), note: z.string() });
+
+export const guideCard = z.object({
+  id: z.string().uuid(),
+  key: z.string(),
+  version: z.number().int(),
+  title: z.string(),
+  phaseKey: z.string(),
+  tradeCode: z.string().nullable(),
+  whatsHappening: z.string(),
+  watchFor: z.array(guidePoint),
+  questionsForContractor: z.array(guideQuestion),
+  commonProblems: z.array(guideProblem),
+  photoPrompts: z.array(guidePhotoPrompt),
+  expertRecommended: z.boolean(),
+  expertReason: z.string().nullable(),
+  sources: z.array(guideSource),
+});
+export type GuideCardDto = z.infer<typeof guideCard>;
+
+export const checklistItem = z.object({
+  id: z.string().uuid(),
+  text: z.string(),
+  why: z.string().nullable(),
+  sortOrder: z.number().int(),
+  isDone: z.boolean(),
+  doneAt: z.string().nullable(),
+  note: z.string().nullable(),
+});
+export type ChecklistItemDto = z.infer<typeof checklistItem>;
+
+export const guideCardView = z.object({
+  card: guideCard,
+  taskId: z.string().uuid(),
+  taskName: z.string(),
+  /** Die Checkliste entsteht aus `watchFor` und gehört ab dann dem Projekt. */
+  checklist: z.array(checklistItem),
+  /** `null` heißt: noch nie geöffnet. */
+  read: z
+    .object({ readAt: z.string(), helpful: z.boolean().nullable() })
+    .nullable(),
+  /** Ob der Fragende abhaken darf. Autorisiert wird trotzdem in der Datenbank. */
+  canCheck: z.boolean(),
+});
+export type GuideCardView = z.infer<typeof guideCardView>;
+
+/**
+ * „War das hilfreich?" — die einzige Metrik, die für die Redaktion zählt
+ * (Abschnitt 5.2). Zwei Knöpfe, keine Skala von eins bis fünf.
+ */
+export const guideFeedbackRequest = z.object({ helpful: z.boolean().nullable() });
+export type GuideFeedbackRequest = z.infer<typeof guideFeedbackRequest>;
+
+export const checklistUpdateRequest = z
+  .object({
+    isDone: z.boolean().optional(),
+    note: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine((value) => value.isDone !== undefined || value.note !== undefined, {
+    message: 'Es gibt nichts zu ändern.',
+  });
+export type ChecklistUpdateRequest = z.infer<typeof checklistUpdateRequest>;
+
+/**
+ * Ab wann eine Karte von selbst in den Blick rückt: sieben Tage vor Beginn
+ * (Abschnitt 3.1). Gerechnet wird in Kalendertagen, denn es geht um
+ * Vorbereitungszeit des Bauherrn und nicht um Arbeitstage auf der Baustelle.
+ */
+export const GUIDE_CARD_LEAD_DAYS = 7;

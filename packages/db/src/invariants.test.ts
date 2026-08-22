@@ -315,3 +315,73 @@ async function countChanges(): Promise<number> {
       ),
   );
 }
+
+describe('(6) Eine veröffentlichte Lotsenkarte ist unveränderlich', () => {
+  const einKey = 'estrich';
+
+  it('lässt sich auch mit den Rechten des Eigentümers nicht ändern', async () => {
+    // Genau die Abnahme aus Arbeitspaket 2: „per SQL nicht änderbar".
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query("update guide_card set whats_happening = 'etwas anderes' where key = $1", [
+          einKey,
+        ]),
+      ),
+    ).rejects.toThrow(/ändert sich nicht/i);
+  });
+
+  it('lässt sich auch mit den Rechten des Eigentümers nicht löschen', async () => {
+    await expect(
+      withAdminTx(async (tx) => tx.query('delete from guide_card where key = $1', [einKey])),
+    ).rejects.toThrow(/nicht gelöscht/i);
+  });
+
+  it('lässt die Verkettung zur Nachfolgeversion zu', async () => {
+    // Ohne diese Ausnahme gäbe es keinen Weg, eine Karte zu überarbeiten —
+    // die Verkettung entsteht zwangsläufig nach der Veröffentlichung.
+    await withAdminTx(async (tx) => {
+      const nachfolger = await tx.query<{ id: string }>(
+        "select id from guide_card where key = 'fliesen'",
+      );
+      await tx.query('update guide_card set superseded_by = $1 where key = $2', [
+        nachfolger.rows[0]!.id,
+        einKey,
+      ]);
+      await tx.query('update guide_card set superseded_by = null where key = $1', [einKey]);
+    });
+  });
+
+  // Der zweite Zweig des Triggers: Solange nichts veröffentlicht ist, darf die
+  // Redaktion arbeiten. Der Entwurf wird hier bewusst **nicht** veröffentlicht
+  // — eine veröffentlichte Karte ließe sich anschließend nicht mehr entfernen,
+  // und ein Test, der Stammdaten hinterlässt, vergiftet jeden weiteren Lauf.
+  // Der veröffentlichte Zweig ist über die zwölf echten Karten oben belegt.
+  it('lässt einen unveröffentlichten Entwurf ändern und löschen', async () => {
+    await withAdminTx(async (tx) => {
+      await tx.query(
+        `insert into guide_card (key, version, phase_key, title, whats_happening)
+         values ('probe-entwurf', 1, 'ausbau', 'Entwurf', 'Noch nicht veröffentlicht.')`,
+      );
+      await tx.query(
+        "update guide_card set title = 'Entwurf, überarbeitet' where key = 'probe-entwurf'",
+      );
+      const nachher = await tx.query<{ title: string }>(
+        "select title from guide_card where key = 'probe-entwurf'",
+      );
+      expect(nachher.rows[0]!.title).toBe('Entwurf, überarbeitet');
+
+      await tx.query("delete from guide_card where key = 'probe-entwurf'");
+    });
+  });
+
+  it('verlangt zu jeder empfohlenen Fachprüfung eine Begründung', async () => {
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query(
+          `insert into guide_card (key, version, phase_key, title, whats_happening, expert_recommended)
+           values ('probe-ohne-grund', 1, 'ausbau', 'Ohne Grund', 'Text.', true)`,
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+});

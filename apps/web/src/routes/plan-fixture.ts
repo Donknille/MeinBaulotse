@@ -1,6 +1,6 @@
 /* Erzeugt von scripts/make-plan-fixture.ts — nicht von Hand bearbeiten. */
 
-import type { ProjectSchedule } from '@meinbaulotse/shared';
+import type { GuideCardView, ProjectSchedule } from '@meinbaulotse/shared';
 
 export const PLAN_FIXTURE: ProjectSchedule = {
   "project": {
@@ -126,7 +126,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 128,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000101",
@@ -149,7 +151,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000102",
@@ -172,7 +176,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000103",
@@ -195,7 +201,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000104",
@@ -218,7 +226,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "bodenplatte",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000105",
@@ -241,7 +251,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "bodenplatte",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000106",
@@ -264,7 +276,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000107",
@@ -287,7 +301,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000108",
@@ -310,7 +326,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000109",
@@ -333,7 +351,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 106,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": "kellerabdichtung",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000110",
@@ -356,7 +376,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 106,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000111",
@@ -379,7 +401,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "disputed",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "rohbau-mauerwerk",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000112",
@@ -402,7 +426,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000113",
@@ -425,7 +451,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "rohbau-mauerwerk",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000114",
@@ -448,7 +476,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000115",
@@ -471,7 +501,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "dachstuhl",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000116",
@@ -494,7 +526,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "dachstuhl",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000117",
@@ -517,7 +551,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 3,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": "fenster",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000118",
@@ -540,7 +576,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000119",
@@ -563,7 +601,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 4,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": "rohinstallation-elektro",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000120",
@@ -586,7 +626,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "rohinstallation-shk",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000121",
@@ -609,7 +651,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000122",
@@ -632,7 +676,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "disputed",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "blower-door",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000123",
@@ -655,7 +701,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 2,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": "innenputz",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000124",
@@ -678,7 +726,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000125",
@@ -701,7 +751,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "estrich",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000126",
@@ -724,7 +776,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "estrich",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000127",
@@ -747,7 +801,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "fliesen",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000128",
@@ -770,7 +826,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 35,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000129",
@@ -793,7 +851,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000130",
@@ -816,7 +876,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "counterparty_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000131",
@@ -839,7 +901,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 11,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000132",
@@ -862,7 +926,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000133",
@@ -885,7 +951,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "disputed",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000134",
@@ -908,7 +976,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 70,
-      "isCritical": false
+      "isCritical": false,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000135",
@@ -931,7 +1001,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "mutual",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000136",
@@ -954,7 +1026,9 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": "abnahme",
+      "guideCardRead": false
     },
     {
       "id": "00000000-0000-4000-8000-000000000137",
@@ -977,10 +1051,167 @@ export const PLAN_FIXTURE: ProjectSchedule = {
       "status": "terminiert",
       "confirmation": "self_stated",
       "totalFloatDays": 0,
-      "isCritical": true
+      "isCritical": true,
+      "guideCardKey": null,
+      "guideCardRead": false
     }
   ],
   "computedEnd": "2026-10-19",
   "contractualEnd": "2026-09-30",
   "deviationWorkdays": 13
+};
+
+export const GUIDE_CARD_FIXTURE: GuideCardView = {
+  "card": {
+    "id": "00000000-0000-4000-8000-000000000900",
+    "key": "estrich",
+    "version": 1,
+    "title": "Estrich und Belegreife",
+    "phaseKey": "ausbau",
+    "tradeCode": "estrich",
+    "whatsHappening": "Auf die Rohdecke kommen Dämmung, Folie und darauf der Estrich — die Schicht, die später den Bodenbelag trägt. Danach folgt die Trocknung bis zur Belegreife: dem Zustand, in dem der Estrich trocken genug ist, dass ein Belag darauf verlegt werden darf.\n\nDiese Trocknung ist Wartezeit, keine Pufferzeit. Sie steht als eigener Vorgang in deinem Plan und lässt sich nicht verkürzen, indem jemand schneller arbeitet.",
+    "watchFor": [
+      {
+        "text": "Ringsum an allen Wänden steht ein Randdämmstreifen, auch an Türzargen und Rohren",
+        "why": "ohne ihn überträgt der Estrich Trittschall in die Wände"
+      },
+      {
+        "text": "Die Aufbauhöhe passt zum Belag, den du ausgesucht hast",
+        "why": "Fliesen und Parkett bauen unterschiedlich hoch, und die Türen sind schon bestellt"
+      },
+      {
+        "text": "Die Bewegungsfugen liegen nach Plan, insbesondere in Türdurchgängen",
+        "why": "ein Estrich ohne Fugenplan reißt an der ungünstigsten Stelle von selbst"
+      },
+      {
+        "text": "Bei Fußbodenheizung wird das vorgeschriebene Aufheizprogramm gefahren und protokolliert",
+        "why": "ohne dieses Protokoll verweigert mancher Bodenleger die Verlegung"
+      },
+      {
+        "text": "Die Belegreife wird gemessen und nicht geschätzt",
+        "why": "die Messung ist eine Zahl auf einem Protokoll, kein Blick auf den Boden"
+      }
+    ],
+    "questionsForContractor": [
+      {
+        "question": "Welcher Estrich wird eingebaut, und welche Aufbauhöhe hat er?",
+        "whyItMatters": "Zement- und Calciumsulfatestrich trocknen unterschiedlich lang und vertragen unterschiedlich viel Feuchte"
+      },
+      {
+        "question": "Wann wird die Belegreife gemessen, mit welchem Verfahren und wer bekommt das Protokoll?",
+        "whyItMatters": "üblich ist die CM-Messung, und der Grenzwert hängt von Estrichart und Fußbodenheizung ab"
+      },
+      {
+        "question": "Gibt es einen Fugenplan, und wo liegen die Fugen?",
+        "whyItMatters": "die Lage der Fugen bestimmt später das Verlegebild"
+      },
+      {
+        "question": "Wie wird während der Trocknung gelüftet und geheizt?",
+        "whyItMatters": "falsches Lüften in den ersten Tagen führt zu Rissen"
+      }
+    ],
+    "commonProblems": [
+      {
+        "problem": "Zu früh belegt, weil der Termin drängte",
+        "howToSpot": "der Belag wirft Wellen oder löst sich, und die Ursache ist erst nach dem Herausreißen sichtbar"
+      },
+      {
+        "problem": "Der Randdämmstreifen wird zu früh abgeschnitten oder fehlt hinter Zargen",
+        "howToSpot": "es entstehen Schallbrücken, die man hört und nicht mehr beheben kann"
+      },
+      {
+        "problem": "Die Aufbauhöhe passt nicht zum Belag",
+        "howToSpot": "Türen schleifen oder es entsteht eine Stufe zum Nachbarraum"
+      },
+      {
+        "problem": "Das Aufheizprotokoll fehlt",
+        "howToSpot": "der Bodenleger legt nicht los, und der Termin verschiebt sich um Wochen"
+      }
+    ],
+    "photoPrompts": [
+      {
+        "what": "Die verlegte Dämmung mit allen Leitungen darin, vor dem Estrich",
+        "why": "danach weiß niemand mehr, wo etwas liegt"
+      },
+      {
+        "what": "Die Heizkreise der Fußbodenheizung, raumweise",
+        "why": "beim späteren Bohren in den Boden ist das der einzige Anhaltspunkt"
+      },
+      {
+        "what": "Der Randdämmstreifen an den Wänden",
+        "why": "er verschwindet unter Sockelleiste und Belag"
+      }
+    ],
+    "expertRecommended": false,
+    "expertReason": null,
+    "sources": [
+      {
+        "reference": "DIN 18560-1 und -2",
+        "note": "Estriche im Bauwesen, unter anderem Estriche auf Dämmschichten"
+      },
+      {
+        "reference": "Schnittstellenkoordination der Verbände von Estrich-, Fliesen- und Parkettgewerk",
+        "note": "Belegreife und CM-Messung"
+      },
+      {
+        "reference": "DIN 18202",
+        "note": "Toleranzen im Hochbau, Ebenheit von Bodenflächen"
+      },
+      {
+        "reference": "VOB/C ATV DIN 18353",
+        "note": "Estricharbeiten, sofern die VOB/B vereinbart ist"
+      }
+    ]
+  },
+  "taskId": "00000000-0000-4000-8000-000000000125",
+  "taskName": "Estrich",
+  "checklist": [
+    {
+      "id": "00000000-0000-4000-8000-000000000910",
+      "text": "Ringsum an allen Wänden steht ein Randdämmstreifen, auch an Türzargen und Rohren",
+      "why": "ohne ihn überträgt der Estrich Trittschall in die Wände",
+      "sortOrder": 0,
+      "isDone": true,
+      "doneAt": "2026-07-30T09:12:00.000Z",
+      "note": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000911",
+      "text": "Die Aufbauhöhe passt zum Belag, den du ausgesucht hast",
+      "why": "Fliesen und Parkett bauen unterschiedlich hoch, und die Türen sind schon bestellt",
+      "sortOrder": 1,
+      "isDone": false,
+      "doneAt": null,
+      "note": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000912",
+      "text": "Die Bewegungsfugen liegen nach Plan, insbesondere in Türdurchgängen",
+      "why": "ein Estrich ohne Fugenplan reißt an der ungünstigsten Stelle von selbst",
+      "sortOrder": 2,
+      "isDone": false,
+      "doneAt": null,
+      "note": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000913",
+      "text": "Bei Fußbodenheizung wird das vorgeschriebene Aufheizprogramm gefahren und protokolliert",
+      "why": "ohne dieses Protokoll verweigert mancher Bodenleger die Verlegung",
+      "sortOrder": 3,
+      "isDone": false,
+      "doneAt": null,
+      "note": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000914",
+      "text": "Die Belegreife wird gemessen und nicht geschätzt",
+      "why": "die Messung ist eine Zahl auf einem Protokoll, kein Blick auf den Boden",
+      "sortOrder": 4,
+      "isDone": false,
+      "doneAt": null,
+      "note": null
+    }
+  ],
+  "read": null,
+  "canCheck": true
 };

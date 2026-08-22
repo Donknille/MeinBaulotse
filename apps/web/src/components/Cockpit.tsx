@@ -28,11 +28,12 @@
  * Versprechen, das die Anwendung nicht hält.
  */
 
-import { ArrowRight, Check, CircleDot, Flag, TriangleAlert } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, CircleDot, Flag, TriangleAlert } from 'lucide-react';
 import type { ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
-import { Card } from './ui';
+import { Button, Card } from './ui';
 import { PhaseBar } from './schedule';
 import { formatDate, formatRange } from '../lib/format';
+import { karteJetztLesen } from '../lib/guide';
 import { inTagen, istHeute, meldungOffen, progressOf, todayIso, zaehle } from '../lib/progress';
 
 const MAX_ZEILEN = 4;
@@ -41,10 +42,13 @@ export function Cockpit({
   schedule,
   currentPhase,
   onSelect,
+  onOpenGuide,
 }: {
   schedule: ProjectSchedule;
   currentPhase: string | undefined;
   onSelect?: (task: ScheduledTaskDto) => void;
+  /** Fehlt sie, gibt es keine Lotsenkarten — so wie im Styleguide. */
+  onOpenGuide?: (task: ScheduledTaskDto) => void;
 }) {
   const today = todayIso();
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -68,6 +72,10 @@ export function Cockpit({
 
   // Was Aufmerksamkeit braucht, unterscheidet sich nach Rolle — und nur hier.
   const offeneMeldungen = schedule.tasks.filter((task) => meldungOffen(task, today));
+  // Sieben Tage vor Beginn rückt die Karte von selbst in den Blick
+  // (Spezifikation 3.1). Gelesenes fällt heraus — ein Hinweis, der bleibt,
+  // wird weggeklickt statt gelesen.
+  const zuLesen = onOpenGuide === undefined ? [] : karteJetztLesen(schedule.tasks, today);
   const verschoben = schedule.tasks.filter(
     (task) => task.earliestStart !== null && progressOf(task) !== 'fertig',
   );
@@ -160,6 +168,7 @@ export function Cockpit({
                 referenceYear={referenceYear}
                 vorne={formatRange(task.currentStart, task.currentEnd, referenceYear)}
                 {...(onSelect === undefined ? {} : { onSelect })}
+                {...(onOpenGuide === undefined ? {} : { onOpenGuide })}
               />
             ))}
           </ul>
@@ -180,13 +189,40 @@ export function Cockpit({
                 referenceYear={referenceYear}
                 vorne={inTagen(task.currentStart!, today)}
                 {...(onSelect === undefined ? {} : { onSelect })}
+                {...(onOpenGuide === undefined ? {} : { onOpenGuide })}
               />
             ))}
           </ul>
         </Abschnitt>
       ) : null}
 
-      {/* 4. Was du tun musst.
+      {/* 4. Was du tun musst — und das Erste davon ist: Bescheid wissen.
+
+             Die Karte rückt von selbst in den Blick, sieben Tage vor Beginn
+             (Spezifikation 3.1). Das ist die tragende Funktion des Produkts:
+             Ein Bauherr scheitert selten am Termin des Fliesenlegers, sondern
+             daran, dass er nicht weiß, was er nicht weiß. */}
+      {zuLesen.length > 0 && onOpenGuide !== undefined ? (
+        <Abschnitt
+          titel="Lies dich ein"
+          icon={<BookOpen size={18} className="text-lavender" aria-hidden />}
+          hinweis="Zu diesen Vorgängen gibt es eine Lotsenkarte: was passiert, worauf du achten kannst, was du den GU fragen solltest."
+        >
+          <ul className="flex flex-col">
+            {zuLesen.slice(0, MAX_ZEILEN).map((task) => (
+              <Zeile
+                key={task.id}
+                task={task}
+                referenceYear={referenceYear}
+                vorne={wannLesen(task, today)}
+                onOpenGuide={onOpenGuide}
+              />
+            ))}
+          </ul>
+        </Abschnitt>
+      ) : null}
+
+      {/* 5. Was du melden musst.
              Hier, und nur hier, unterscheiden sich die Rollen: Der GU fuehrt
              aus und schuldet die Meldung; der Bauherr schaut zu und kann sie
              nicht abgeben. Ein Kasten „das solltest du melden" waere fuer ihn
@@ -206,6 +242,7 @@ export function Cockpit({
                 referenceYear={referenceYear}
                 vorne={inTagen(task.currentEnd!, today)}
                 {...(onSelect === undefined ? {} : { onSelect })}
+                {...(onOpenGuide === undefined ? {} : { onOpenGuide })}
               />
             ))}
           </ul>
@@ -228,6 +265,7 @@ export function Cockpit({
                 referenceYear={referenceYear}
                 vorne={formatDate(task.actualEnd ?? task.currentEnd, referenceYear)}
                 {...(onSelect === undefined ? {} : { onSelect })}
+                {...(onOpenGuide === undefined ? {} : { onOpenGuide })}
               />
             ))}
           </ul>
@@ -253,6 +291,7 @@ export function Cockpit({
                 referenceYear={referenceYear}
                 vorne={formatRange(task.currentStart, task.currentEnd, referenceYear)}
                 {...(onSelect === undefined ? {} : { onSelect })}
+                {...(onOpenGuide === undefined ? {} : { onOpenGuide })}
               />
             ))}
           </ul>
@@ -296,25 +335,37 @@ function Zeile({
   vorne,
   referenceYear,
   onSelect,
+  onOpenGuide,
 }: {
   task: ScheduledTaskDto;
   vorne: string;
   referenceYear: number;
   onSelect?: (task: ScheduledTaskDto) => void;
+  onOpenGuide?: (task: ScheduledTaskDto) => void;
 }) {
-  const Element = onSelect === undefined ? 'div' : 'button';
+  // Was die Zeile selbst tut: das Blatt öffnen, wenn es das gibt — sonst die
+  // Karte. Im Abschnitt „Lies dich ein" gibt es nur die Karte, und dort wäre
+  // eine Zeile, die nichts tut, eine Sackgasse.
+  const hauptaktion =
+    onSelect ?? (task.guideCardKey === null ? undefined : onOpenGuide);
+  const Element = hauptaktion === undefined ? 'div' : 'button';
+  // Der eigene Knopf für die Karte steht nur dort, wo die Zeile schon etwas
+  // anderes tut. Zwei Knöpfe für dieselbe Wirkung wären Verwirrung, und ein
+  // Knopf im Knopf wäre schlicht kaputt.
+  const eigenerKartenknopf =
+    onOpenGuide !== undefined && onSelect !== undefined && task.guideCardKey !== null;
   // Vorne steht je nach Abschnitt etwas anderes: mal der Zeitraum selbst, mal
   // „in vier Tagen". Nur im zweiten Fall fehlt einer Vorlesesoftware das Datum
   // — sonst stuende es zweimal da.
   const zeitraum = formatRange(task.currentStart, task.currentEnd, referenceYear);
   return (
-    <li className="border-b border-ash last:border-b-0">
+    <li className="flex items-center gap-2 border-b border-ash last:border-b-0">
       <Element
-        {...(onSelect === undefined
+        {...(hauptaktion === undefined
           ? {}
-          : { type: 'button' as const, onClick: () => onSelect(task) })}
-        className={`flex w-full flex-col gap-0.5 py-2.5 text-left sm:flex-row sm:items-baseline sm:gap-3 ${
-          onSelect === undefined
+          : { type: 'button' as const, onClick: () => hauptaktion(task) })}
+        className={`flex flex-1 flex-col gap-0.5 py-2.5 text-left sm:flex-row sm:items-baseline sm:gap-3 ${
+          hauptaktion === undefined
             ? ''
             : 'cursor-pointer transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist'
         }`}
@@ -327,10 +378,37 @@ function Zeile({
             <span className="text-caption font-normal text-steel">{task.tradeName}</span>
           ) : null}
         </span>
+        {vorne === zeitraum ? null : <span className="sr-only">{zeitraum}</span>}
       </Element>
-      {vorne === zeitraum ? null : <span className="sr-only">{zeitraum}</span>}
+      {eigenerKartenknopf ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-lavender"
+          onClick={() => onOpenGuide!(task)}
+        >
+          <BookOpen size={16} aria-hidden />
+          <span className="hidden sm:inline">Was passiert?</span>
+          <span className="sr-only sm:hidden">Was passiert bei „{task.name}"?</span>
+        </Button>
+      ) : null}
     </li>
   );
+}
+
+/**
+ * Was links neben einer Karte steht, zu der gelesen werden sollte.
+ *
+ * Nicht `inTagen`: Dessen Vergangenheitsform lautet „seit gestern überfällig",
+ * und das stimmt hier gleich zweimal nicht. Ein Vorgang, der läuft, ist nicht
+ * überfällig, und eine ungelesene Karte ist keine Schuld. Beschuldigend wird
+ * die Oberfläche nicht (CI 11.1) — hier steht deshalb die Sache selbst.
+ */
+function wannLesen(task: ScheduledTaskDto, today: string): string {
+  if (progressOf(task) === 'laeuft') return 'läuft gerade';
+  if (task.currentStart === null) return 'ohne Termin';
+  if (task.currentStart <= today) return 'ab heute';
+  return inTagen(task.currentStart, today);
 }
 
 function Kennzahl({

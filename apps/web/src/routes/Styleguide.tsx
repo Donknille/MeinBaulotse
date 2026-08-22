@@ -4,6 +4,7 @@
  * Was im Dokument steht und hier nicht erscheint, ist nicht umgesetzt.
  */
 
+import { useState } from 'react';
 import { CalendarDays, Camera, ClipboardList, Scale } from 'lucide-react';
 import {
   Button,
@@ -17,7 +18,8 @@ import {
 } from '../components/ui';
 import { ConfirmationChip, PhaseBar, TaskRow } from '../components/schedule';
 import { PlanView } from '../components/PlanView';
-import { PLAN_FIXTURE } from './plan-fixture';
+import { GuideCardSheet } from '../components/GuideCardSheet';
+import { GUIDE_CARD_FIXTURE, PLAN_FIXTURE } from './plan-fixture';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 
 const PHASES: PhaseProgress[] = [
@@ -118,11 +120,14 @@ function task(overrides: Partial<ScheduledTaskDto>): ScheduledTaskDto {
     confirmation: 'self_stated',
     totalFloatDays: 0,
     isCritical: true,
+    guideCardKey: null,
+    guideCardRead: false,
     ...overrides,
   };
 }
 
 export function Styleguide() {
+  const [karteOffen, setKarteOffen] = useState(false);
   return (
     <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-16 px-4 py-10 sm:px-6">
       <header className="flex flex-col gap-2">
@@ -384,6 +389,26 @@ export function Styleguide() {
         <div className="flex flex-col gap-10 rounded-[var(--radius-large)] border border-ash p-6">
           <PlanView schedule={PLAN_FIXTURE} />
         </div>
+      </Section>
+
+      <Section title="Lotsenkarte">
+        <p className="max-w-[34rem] text-body text-steel">
+          Das Vollbildblatt aus Abschnitt 9.9, mit einer echten Karte aus{' '}
+          <span className="font-mono text-caption">content/lotsenkarten/</span> — derselben Datei,
+          aus der die Import-Migration entsteht. Lavender als Akzent, die Fragen an den GU in einem
+          eingebetteten Block mit Kopieren-Knopf, die Quellen offen am Fuß.
+        </p>
+        <Button variant="outline" size="field" onClick={() => setKarteOffen(true)}>
+          Lotsenkarte öffnen
+        </Button>
+        {karteOffen ? (
+          <GuideCardSheet
+            view={GUIDE_CARD_FIXTURE}
+            onClose={() => setKarteOffen(false)}
+            onRate={async () => undefined}
+            onToggle={async () => undefined}
+          />
+        ) : null}
       </Section>
 
       <Section title="Tonalität">
