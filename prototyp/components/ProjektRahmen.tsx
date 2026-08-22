@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { ErfassungAnbieter } from '@/components/Erfassung';
 import { Kopfzeile } from '@/components/Kopfzeile';
 import { NurImBrowser } from '@/components/NurImBrowser';
 import { useModus, useProjektdaten } from '@/lib/store';
@@ -41,9 +42,9 @@ function Inhalt({ children }: { children: (daten: Projektdaten) => ReactNode }) 
   }
 
   return (
-    <>
+    <ErfassungAnbieter daten={daten}>
       <Kopfzeile />
       {children(daten)}
-    </>
+    </ErfassungAnbieter>
   );
 }

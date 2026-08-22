@@ -321,3 +321,19 @@ export function phaseVonGewerk(id: string): Bauphase {
   const vorlage = GEWERKVORLAGEN.find((v) => gewerkId(v.nummer) === id);
   return vorlage?.phase ?? 'Ausbau';
 }
+
+/**
+ * Die Platzhalterbilder des Prototyps. Ein echtes Produkt nimmt hier die
+ * Kamera; für einen Konzepttest genügt es, dass ein Bild da ist und der
+ * Eintrag darum herum funktioniert.
+ */
+export const PLATZHALTERBILDER: Array<{ datei: string; name: string }> = [
+  { datei: '/fotos/baugrube.svg', name: 'Baugrube' },
+  { datei: '/fotos/bodenplatte.svg', name: 'Bodenplatte' },
+  { datei: '/fotos/mauerwerk.svg', name: 'Mauerwerk' },
+  { datei: '/fotos/dachstuhl.svg', name: 'Dachstuhl' },
+  { datei: '/fotos/dach.svg', name: 'Dach' },
+  { datei: '/fotos/fenster.svg', name: 'Fenster' },
+  { datei: '/fotos/elektro.svg', name: 'Elektro' },
+  { datei: '/fotos/heizung.svg', name: 'Heizung' },
+];

@@ -2,8 +2,11 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Hourglass, Phone } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Hourglass, ImagePlus, PhoneCall, Phone } from 'lucide-react';
+import { meldungsrecht, useErfassung } from '@/components/Erfassung';
+import { ErlaubteAktion } from '@/components/ErlaubteAktion';
 import { Herkunftsmarke, Statusmarke } from '@/components/Marken';
+import { Entscheidungen } from '@/components/projekt/Entscheidungen';
 import { Fototagebuch } from '@/components/projekt/Fototagebuch';
 import { ProjektRahmen } from '@/components/ProjektRahmen';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +27,7 @@ import {
 } from '@/lib/datum';
 import { phaseVonGewerk } from '@/lib/stammdaten';
 import { ROLLENNAME } from '@/lib/rechte';
+import { useModus, useRolle } from '@/lib/store';
 import { useHeute } from '@/lib/useHeute';
 import type { Gewerk, Projektdaten } from '@/lib/types';
 
@@ -71,6 +75,9 @@ function Inhalt({
   const fotos = fotosZuGewerk(daten, gewerk.id);
   const verlauf = ereignisseZuGewerk(daten, gewerk.id);
   const laeuft = gewerk.start <= heute && gewerk.ende >= heute && gewerk.status !== 'fertig';
+  const rolle = useRolle();
+  const modus = useModus();
+  const { standEintragen, fotoHinzufuegen } = useErfassung();
 
   return (
     <main id="inhalt" className="mx-auto grid w-full max-w-3xl gap-8 px-4 py-6 sm:py-8">
@@ -106,6 +113,26 @@ function Inhalt({
             </span>
           </div>
         ) : null}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <ErlaubteAktion
+            recht={meldungsrecht(rolle)}
+            kontext={{ rolle, modus, zielGewerkId: gewerk.id }}
+            onClick={() => standEintragen(gewerk.id)}
+          >
+            <PhoneCall aria-hidden className="size-4" />
+            Stand eintragen
+          </ErlaubteAktion>
+          <ErlaubteAktion
+            recht="foto_hochladen"
+            kontext={{ rolle, modus, zielGewerkId: gewerk.id }}
+            variant="outline"
+            onClick={() => fotoHinzufuegen(gewerk.id)}
+          >
+            <ImagePlus aria-hidden className="size-4" />
+            Foto hinzufügen
+          </ErlaubteAktion>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -188,6 +215,13 @@ function Inhalt({
             symbol="nach"
           />
         </div>
+      </section>
+
+      <section aria-labelledby="entscheidungen-gewerk" className="grid gap-3">
+        <h2 id="entscheidungen-gewerk" className="text-lg font-semibold">
+          Entscheidungen dazu
+        </h2>
+        <Entscheidungen daten={daten} heute={heute} nurFuerGewerk={gewerk.id} />
       </section>
 
       <section aria-labelledby="fotos-gewerk" className="grid gap-3">

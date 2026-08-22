@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ArrowRight, CalendarClock, Hammer, ListChecks } from 'lucide-react';
 import { Herkunftsmarke, Statusmarke } from '@/components/Marken';
+import { meldungsrecht, useErfassung } from '@/components/Erfassung';
 import { ErlaubteAktion } from '@/components/ErlaubteAktion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -39,6 +40,9 @@ function Blockkopf({ symbol: Symbol, titel }: { symbol: typeof Hammer; titel: st
 
 function LaeuftGerade({ daten, heute }: { daten: Projektdaten; heute: IsoDatum }) {
   const laufend = laufendeGewerke(daten, heute);
+  const rolle = useRolle();
+  const modus = useModus();
+  const { standEintragen } = useErfassung();
 
   return (
     <Card>
@@ -75,6 +79,16 @@ function LaeuftGerade({ daten, heute }: { daten: Projektdaten; heute: IsoDatum }
                 notiz={gewerk.herkunftNotiz}
                 zeitpunkt={gewerk.letzteMeldung}
               />
+              <ErlaubteAktion
+                recht={meldungsrecht(rolle)}
+                kontext={{ rolle, modus, zielGewerkId: gewerk.id }}
+                size="sm"
+                variant="outline"
+                className="justify-self-start"
+                onClick={() => standEintragen(gewerk.id)}
+              >
+                Stand eintragen
+              </ErlaubteAktion>
             </div>
           ))
         )}

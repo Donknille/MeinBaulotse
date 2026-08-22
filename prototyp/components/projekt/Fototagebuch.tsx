@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Herkunftsmarke } from '@/components/Marken';
-import { alsDatumMitWochentag, type IsoDatum } from '@/lib/datum';
+import { alsDatumMitWochentag } from '@/lib/datum';
 import type { Fotoeintrag, Projektdaten } from '@/lib/types';
 
 /**
@@ -50,7 +50,7 @@ export function Fototagebuch({
             />
           </div>
           <div className="grid gap-1 p-3">
-            <p className="zahl text-xs text-muted-foreground">{alsDatumMitWochentag(foto.datum as IsoDatum)}</p>
+            <p className="zahl text-xs text-muted-foreground">{alsDatumMitWochentag(foto.datum)}</p>
             <p className="font-medium leading-snug">{foto.titel}</p>
             {foto.gewerkId ? <Gewerkverweis daten={daten} gewerkId={foto.gewerkId} /> : null}
             {foto.notiz ? (

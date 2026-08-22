@@ -6,8 +6,10 @@ import type * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /*
- * Auf der Baustelle wird mit dem Daumen bedient, oft im Stehen. Die
- * Mindesthöhe von 44 Pixeln ist deshalb keine Geschmacksfrage.
+ * Auf der Baustelle wird mit dem Daumen bedient, oft im Stehen und mit
+ * Handschuh. Die Mindesthöhe von 44 Pixeln für die eigentlichen Handlungen ist
+ * deshalb keine Geschmacksfrage. `sm` geht auf 40 herunter — das ist die
+ * bewusste Grenze für Nebenwege wie „wieder öffnen", nicht der Normalfall.
  */
 const knopfStile = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 aria-disabled:opacity-55 aria-disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
@@ -23,7 +25,7 @@ const knopfStile = cva(
       },
       size: {
         default: 'min-h-11 px-4 py-2',
-        sm: 'min-h-9 rounded-md px-3 text-sm',
+        sm: 'min-h-10 rounded-md px-3 text-sm',
         lg: 'min-h-12 rounded-md px-6 text-base',
         icon: 'size-11',
       },

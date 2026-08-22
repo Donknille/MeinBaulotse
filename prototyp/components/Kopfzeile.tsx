@@ -1,14 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { RotateCcw } from 'lucide-react';
+import { PhoneCall, RotateCcw } from 'lucide-react';
+import { meldungsrecht, useErfassung } from '@/components/Erfassung';
+import { ErlaubteAktion } from '@/components/ErlaubteAktion';
 import { Rollenumschalter } from '@/components/Rollenumschalter';
 import { Button } from '@/components/ui/button';
-import { useAktionen, useProjekt } from '@/lib/store';
+import { useAktionen, useModus, useProjekt, useRolle } from '@/lib/store';
 
 export function Kopfzeile() {
   const projekt = useProjekt();
+  const rolle = useRolle();
+  const modus = useModus();
   const { demoZuruecksetzen } = useAktionen();
+  const { standEintragen } = useErfassung();
 
   return (
     <header className="border-b border-border bg-background">
@@ -27,15 +32,32 @@ export function Kopfzeile() {
 
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <Rollenumschalter />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={demoZuruecksetzen}
-            className="text-xs text-muted-foreground"
-          >
-            <RotateCcw aria-hidden className="size-3.5" />
-            Demo zurücksetzen
-          </Button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/*
+              In der Betriebsart „stellvertretend" ist das der Hauptweg, in den
+              anderen ein zweiter — verfügbar bleibt er überall, mit einem Klick.
+            */}
+            <ErlaubteAktion
+              recht={meldungsrecht(rolle)}
+              kontext={{ rolle, modus }}
+              variant={modus === 'stellvertretend' ? 'default' : 'outline'}
+              onClick={() => standEintragen()}
+            >
+              <PhoneCall aria-hidden className="size-4" />
+              Stand eintragen
+            </ErlaubteAktion>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={demoZuruecksetzen}
+              className="text-xs text-muted-foreground"
+            >
+              <RotateCcw aria-hidden className="size-3.5" />
+              Demo zurücksetzen
+            </Button>
+          </div>
         </div>
       </div>
     </header>
