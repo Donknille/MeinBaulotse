@@ -43,8 +43,6 @@ interface Sitzung {
   eigenesGewerkId: string | null;
   /** Ein Projekt je Betriebsart. */
   projekte: Partial<Record<Betriebsmodus, Projektdaten>>;
-  /** Steht auf `true`, sobald der lokale Speicher gelesen ist. */
-  hydriert: boolean;
 }
 
 interface Aktionen {
@@ -71,7 +69,6 @@ const AUSGANGSLAGE: Sitzung = {
   rolle: 'bauherr',
   eigenesGewerkId: null,
   projekte: {},
-  hydriert: false,
 };
 
 export const useStore = create<Store>()(
@@ -146,18 +143,14 @@ export const useStore = create<Store>()(
       name: 'meinbaulotse-prototyp',
       version: 1,
       storage: createJSONStorage(() => localStorage),
+      // Der lokale Speicher wird schon beim Laden des Moduls gelesen. Wer
+      // etwas davon zeigt, wartet vorher `useNachMontage` ab.
       partialize: ({ modus, rolle, eigenesGewerkId, projekte }) => ({
         modus,
         rolle,
         eigenesGewerkId,
         projekte,
       }),
-      onRehydrateStorage: () => () => {
-        // Läuft im Browser, sobald der lokale Speicher gelesen ist. Erst dann
-        // darf die Oberfläche Projektdaten zeigen — sonst weicht der erste
-        // Aufbau im Browser von dem ab, der auf dem Server entstanden ist.
-        useStore.setState({ hydriert: true });
-      },
     },
   ),
 );
@@ -175,7 +168,6 @@ const LEER: never[] = [];
 export const useModus = () => useStore((z) => z.modus);
 export const useRolle = () => useStore((z) => z.rolle);
 export const useEigenesGewerkId = () => useStore((z) => z.eigenesGewerkId);
-export const useHydriert = () => useStore((z) => z.hydriert);
 export const useProjektdaten = () => useStore((z) => aktivesProjektAus(z));
 export const useProjekt = () => useStore((z) => aktivesProjektAus(z)?.projekt ?? null);
 export const useGewerke = () => useStore((z) => aktivesProjektAus(z)?.gewerke ?? LEER);
