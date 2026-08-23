@@ -19,6 +19,12 @@ import { Camera, Loader2, X } from 'lucide-react';
 import type { ScheduledTaskDto } from '@meinbaulotse/shared';
 import { Button, Field, Select, TextInput } from './ui';
 import { readPhotoMetadata, sha256Hex } from '../lib/photo';
+import {
+  fotohinweisGelesen,
+  fotohinweisNoetig,
+  Fotohinweis,
+  PhotoBlur,
+} from './PhotoBlur';
 import { storageConfigured } from '../lib/media';
 import type { QueuedPhoto } from '../lib/queue';
 import { todayIso } from '../lib/progress';
@@ -54,6 +60,9 @@ export function QuickCapture({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hinweis, setHinweis] = useState<string | null>(null);
+  // Der Datenschutzhinweis aus 6.5 und der Bildeditor dazu.
+  const [datenschutz, setDatenschutz] = useState(false);
+  const [bearbeite, setBearbeite] = useState<number | null>(null);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -87,6 +96,11 @@ export function QuickCapture({
         });
       }
       setPhotos((vorher) => [...vorher, ...gelesen]);
+
+      // Beim ersten Foto auf diesem Gerät: der Hinweis aus Abschnitt 6.5.
+      // Danach nie wieder — ein Hinweis, der jedes Mal kommt, wird ab dem
+      // dritten Mal weggeklickt, ohne gelesen zu werden.
+      if (fotohinweisNoetig()) setDatenschutz(true);
 
       // Wenn das erste Foto ein Datum mitbringt, übernimmt der Eintrag es.
       const erstes = gelesen.find((photo) => photo.takenAt !== null);
@@ -192,18 +206,50 @@ export function QuickCapture({
             </p>
           )}
 
-          {photos.length > 0 ? (
+          {datenschutz ? (
+            <Fotohinweis
+              onOk={() => {
+                fotohinweisGelesen();
+                setDatenschutz(false);
+              }}
+            />
+          ) : null}
+
+          {bearbeite !== null && photos[bearbeite] !== undefined ? (
+            <PhotoBlur
+              photo={photos[bearbeite]!}
+              onCancel={() => setBearbeite(null)}
+              onDone={(bearbeitet) => {
+                setPhotos((vorher) =>
+                  vorher.map((eintrag, index) => (index === bearbeite ? bearbeitet : eintrag)),
+                );
+                setBearbeite(null);
+                setHinweis('Verpixelt. Hochgeladen wird das bearbeitete Bild.');
+              }}
+            />
+          ) : null}
+
+          {photos.length > 0 && bearbeite === null ? (
             <ul className="flex flex-col gap-1">
               {photos.map((photo, index) => (
                 <li
                   key={photo.sha256}
-                  className="flex items-baseline justify-between gap-3 border-b border-ash py-1.5 last:border-b-0"
+                  className="flex flex-wrap items-baseline justify-between gap-3 border-b border-ash py-1.5 last:border-b-0"
                 >
                   <span className="text-body text-charcoal">Foto {index + 1}</span>
-                  <span className="text-caption text-steel">
-                    {photo.takenAt === null
-                      ? 'ohne Aufnahmezeit'
-                      : new Date(photo.takenAt).toLocaleString('de-DE')}
+                  <span className="flex items-baseline gap-3">
+                    <span className="text-caption text-steel">
+                      {photo.takenAt === null
+                        ? 'ohne Aufnahmezeit'
+                        : new Date(photo.takenAt).toLocaleString('de-DE')}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-caption text-electric-blue underline underline-offset-4"
+                      onClick={() => setBearbeite(index)}
+                    >
+                      Gesichter verpixeln
+                    </button>
                   </span>
                 </li>
               ))}

@@ -306,6 +306,23 @@ läuft, wäre teuer und hätte Daten, die er nicht braucht.
 Es gibt bewusst **keine Löschregel**. Ein Foto aus der Bauakte zu entfernen,
 hieße eine Lücke zu hinterlassen, die niemand mehr erklären kann.
 
+**Daraus folgt, wann Gesichter unkenntlich gemacht werden: vorher.** Ein
+Werkzeug, das ein hochgeladenes Bild nachträglich verpixelt, käme immer zu
+spät. Die Erfassung bietet deshalb bei jedem Foto *Gesichter verpixeln* an,
+und das passiert im Browser — was hochgeht, ist das bearbeitete Bild, das
+Original verlässt das Gerät nie. Beim ersten Foto auf einem Gerät steht
+einmalig der Hinweis aus Abschnitt 6.5 dabei.
+
+Zwei Dinge, die dabei zu wissen sind:
+
+- **Die Prüfsumme ändert sich**, und das ist richtig: Sie belegt, dass das
+  Bild in der Akte dasselbe ist wie das hochgeladene.
+- **Die Aufnahmezeit wird übernommen.** Ein Canvas kennt keine EXIF-Daten; das
+  neu erzeugte JPEG hätte weder Zeit noch Ort. Beides wird aus dem
+  ursprünglich gelesenen Foto mitgeführt — die Aufnahmezeit ist der Grund,
+  warum drei Fotos, die drei Tage später ankommen, trotzdem ihren richtigen
+  Tag tragen.
+
 > **Lokal gibt es keine Ablage.** Das nackte Postgres kennt kein Schema
 > `storage`; die Migration überspringt den Abschnitt dann mit einem Hinweis.
 > Die Schnellerfassung sagt in dem Fall offen, dass Fotos fehlen — Notizen

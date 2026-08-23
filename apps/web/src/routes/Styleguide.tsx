@@ -4,7 +4,7 @@
  * Was im Dokument steht und hier nicht erscheint, ist nicht umgesetzt.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarDays, Camera, ClipboardList, Scale } from 'lucide-react';
 import {
   Button,
@@ -19,6 +19,8 @@ import {
 import { ConfirmationChip, PhaseBar, TaskRow } from '../components/schedule';
 import { PlanView } from '../components/PlanView';
 import { GuideCardSheet } from '../components/GuideCardSheet';
+import { Fotohinweis, PhotoBlur } from '../components/PhotoBlur';
+import type { QueuedPhoto } from '../lib/queue';
 import { GUIDE_CARD_FIXTURE, PLAN_FIXTURE } from './plan-fixture';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 
@@ -258,6 +260,15 @@ export function Styleguide() {
         </div>
       </Section>
 
+      {/* Der Fotohinweis und die Unkenntlichmachung aus Abschnitt 6.5.
+          Sie stehen hier, weil sie in der Anwendung nur erreichbar sind, wo
+          eine Ablage eingerichtet ist — lokal also nirgends. Ein Bauteil,
+          das sich nicht ansehen lässt, wird nicht gepflegt. */}
+      <Section title="Fotos und Datenschutz">
+        <Fotohinweis onOk={() => undefined} />
+        <PhotoBlurProbe />
+      </Section>
+
       <Section title="Phasenleiste">
         <Card>
           <PhaseBar phases={PHASES} currentKey="ausbau" />
@@ -424,6 +435,68 @@ export function Styleguide() {
         </p>
       </Section>
     </main>
+  );
+}
+
+/**
+ * Ein Probebild für die Unkenntlichmachung.
+ *
+ * Erzeugt im Browser, damit der Styleguide keine Datei mitschleppen muss —
+ * und damit sichtbar ist, was das Verpixeln tut: Ein Farbverlauf zeigt es
+ * deutlicher als ein Foto.
+ */
+function PhotoBlurProbe() {
+  const [photo, setPhoto] = useState<QueuedPhoto | null>(null);
+  const [fertig, setFertig] = useState(false);
+
+  useEffect(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 480;
+    canvas.height = 320;
+    const ctx = canvas.getContext('2d');
+    if (ctx === null) return;
+    for (let y = 0; y < canvas.height; y += 8) {
+      for (let x = 0; x < canvas.width; x += 8) {
+        ctx.fillStyle = `hsl(${(x / canvas.width) * 360} 70% ${30 + (y / canvas.height) * 45}%)`;
+        ctx.fillRect(x, y, 8, 8);
+      }
+    }
+    canvas.toBlob((blob) => {
+      if (blob === null) return;
+      void blob.arrayBuffer().then((daten) => {
+        setPhoto({
+          name: 'probe.jpg',
+          mime: 'image/jpeg',
+          bytes: daten.byteLength,
+          sha256: 'probe',
+          takenAt: null,
+          lat: null,
+          lon: null,
+          data: daten,
+        });
+      });
+    }, 'image/jpeg', 0.9);
+  }, []);
+
+  if (photo === null) return <p className="text-body text-steel">…</p>;
+
+  return (
+    <Card className="flex flex-col gap-3">
+      {fertig ? (
+        <p className="text-body text-vivid-green">
+          Übernommen. In der Erfassung ginge jetzt das bearbeitete Bild hinaus.
+        </p>
+      ) : null}
+      <PhotoBlur
+        key={photo.sha256}
+        photo={photo}
+        onDone={(bearbeitet) => {
+          setPhoto({ ...bearbeitet, sha256: `${bearbeitet.sha256.slice(0, 8)}-neu` });
+          setFertig(true);
+        }}
+        onCancel={() => setFertig(false)}
+      />
+    </Card>
   );
 }
 

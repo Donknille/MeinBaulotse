@@ -213,6 +213,18 @@ Drei Dinge laufen darunter mit, ohne dass man sie bedienen müsste:
 Fotos brauchen die Ablage des Supabase-Projekts (siehe `docs/SETUP.md`).
 Lokal ohne Supabase sagt die Erfassung das offen und nimmt Notizen entgegen.
 
+**Gesichter verpixeln.** Beim ersten Foto auf einem Gerät steht einmalig der
+Hinweis, dass auf Baustellenfotos oft Menschen zu sehen sind. Zu jedem Foto
+gibt es *Gesichter verpixeln*: ein Rechteck über jedes Gesicht ziehen, fertig.
+Das passiert im Browser — hochgeladen wird das bearbeitete Bild, das Original
+verlässt das Gerät nie.
+
+Das muss vorher passieren, und zwar zwingend: Ein Foto in der Bauakte ist
+nicht löschbar. Ein Werkzeug, das nachträglich verpixelt, käme immer zu spät.
+
+Beides lässt sich auch ohne Ablage ansehen — im [Styleguide](/styleguide)
+unter *Fotos und Datenschutz*.
+
 ## Jemanden dazunehmen
 
 Im Plan unter **Wer mitmacht** steht *Jemanden dazunehmen*. Die Rolle wird
