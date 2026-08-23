@@ -7,6 +7,7 @@
  *   Wo stehen wir?   →  Phase, Endtermin, wie viel schon fertig ist
  *   Was ist heute?   →  was gerade läuft
  *   Was kommt?       →  die nächsten Vorgänge, im Klartext „in vier Tagen"
+ *   Was musst du?    →  offene Entscheidungen mit ihrer Frist
  *   Was klemmt?      →  was verschoben ist und was das kostet
  *
  * Die Reihenfolge ist inhaltlich begründet und laut CI 10.2 nicht
@@ -23,16 +24,30 @@
  * schaut zu und muss entscheiden. Beide sehen denselben Bau, aber nicht
  * dieselbe Aufforderung.
  *
- * Was noch fehlt und deshalb hier nicht steht: Entscheidungsfristen (AP 3) und
- * Fotoaufträge (AP 5). Ein leerer Kasten mit einer Überschrift wäre ein
- * Versprechen, das die Anwendung nicht hält.
+ * Was noch fehlt und deshalb hier nicht steht: Fotoaufträge (AP 5). Ein leerer
+ * Kasten mit einer Überschrift wäre ein Versprechen, das die Anwendung nicht
+ * hält.
  */
 
-import { ArrowRight, BookOpen, Check, CircleDot, Flag, TriangleAlert } from 'lucide-react';
-import type { ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
-import { Button, Card } from './ui';
+import {
+  ArrowRight,
+  BookOpen,
+  CalendarClock,
+  Check,
+  CircleDot,
+  Flag,
+  TriangleAlert,
+} from 'lucide-react';
+import {
+  decisionDueInPlainWords,
+  type DecisionDto,
+  type ProjectSchedule,
+  type ScheduledTaskDto,
+} from '@meinbaulotse/shared';
+import { Button, Card, Pill } from './ui';
 import { PhaseBar } from './schedule';
 import { formatDate, formatRange } from '../lib/format';
+import { calendarOf, offeneEntscheidungen } from '../lib/decisions';
 import { karteJetztLesen } from '../lib/guide';
 import { inTagen, istHeute, meldungOffen, progressOf, todayIso, zaehle } from '../lib/progress';
 
@@ -43,12 +58,15 @@ export function Cockpit({
   currentPhase,
   onSelect,
   onOpenGuide,
+  onOpenDecision,
 }: {
   schedule: ProjectSchedule;
   currentPhase: string | undefined;
   onSelect?: (task: ScheduledTaskDto) => void;
   /** Fehlt sie, gibt es keine Lotsenkarten — so wie im Styleguide. */
   onOpenGuide?: (task: ScheduledTaskDto) => void;
+  /** Fehlt sie, sind die Entscheidungen nur zu lesen. */
+  onOpenDecision?: (decision: DecisionDto) => void;
 }) {
   const today = todayIso();
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -76,6 +94,14 @@ export function Cockpit({
   // (Spezifikation 3.1). Gelesenes fällt heraus — ein Hinweis, der bleibt,
   // wird weggeklickt statt gelesen.
   const zuLesen = onOpenGuide === undefined ? [] : karteJetztLesen(schedule.tasks, today);
+  // Die offenen Entscheidungen, die dringendste zuerst. Sie stehen vor allem
+  // anderen, was der Bauherr tun muss: Ein verpasster Bemusterungstermin
+  // verschiebt den Bau, eine ungelesene Karte nicht.
+  const entscheidungen = offeneEntscheidungen(
+    schedule.decisions,
+    calendarOf(schedule.project),
+    today,
+  );
   const verschoben = schedule.tasks.filter(
     (task) => task.earliestStart !== null && progressOf(task) !== 'fertig',
   );
@@ -196,7 +222,65 @@ export function Cockpit({
         </Abschnitt>
       ) : null}
 
-      {/* 4. Was du tun musst — und das Erste davon ist: Bescheid wissen.
+      {/* 4. Was du entscheiden musst.
+
+             Steht laut Spezifikation 5.1 an genau dieser Stelle: nach dem,
+             was auf der Baustelle passiert, und vor allem anderen, was du
+             tun musst. Ohne diesen Kasten ist der Terminplan ein Bild an der
+             Wand; mit ihm ist er eine Aufforderung. */}
+      {entscheidungen.length > 0 ? (
+        <Abschnitt
+          titel="Du musst entscheiden"
+          icon={<CalendarClock size={18} className="text-electric-blue" aria-hidden />}
+          hinweis={
+            entscheidungen[0]?.isOverdue === true
+              ? 'Die oberste Frist ist verstrichen. Je später die Entscheidung fällt, desto enger wird es für den Vorgang dahinter.'
+              : 'Jede Frist hängt an einem Vorgang. Verschiebt er sich, verschiebt sie sich mit.'
+          }
+        >
+          <ul className="flex flex-col">
+            {entscheidungen.slice(0, MAX_ZEILEN).map((state) => (
+              <li
+                key={state.decision.id}
+                className="flex items-center gap-2 border-b border-ash last:border-b-0"
+              >
+                <button
+                  type="button"
+                  disabled={onOpenDecision === undefined}
+                  onClick={() => onOpenDecision?.(state.decision)}
+                  className="flex flex-1 flex-col gap-0.5 py-2.5 text-left transition-colors duration-[var(--motion-micro)] enabled:cursor-pointer enabled:hover:bg-paper-mist"
+                >
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-body-lg font-medium text-charcoal">
+                      {state.decision.title}
+                    </span>
+                    {state.decision.blocksTaskName !== null ? (
+                      <span className="text-caption text-steel">
+                        für „{state.decision.blocksTaskName}"
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className={`text-body ${state.isUrgent ? 'text-tangerine' : 'text-steel'}`}
+                  >
+                    {decisionDueInPlainWords(state.remainingWorkdays)}
+                  </span>
+                </button>
+                {state.decision.status === 'in_bemusterung' ? (
+                  <Pill tone="blue">In Bemusterung</Pill>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {entscheidungen.length > MAX_ZEILEN ? (
+            <p className="pt-1 text-caption text-steel">
+              {entscheidungen.length - MAX_ZEILEN} weitere stehen weiter unten im Bauvorhaben.
+            </p>
+          ) : null}
+        </Abschnitt>
+      ) : null}
+
+      {/* 5. Was du sonst tun musst — und das Erste davon ist: Bescheid wissen.
 
              Die Karte rückt von selbst in den Blick, sieben Tage vor Beginn
              (Spezifikation 3.1). Das ist die tragende Funktion des Produkts:

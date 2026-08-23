@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 import {
   computeSchedule,
   criticalPath,
+  DECISION_TEMPLATES,
+  decisionDueDate,
   EFH_MASSIV_UNTERKELLERT,
   instantiateTemplate,
   PHASES,
@@ -22,6 +24,7 @@ import {
 } from '@meinbaulotse/schedule';
 import { parseGuideCard, permissionsOf } from '@meinbaulotse/db';
 import type {
+  DecisionDto,
   GuideCardView,
   PhaseProgress,
   ProjectSchedule,
@@ -113,6 +116,47 @@ const tasks: ScheduledTaskDto[] = plan.tasks.map((task, index) => {
   };
 });
 
+/**
+ * Die Entscheidungen, aus denselben Vorlagen wie im Betrieb und mit derselben
+ * Rechnung. Zwei davon stehen bewusst schon auf „entschieden": Der Styleguide
+ * soll auch zeigen, wie eine erledigte Sache aussieht.
+ */
+const taskByCode = new Map(plan.tasks.map((task) => [task.code, task]));
+const decisions: DecisionDto[] = DECISION_TEMPLATES.flatMap((template, index) => {
+  const task = taskByCode.get(template.blocksTaskCode);
+  if (task === undefined) return [];
+  const start = schedule.tasks.get(task.id)!.start;
+
+  return [
+    {
+      id: `00000000-0000-4000-8000-${String(index + 500).padStart(12, '0')}`,
+      templateKey: template.key,
+      title: template.title,
+      description: template.description,
+      helpText: template.helpText,
+      blocksTaskId: `00000000-0000-4000-8000-${String(plan.tasks.indexOf(task) + 100).padStart(12, '0')}`,
+      blocksTaskName: task.name,
+      blocksTaskStart: start,
+      leadTimeDays: template.leadTimeDays,
+      leadTimeUnit: template.leadTimeUnit,
+      dueDate: decisionDueDate(
+        {
+          id: template.key,
+          blocksTaskId: task.id,
+          leadTimeDays: template.leadTimeDays,
+          leadTimeUnit: template.leadTimeUnit,
+        },
+        start,
+        calendar,
+      ),
+      status: index < 2 ? ('entschieden' as const) : ('offen' as const),
+      decidedAt: index < 2 ? '2026-03-02T10:00:00.000Z' : null,
+      decidedNote: index < 2 ? 'Beim Termin am 02.03. festgelegt.' : null,
+      estimatedCostCents: index === 2 ? 480_000 : null,
+    },
+  ];
+});
+
 const phases: PhaseProgress[] = PHASES.map((phase) => {
   const inPhase = tasks.filter((task) => task.phaseKey === phase.key);
   const starts = inPhase.map((task) => task.currentStart).filter((v): v is string => v !== null);
@@ -138,12 +182,14 @@ const fixture: ProjectSchedule = {
     plannedStart: PLANNED_START,
     contractualCompletion: CONTRACTUAL_END,
     role: 'owner',
+    catholicMunicipality: false,
   },
   // Aus derselben Quelle, aus der die Seed-Migration `role_permission` befüllt.
   // Eine zweite Liste im Code wäre genau die Doppelpflege, die Regel 5 verbietet.
   permissions: [...permissionsOf('owner')],
   phases,
   tasks,
+  decisions,
   computedEnd: schedule.projectEnd,
   contractualEnd: CONTRACTUAL_END,
   deviationWorkdays: floats.deviationWorkdays,
@@ -211,5 +257,8 @@ console.log(
   `Vorschau geschrieben: ${target}\n` +
     `  ${tasks.length} Vorgänge, Ende ${schedule.projectEnd}, ` +
     `Abweichung ${floats.deviationWorkdays} Werktage.\n` +
-    `  Lotsenkarte für den Styleguide: „${beispielKarte.title}".`,
+    `  Lotsenkarte für den Styleguide: „${beispielKarte.title}".\n` +
+    `  ${decisions.length} Entscheidungen, nächste Frist ${
+      [...decisions].sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))[0]?.dueDate ?? '—'
+    }.`,
 );

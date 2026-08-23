@@ -24,6 +24,7 @@ import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@mein
 import { Button, Field, Select, TextInput } from './ui';
 import { ApiError } from '../lib/api';
 import { formatDate, formatRange, STATUS_LABEL } from '../lib/format';
+import { calendarOf, ueberfaelligeEntscheidungenZu } from '../lib/decisions';
 
 /** Dieselben Werte wie `mbl.schedule_change_reason`, in der Sprache der Baustelle. */
 const REASONS = [
@@ -57,6 +58,15 @@ export function TaskSheet({
   onOpenGuide?: () => void;
 }) {
   const darfPlanen = schedule.permissions.includes('task.schedule');
+  // Eine verstrichene Entscheidungsfrist zu diesem Vorgang ist der wahr-
+  // scheinlichste Grund für seine Verschiebung — und der einzige, den die
+  // Anwendung selbst kennt. Sie bietet ihn an, statt ihn zu behaupten
+  // (Abnahme AP 3: „als möglicher Verzugsgrund angeboten").
+  const offeneFristen = ueberfaelligeEntscheidungenZu(
+    task.id,
+    schedule.decisions,
+    calendarOf(schedule.project),
+  );
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
   const titleId = useId();
 
@@ -187,6 +197,13 @@ export function TaskSheet({
                   Dieser Vorgang hat am {formatDate(task.actualStart, referenceYear)} begonnen. Ein
                   gemeldeter Beginn zählt mehr als jede Planung — verschieben lässt er sich erst,
                   wenn du ihn unten wieder herausnimmst.
+                </p>
+              ) : null}
+              {offeneFristen.length > 0 ? (
+                <p className="text-caption text-steel">
+                  Zu diesem Vorgang ist eine Frist verstrichen:{' '}
+                  {offeneFristen.map((d) => `„${d.title}"`).join(', ')}. Falls das der Grund ist,
+                  wähl unten „Entscheidung des Bauherrn" — dann steht es später so in der Historie.
                 </p>
               ) : null}
               <Field

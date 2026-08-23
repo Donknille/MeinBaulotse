@@ -12814,6 +12814,14 @@ function criticalPath(input) {
   return { floats, critical, targetEnd, deviationWorkdays };
 }
 
+// ../../packages/schedule/dist/decisions.js
+function decisionDueDate(decision2, taskStart, calendar) {
+  if (decision2.leadTimeUnit === "kalendertage") {
+    return addDays(taskStart, -decision2.leadTimeDays);
+  }
+  return workdayOffset(taskStart, -decision2.leadTimeDays, calendar);
+}
+
 // ../../packages/schedule/dist/instantiate.js
 function isIncluded(task, options) {
   switch (task.includeWhen) {
@@ -13070,7 +13078,14 @@ var projectSummary = external_exports.object({
   hasBasement: external_exports.boolean(),
   plannedStart: isoDate,
   contractualCompletion: isoDate.nullable(),
-  role: memberRole
+  role: memberRole,
+  /**
+   * Überwiegend katholische Gemeinde — betrifft drei Feiertage.
+   *
+   * Steht hier, damit die Oberfläche denselben Kalender rechnen kann wie der
+   * Server. Ohne diese Angabe zählt sie in Bayern drei Werktage zu viel.
+   */
+  catholicMunicipality: external_exports.boolean()
 });
 var scheduledTask = external_exports.object({
   id: external_exports.string().uuid(),
@@ -13120,6 +13135,40 @@ var phaseProgress = external_exports.object({
   firstStart: isoDate.nullable(),
   lastEnd: isoDate.nullable()
 });
+var decisionStatus = external_exports.enum([
+  "offen",
+  "in_bemusterung",
+  "entschieden",
+  "beauftragt",
+  "hinfaellig"
+]);
+var decision = external_exports.object({
+  id: external_exports.string().uuid(),
+  templateKey: external_exports.string().nullable(),
+  title: external_exports.string(),
+  description: external_exports.string().nullable(),
+  /** Die Entscheidungshilfe: was die Optionen unterscheidet, was man bereut. */
+  helpText: external_exports.string().nullable(),
+  blocksTaskId: external_exports.string().uuid().nullable(),
+  blocksTaskName: external_exports.string().nullable(),
+  blocksTaskStart: isoDate.nullable(),
+  leadTimeDays: external_exports.number().int(),
+  leadTimeUnit: durationUnit,
+  /**
+   * Abgeleitet aus dem Beginn des blockierten Vorgangs, nicht selbst gesetzt.
+   * Verschiebt sich der Vorgang, wandert dieses Datum mit.
+   */
+  dueDate: isoDate.nullable(),
+  status: decisionStatus,
+  decidedAt: external_exports.string().nullable(),
+  decidedNote: external_exports.string().nullable(),
+  estimatedCostCents: external_exports.number().int().nullable()
+});
+var decisionUpdateRequest = external_exports.object({
+  status: decisionStatus.optional(),
+  decidedNote: external_exports.string().trim().max(1e3).nullable().optional(),
+  estimatedCostCents: external_exports.number().int().min(0).nullable().optional()
+}).refine((value) => value.status !== void 0 || value.decidedNote !== void 0 || value.estimatedCostCents !== void 0, { message: "Es gibt nichts zu \xE4ndern." });
 var projectSchedule = external_exports.object({
   project: projectSummary,
   /**
@@ -13133,6 +13182,14 @@ var projectSchedule = external_exports.object({
   permissions: external_exports.array(external_exports.string()),
   phases: external_exports.array(phaseProgress),
   tasks: external_exports.array(scheduledTask),
+  /**
+   * Die Entscheidungen des Bauvorhabens mit ihren Fristen.
+   *
+   * Sie stehen im Plan und nicht hinter einer eigenen Abfrage, weil sie zum
+   * Plan gehören: Eine Verschiebung, die eine Frist reißt, muss in derselben
+   * Antwort sichtbar werden wie die Verschiebung selbst.
+   */
+  decisions: external_exports.array(decision),
   /** Errechnetes Ende aus der Vorwärtsrechnung. */
   computedEnd: isoDate.nullable(),
   /** Vertraglich geschuldetes Ende, sofern erfasst. */
@@ -14645,6 +14702,128 @@ async function updateChecklistItem(tx, projectId, itemId, change) {
   };
 }
 
+// src/decisions.ts
+var toDecision = (row) => ({
+  id: row.id,
+  templateKey: row.template_key,
+  title: row.title,
+  description: row.description,
+  helpText: row.help_text,
+  blocksTaskId: row.blocks_task_id,
+  blocksTaskName: row.blocks_task_name,
+  blocksTaskStart: row.blocks_task_start,
+  leadTimeDays: row.lead_time_days,
+  leadTimeUnit: row.lead_time_unit,
+  dueDate: row.due_date,
+  status: row.status,
+  decidedAt: row.decided_at === null ? null : new Date(row.decided_at).toISOString(),
+  decidedNote: row.decided_note,
+  // bigint kommt als Zeichenkette aus dem Treiber. `Number` ist bei Centbeträgen
+  // bis gut 90 Billionen genau — für einen Hausbau reicht das.
+  estimatedCostCents: row.estimated_cost_cents === null ? null : Number(row.estimated_cost_cents)
+});
+var SELECT_DECISIONS = `
+  select d.id, d.template_key, d.title, d.description, d.help_text,
+         d.blocks_task_id, t.name as blocks_task_name, t.current_start as blocks_task_start,
+         d.lead_time_days, d.lead_time_unit, d.due_date, d.status,
+         d.decided_at, d.decided_note, d.estimated_cost_cents
+    from decision d
+    left join task t on t.id = d.blocks_task_id
+   where d.project_id = $1
+   order by d.due_date nulls last, d.title`;
+async function loadDecisions(tx, projectId) {
+  const result = await tx.query(SELECT_DECISIONS, [projectId]);
+  return result.rows.map(toDecision);
+}
+async function createDecisionsFromTemplates(tx, projectId, taskIdByTemplateCode) {
+  const templates = await tx.query(
+    `select key, title, description, help_text, blocks_task_code, lead_time_days, lead_time_unit
+       from decision_template order by sort_order`
+  );
+  let angelegt = 0;
+  for (const template of templates.rows) {
+    const taskId = taskIdByTemplateCode.get(template.blocks_task_code);
+    if (taskId === void 0) continue;
+    await tx.query(
+      `insert into decision
+         (project_id, template_key, title, description, help_text,
+          blocks_task_id, lead_time_days, lead_time_unit)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
+       on conflict do nothing`,
+      [
+        projectId,
+        template.key,
+        template.title,
+        template.description,
+        template.help_text,
+        taskId,
+        template.lead_time_days,
+        template.lead_time_unit
+      ]
+    );
+    angelegt += 1;
+  }
+  return angelegt;
+}
+async function recomputeDecisionDueDates(tx, projectId, calendar) {
+  const rows = await tx.query(
+    `select d.id, d.lead_time_days, d.lead_time_unit, d.due_date, t.current_start as task_start
+       from decision d
+       left join task t on t.id = d.blocks_task_id
+      where d.project_id = $1`,
+    [projectId]
+  );
+  let verschoben = 0;
+  for (const row of rows.rows) {
+    const neu = row.task_start === null ? null : decisionDueDate(
+      {
+        id: row.id,
+        blocksTaskId: "egal",
+        leadTimeDays: row.lead_time_days,
+        leadTimeUnit: row.lead_time_unit
+      },
+      row.task_start,
+      calendar
+    );
+    if (neu === row.due_date) continue;
+    verschoben += 1;
+    await tx.query("update decision set due_date = $2 where id = $1", [row.id, neu]);
+  }
+  return verschoben;
+}
+async function updateDecision(tx, projectId, decisionId, change) {
+  const felder = [];
+  const werte = [decisionId, projectId];
+  const setze = (spalte, wert) => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}`);
+  };
+  if (change.status !== void 0) setze("status", change.status);
+  if (change.decidedNote !== void 0) setze("decided_note", change.decidedNote);
+  if (change.estimatedCostCents !== void 0) {
+    setze("estimated_cost_cents", change.estimatedCostCents);
+  }
+  const updated = await tx.query(
+    `update decision set ${felder.join(", ")} where id = $1 and project_id = $2 returning id`,
+    werte
+  );
+  if (updated.rowCount === 0) {
+    throw new HTTPException(404, {
+      message: "Diese Entscheidung gibt es in deinem Bauvorhaben nicht."
+    });
+  }
+  await tx.query(
+    `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
+     values ($1, 'app', 'decision.updated', 'decision', $2, $3)`,
+    [projectId, decisionId, JSON.stringify(change)]
+  );
+  const result = await tx.query(
+    `${SELECT_DECISIONS} `.replace("where d.project_id = $1", "where d.project_id = $1 and d.id = $2"),
+    [projectId, decisionId]
+  );
+  return toDecision(result.rows[0]);
+}
+
 // src/demo.ts
 var import_node_crypto6 = require("node:crypto");
 var DEMO_IDENTITIES = {
@@ -14884,6 +15063,8 @@ async function createProjectFromAnswers(tx, claims, answers) {
       ]
     );
   }
+  const decisionCount = await createDecisionsFromTemplates(tx, projectId, idByCode);
+  await recomputeDecisionDueDates(tx, projectId, calendar);
   await tx.query(
     `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
      values ($1, 'app', 'project.created', 'project', $1, $2)`,
@@ -14892,7 +15073,8 @@ async function createProjectFromAnswers(tx, claims, answers) {
       JSON.stringify({
         template: template.key,
         hasBasement: answers.hasBasement,
-        taskCount: plan.tasks.length
+        taskCount: plan.tasks.length,
+        decisionCount
       })
     ]
   );
@@ -14900,6 +15082,7 @@ async function createProjectFromAnswers(tx, claims, answers) {
     projectId,
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
+    decisionCount,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: answers.contractualCompletion === void 0 ? null : floats.deviationWorkdays
   };
@@ -15001,8 +15184,10 @@ async function recomputeProject(tx, projectId) {
       [row.id, scheduled.start, scheduled.end, nextFloat, nextCritical]
     );
   }
+  const movedDecisions = await recomputeDecisionDueDates(tx, projectId, plan.calendar);
   return {
     movedTasks,
+    movedDecisions,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays
   };
@@ -15015,7 +15200,10 @@ var EXPECTED = [
   // Vorgang, ob es dazu etwas zu lesen gibt. Die Karten selbst kommen erst mit
   // 0006 — fehlen die, bleibt die Anwendung heil und sagt „noch keine
   // Lotsenkarte". Das Schema aus 0005 dagegen ist Voraussetzung.
-  { migration: "0005_guide_cards.sql", table: "guide_card", column: "template_task_codes" }
+  { migration: "0005_guide_cards.sql", table: "guide_card", column: "template_task_codes" },
+  // Der Plan liefert die Entscheidungen mit aus; ohne die Tabelle endet jede
+  // Planansicht im Fehler, nicht nur die Entscheidungsliste.
+  { migration: "0007_decisions.sql", table: "decision", column: "due_date" }
 ];
 async function checkSchema(tx) {
   if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
@@ -15143,7 +15331,7 @@ function createApp() {
     const projects = await withUserTx(c.get("claims"), async (tx) => {
       const result = await tx.query(
         `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-                p.has_basement, p.planned_start, p.contractual_completion,
+                p.has_basement, p.catholic_municipality, p.planned_start, p.contractual_completion,
                 m.role
          from project p
          join project_member m on m.project_id = p.id
@@ -15212,6 +15400,22 @@ function createApp() {
   v1.get("/projects/:id/schedule", async (c) => {
     const projectId = parseId(c.req.param("id"));
     const schedule = await withUserTx(c.get("claims"), (tx) => loadSchedule(tx, projectId));
+    return c.json(schedule);
+  });
+  v1.patch("/projects/:id/decisions/:decisionId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const decisionId = parseId(c.req.param("decisionId"));
+    const parsed = decisionUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const schedule = await withUserTx(c.get("claims"), async (tx) => {
+      await updateDecision(tx, projectId, decisionId, parsed.data);
+      return loadSchedule(tx, projectId);
+    });
     return c.json(schedule);
   });
   v1.get("/projects/:id/tasks/:taskId/guide-card", async (c) => {
@@ -15296,7 +15500,8 @@ function toProjectSummary(row) {
     hasBasement: row.has_basement,
     plannedStart: row.planned_start,
     contractualCompletion: row.contractual_completion,
-    role: row.role
+    role: row.role,
+    catholicMunicipality: row.catholic_municipality
   };
 }
 function parseId(raw2) {
@@ -15309,7 +15514,8 @@ function parseId(raw2) {
 async function loadProject(tx, projectId) {
   const result = await tx.query(
     `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-            p.has_basement, p.planned_start, p.contractual_completion, m.role
+            p.has_basement, p.catholic_municipality, p.planned_start,
+                p.contractual_completion, m.role
      from project p
      join project_member m on m.project_id = p.id
        and m.user_id = mbl.current_user_id()
@@ -15381,6 +15587,7 @@ async function loadSchedule(tx, projectId) {
   const permissions = await loadPermissions(tx, projectId);
   const tasks = await loadTasks(tx, projectId);
   const phases = await loadPhases(tx, projectId);
+  const decisions = await loadDecisions(tx, projectId);
   const ends = tasks.map((task) => task.currentEnd).filter((end) => end !== null);
   const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => a > b ? a : b);
   let deviationWorkdays = null;
@@ -15397,6 +15604,7 @@ async function loadSchedule(tx, projectId) {
     permissions,
     phases,
     tasks,
+    decisions,
     computedEnd,
     contractualEnd: project.contractualCompletion,
     deviationWorkdays

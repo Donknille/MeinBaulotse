@@ -158,12 +158,30 @@ Rohinstallation, Blower-Door und Abnahme. Dort steht auch, was eine
 Baubegleitung ungefähr kostet. Das ist Absicht: Die Grenze des Produkts wird
 offen benannt, statt sie zu verschweigen.
 
+## Die Entscheidungen
+
+Vierzehn Entscheidungen hängen an je einem Vorgang und einer Vorlaufzeit. Die
+Frist ist **kein eigener Termin**, sondern eine abgeleitete Größe: Sie liegt so
+viele Werktage vor dem Beginn des Vorgangs, wie die Vorlage vorgibt. Verschiebt
+sich der Vorgang, verschiebt sich die Frist mit.
+
+Im Cockpit steht das unter **Du musst entscheiden**, die dringendste zuerst.
+Ein Klick öffnet die Entscheidungshilfe: worum es geht, was die Optionen
+unterscheidet, was man später bereut. Dort setzt du auch den Stand und
+schreibst auf, was ihr euch überlegt habt.
+
+Am *Stadthaus Ahornweg* ist der Bau seit acht Wochen im Gang: Was vor heute
+fällig war, steht auf *entschieden*, drei Fristen stehen noch aus. Am
+*Musterhaus Sonnenweg* sind alle vierzehn offen — der Bau beginnt erst.
+
+Zum Ausprobieren: *Fliesen: Auswahl und Verlegemuster* öffnen, dann den
+Fliesenvorgang im Ablauf um vier Wochen verschieben. Die Frist wandert um
+dieselbe Strecke mit, ohne dass jemand sie anfasst.
+
 ## Was noch fehlt
 
 - **Termine abstimmen.** Die vier Bestätigungsgrade werden angezeigt, aber
   niemand kann sie setzen — grau bleibt grau.
-- **Entscheidungen mit Fristen.** „Fliesen bis 12.05. auswählen, sonst
-  verschiebt sich der Estrich."
 - **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
   (`member.invite`) steht, die Route dazu fehlt noch.
 - **Lotsenkarten für die übrigen Vorgänge.** Zwölf Karten decken die Phasen ab,

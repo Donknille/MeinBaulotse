@@ -292,6 +292,7 @@ Diese Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
 |---|---|---|
 | `supabase/migrations/0003_seed.sql` | Ablaufvorlage und Rechtematrix | `pnpm --filter @meinbaulotse/db seed:generate` |
 | `supabase/migrations/0006_lotsenkarten.sql` | `content/lotsenkarten/*.md` | `pnpm --filter @meinbaulotse/db guide-cards:generate` |
+| `supabase/migrations/0008_entscheidungen.sql` | Entscheidungsvorlagen aus 7.3 | `pnpm --filter @meinbaulotse/db decisions:generate` |
 | `docs/db-setup.sql` | alle Migrationen | `pnpm --filter @meinbaulotse/db build:db-setup` |
 | `apps/web/src/routes/plan-fixture.ts` | Ablaufvorlage, Berechnungskern und Lotsenkarten | `pnpm --filter @meinbaulotse/web fixture` |
 

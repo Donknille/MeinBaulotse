@@ -4,15 +4,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/ui';
 import { PlanView } from '../components/PlanView';
 import { GuideCardSheet } from '../components/GuideCardSheet';
+import { DecisionSheet } from '../components/DecisionSheet';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
-import type { ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
+import type {
+  DecisionDto,
+  DecisionUpdateRequest,
+  ScheduledTaskDto,
+  TaskUpdateRequest,
+} from '@meinbaulotse/shared';
 
 /** Route: holt den Plan und übergibt ihn an die Darstellung. */
 export function Plan() {
   const { projectId } = useParams<{ projectId: string }>();
   const queryClient = useQueryClient();
   const [guideTask, setGuideTask] = useState<ScheduledTaskDto | null>(null);
+  const [decisionId, setDecisionId] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ['schedule', projectId],
     queryFn: () => api.schedule(projectId!),
@@ -49,6 +56,13 @@ export function Plan() {
   const planErneuern = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['schedule', projectId] });
   };
+
+  // Die Antwort ist der neu gerechnete Plan; sie ersetzt den alten direkt.
+  const entscheiden = useMutation({
+    mutationFn: (change: DecisionUpdateRequest) =>
+      api.updateDecision(projectId!, decisionId!, change),
+    onSuccess: (schedule) => queryClient.setQueryData(['schedule', projectId], schedule),
+  });
 
   const bewerten = useMutation({
     mutationFn: (helpful: boolean | null) =>
@@ -109,8 +123,29 @@ export function Plan() {
             await change.mutateAsync({ taskId, body });
           }}
           onOpenGuide={(task) => setGuideTask(task)}
+          onOpenDecision={(decision) => setDecisionId(decision.id)}
         />
       )}
+
+      {/* Die Entscheidung wird aus dem Plan gelesen, nicht in den Zustand
+          kopiert: Nach dem Speichern kommt ein neuer Plan, und das Blatt soll
+          dann das Neue zeigen und nicht das, was beim Öffnen galt. */}
+      {(() => {
+        const offen: DecisionDto | undefined =
+          decisionId === null
+            ? undefined
+            : query.data?.decisions.find((entry) => entry.id === decisionId);
+        return offen === undefined || query.data === undefined ? null : (
+          <DecisionSheet
+            decision={offen}
+            schedule={query.data}
+            onClose={() => setDecisionId(null)}
+            onSave={async (change) => {
+              await entscheiden.mutateAsync(change);
+            }}
+          />
+        );
+      })()}
 
       {guideTask !== null && guide.data !== undefined ? (
         <GuideCardSheet

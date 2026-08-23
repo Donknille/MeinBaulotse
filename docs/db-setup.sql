@@ -31,11 +31,12 @@
 --      (select count(*) from trade)              as gewerke,            -- 21
 --      (select count(*) from role_permission)    as rechte,             -- 47
 --      (select count(*) from plan_template_task) as vorlagenvorgaenge,  -- 38
---      (select count(*) from guide_card)         as lotsenkarten;      -- 12
+--      (select count(*) from guide_card)         as lotsenkarten,      -- 12
+--      (select count(*) from decision_template)  as entscheidungen;    -- 14
 --
 --    select count(*) filter (where rowsecurity) as mit_rls,
 --           count(*)                            as tabellen
---    from pg_tables where schemaname = 'public';                -- 17 von 17
+--    from pg_tables where schemaname = 'public';                -- 19 von 19
 --
 --  Die zweite Abfrage ist die wichtigere: Die Zählung oben stimmt auch
 --  dann, wenn die Rechte nur zur Hälfte angekommen sind.
@@ -1730,4 +1731,217 @@ Wo die Anschlüsse sitzen, entscheidet über die Möblierung des Bades. Verschie
   now()
 )
 on conflict (id) do nothing;
+
+
+-- ===========================================================================
+--  Abschnitt: 0007_decisions.sql
+-- ===========================================================================
+
+-- ---------------------------------------------------------------------------
+-- MeinBaulotse — Entscheidungsassistent (Arbeitspaket 3)
+--
+-- Die zweite tragende Funktion aus Abschnitt 1.3. Der Bauherr scheitert nicht
+-- daran, dass er die Fliesen nicht aussuchen kann — er sucht sie vier Wochen
+-- vor dem Fliesenleger aus statt acht, und die Lieferzeit kippt den Termin.
+--
+-- Der ganze Mechanismus steht in einer Zeile aus Abschnitt 3.2:
+--
+--     decision.due_date = werktage_vor(task.current_start, lead_time_days)
+--
+-- Die Frist ist damit **kein eigener Termin**, sondern eine abgeleitete Größe.
+-- Verschiebt sich der Vorgang, wandert die Frist mit; rückt er nach vorn, wird
+-- sie enger. Genau das macht eine Verschiebung für den Bauherrn
+-- handlungsrelevant — ohne diesen Schritt ist sie nur eine Zahl im Plan.
+--
+-- Deshalb wird `due_date` gespeichert und nicht bei jeder Abfrage gerechnet:
+-- Die Neuberechnung läuft in derselben Transaktion wie die Verschiebung, und
+-- eine gespeicherte Frist lässt sich später mit dem vergleichen, was der
+-- Bauherr damals gesehen hat.
+-- ---------------------------------------------------------------------------
+
+create type mbl.decision_status as enum (
+  'offen','in_bemusterung','entschieden','beauftragt','hinfaellig'
+);
+
+create table decision_template (
+  key              text primary key,
+  title            text not null,
+  description      text not null,
+  help_text        text not null,
+  blocks_task_code text not null,
+  lead_time_days   int  not null,
+  lead_time_unit   mbl.duration_unit not null default 'werktage',
+  sort_order       int  not null,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  constraint decision_template_lead_positive check (lead_time_days > 0)
+);
+comment on table decision_template is
+  'Die vierzehn Entscheidungen aus Abschnitt 7.3, als Daten statt als Konstanten '
+  'im Code. Erstbefüllung in 0008.';
+
+create table decision (
+  id                   uuid primary key default gen_random_uuid(),
+  project_id           uuid not null references project (id) on delete cascade,
+  template_key         text references decision_template (key) on delete set null,
+  title                text not null,
+  description          text,
+  help_text            text,
+  -- Der Vorgang, der ohne diese Entscheidung nicht laufen kann. Wird er
+  -- gelöscht, bleibt die Entscheidung stehen und verliert nur ihre Frist:
+  -- „Fliesen aussuchen" ist auch ohne Fliesenvorgang eine offene Aufgabe.
+  blocks_task_id       uuid references task (id) on delete set null,
+  lead_time_days       int  not null,
+  lead_time_unit       mbl.duration_unit not null default 'werktage',
+  due_date             date,
+  status               mbl.decision_status not null default 'offen',
+  decided_at           timestamptz,
+  decided_note         text,
+  estimated_cost_cents bigint,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now(),
+  constraint decision_lead_positive check (lead_time_days > 0),
+  constraint decision_cost_nonneg check (estimated_cost_cents is null or estimated_cost_cents >= 0)
+);
+create index decision_project_idx on decision (project_id, due_date);
+create index decision_task_idx on decision (blocks_task_id) where blocks_task_id is not null;
+-- Eine Vorlage wird je Bauvorhaben genau einmal instanziiert. Eigene
+-- Entscheidungen ohne Vorlage bleiben davon unberührt.
+create unique index decision_template_once on decision (project_id, template_key)
+  where template_key is not null;
+
+comment on column decision.due_date is
+  'Abgeleitet aus dem Beginn des blockierten Vorgangs. Wird bei jeder '
+  'Neuberechnung des Plans mitgeführt, siehe apps/api/src/scheduling.ts.';
+
+-- Ein entschiedener Zustand braucht einen Zeitpunkt, ein offener keiner.
+-- Der Trigger setzt ihn, statt ihn der Anwendung zu überlassen: Sonst steht
+-- irgendwann „entschieden" ohne Datum in der Akte.
+create or replace function mbl.touch_decision_decided_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.status in ('entschieden','beauftragt') and new.decided_at is null then
+    new.decided_at := now();
+  end if;
+  if new.status in ('offen','in_bemusterung') then
+    new.decided_at := null;
+  end if;
+  return new;
+end
+$$;
+
+create trigger decision_decided_at
+  before insert or update on decision
+  for each row execute function mbl.touch_decision_decided_at();
+
+do $$
+declare
+  target text;
+begin
+  foreach target in array array['decision_template','decision']
+  loop
+    execute format(
+      'create trigger %I before update on %I for each row execute function mbl.touch_updated_at()',
+      target || '_touch_updated_at', target
+    );
+  end loop;
+end
+$$;
+
+-- Rechte und RLS -----------------------------------------------------------
+
+grant select on decision_template to authenticated;
+grant select, insert, update, delete on decision to authenticated;
+
+alter table decision_template enable row level security;
+alter table decision          enable row level security;
+
+create policy decision_template_read on decision_template for select to authenticated
+  using (true);
+
+create policy decision_read on decision for select to authenticated
+  using (mbl.is_member(project_id));
+
+-- Entscheiden ist Sache des Bauherrn (Rechtematrix 2.2, Zeile „Entscheidung
+-- pflegen"). Der Baubegleiter hat `decision.propose` und darf mitreden, sobald
+-- es den Vorschlagsweg gibt; bis dahin ist die Spalte `decided_note` der Ort
+-- dafür, und schreiben darf sie nur, wer auch entscheidet.
+create policy decision_write on decision for insert to authenticated
+  with check (mbl.has_perm(project_id, 'decision.write'));
+
+create policy decision_update on decision for update to authenticated
+  using (mbl.has_perm(project_id, 'decision.write'))
+  with check (mbl.has_perm(project_id, 'decision.write'));
+
+create policy decision_delete on decision for delete to authenticated
+  using (mbl.has_perm(project_id, 'decision.write'));
+
+grant execute on all functions in schema mbl to anon, authenticated;
+
+
+-- ===========================================================================
+--  Abschnitt: 0008_entscheidungen.sql
+-- ===========================================================================
+
+-- ---------------------------------------------------------------------------
+-- MeinBaulotse — Entscheidungsvorlagen (erzeugt, nicht von Hand bearbeiten)
+--
+-- Erzeugt von packages/db/scripts/generate-decisions.ts aus:
+--   packages/schedule/src/templates/entscheidungen.ts
+--
+-- Neu erzeugen: pnpm --filter @meinbaulotse/db decisions:generate
+--
+-- Abschnitt 7.3 der Spezifikation. Die Vorlaufzeiten sind das Ergebnis der
+-- Frage „wie lange vorher muss das feststehen, damit der Vorgang nicht
+-- wartet" — nicht die Frage, wie lange jemand zum Überlegen braucht.
+-- ---------------------------------------------------------------------------
+
+insert into decision_template
+  (key, title, description, help_text, blocks_task_code, lead_time_days, lead_time_unit, sort_order)
+values
+  ('versicherungen', 'Bauherrenhaftpflicht und Bauleistungsversicherung', 'Beides muss stehen, bevor die erste Maschine auf das Grundstück fährt. Danach ist es zu spät.',
+   'Die Bauherrenhaftpflicht deckt Schäden, die von deiner Baustelle ausgehen — ein Passant stürzt in die offene Baugrube, ein Ziegel trifft ein Auto. Als Bauherr haftest du dafür, auch wenn ein Unternehmen gearbeitet hat. Die Bauleistungsversicherung deckt Schäden am Bau selbst, etwa durch Sturm, Vandalismus oder Diebstahl fest eingebauter Teile. Was du später bereust: einen Schaden in den ersten Wochen, weil die Policen erst zum Richtfest abgeschlossen wurden.',
+   't03', 10, 'werktage', 10),
+  ('bauhelfer-bg-bau', 'Bauhelfer bei der BG Bau anmelden', 'Wer auf deiner Baustelle unentgeltlich mithilft, ist gesetzlich unfallversichert — und muss gemeldet sein.',
+   'Sobald Freunde oder Verwandte mit anpacken, bist du Unternehmer im Sinne der gesetzlichen Unfallversicherung. Die Anmeldung bei der Berufsgenossenschaft der Bauwirtschaft ist Pflicht und kostet wenig; ein nicht gemeldeter Helfer, dem etwas passiert, kostet sehr viel. Gemeldet wird vor dem ersten Einsatz, nicht danach. Auch reine Eigenleistung ohne Helfer wird angezeigt.',
+   't03', 5, 'werktage', 20),
+  ('dachziegel', 'Dachziegel: Modell und Farbe', 'Die Eindeckung wird bestellt, sobald der Dachstuhl steht.',
+   'Form und Material bestimmen, welche Dachneigung zulässig ist und wie viel Gewicht der Dachstuhl trägt — beides ist mit der Statik verknüpft und keine reine Geschmacksfrage. Bei der Farbe entscheidet vor allem der Ort: Manche Bebauungspläne schreiben Farbtöne vor. Was du später bereust: eine Sonderfarbe mit langer Lieferzeit, die den ganzen Ausbau schiebt, weil das Haus bis dahin nicht dicht ist.',
+   't17', 20, 'werktage', 30),
+  ('fassade', 'Fassade: Putz oder Klinker, Farbton', 'Die Wahl bestimmt, wie lange das Gerüst steht — und was es kostet.',
+   'Putz ist günstiger und in jeder Farbe zu haben, muss aber alle paar Jahrzehnte erneuert werden. Klinker kostet deutlich mehr, hält dafür ohne Pflege. Beides beeinflusst die Gerüststandzeit, und Gerüst wird nach Zeit berechnet. Prüf den Bebauungsplan, bevor du dich festlegst: Farbton und Material sind dort häufig vorgegeben. Was du später bereust: einen sehr dunklen Ton auf gedämmter Fassade — er heizt sich auf und arbeitet stärker.',
+   't17', 25, 'werktage', 40),
+  ('fenster', 'Fenster: Farbe, Verglasung, Rollladen, Griffe', 'Fenster werden für dein Haus gefertigt. Zwischen Bestellung und Einbau liegen Wochen.',
+   'Drei Dinge entscheidest du hier gleichzeitig. Erstens die Verglasung: Zweifach oder Dreifach bestimmt den Wärmeschutz und muss zum Wärmeschutznachweis passen. Zweitens den Sonnenschutz: Rollladen, Raffstore oder nichts — nachträglich ist jeder Rollladenkasten ein Eingriff in die Wand. Drittens die Bedienung: abschließbare Griffe im Erdgeschoss, Fenstertüren mit oder ohne Schwelle. Was du später bereust: eine Sonderfarbe außen, die drei Wochen extra Lieferzeit kostet, und fehlende Verschattung nach Süden — die erste Hitzewelle beantwortet die Frage von selbst.',
+   't18', 60, 'werktage', 50),
+  ('elektroplanung', 'Elektroplanung: Steckdosen, Schalter, Netzwerk', 'Nach dem Schlitzen der Wände ist jede zusätzliche Dose ein Nachtrag mit Staub.',
+   'Geh vor dem Termin mit dem Elektriker gedanklich durch jeden Raum und stell die Möbel auf: Wo steht das Bett, wo der Fernseher, wo der Schreibtisch. Eine Steckdose hinter dem Schrank ist verloren, eine fehlende neben dem Bett ärgert zehn Jahre lang. Denk an das, was du noch nicht hast: Leerrohre für Wallbox, Photovoltaik, Außenbeleuchtung und Netzwerk kosten jetzt fast nichts. Was du später bereust: nach Mindestausstattung geplant zu haben — sie ist ein Minimum, kein Vorschlag.',
+   't20', 15, 'werktage', 60),
+  ('kueche', 'Küchenplanung mit Anschlusspunkten', 'Starkstrom, Wasser und Abluft müssen liegen, bevor die Wände geschlossen werden.',
+   'Die Küche wird zwar zuletzt geliefert, aber ihre Anschlüsse entstehen jetzt. Du brauchst dafür keine fertige Küche, sondern einen Plan mit Positionen: Herd, Spüle, Geschirrspüler, Kühlschrank, Dunstabzug. Kläre früh, ob abgesaugt oder umgeluftet wird — eine Außenwanddurchführung ist nachträglich eine Kernbohrung. Was du später bereust: eine Kücheninsel ohne Anschluss darunter, weil sie erst nach dem Estrich beschlossen wurde.',
+   't20', 20, 'werktage', 70),
+  ('heizsystem', 'Heizsystem und Wärmepumpe final', 'Lieferzeit und Förderantrag brauchen beide Vorlauf, und zwar nacheinander.',
+   'Die Wahl des Wärmeerzeugers hängt am Wärmeschutznachweis und an der Heizlast, nicht am Geschmack. Wichtig ist die Reihenfolge: Ein Förderantrag wird vor dem Auftrag gestellt, sonst entfällt die Förderung — nachträglich lässt sich das nicht heilen. Klär außerdem den Aufstellort und die Abstände zum Nachbargrundstück, denn Wärmepumpen erzeugen Geräusche und dafür gelten Grenzwerte. Was du später bereust: die Anlage bestellt zu haben, bevor der Antrag durch war.',
+   't21', 40, 'werktage', 80),
+  ('sanitaerobjekte', 'Sanitärobjekte und Vorwandpositionen', 'Wo die Objekte hängen, entscheidet sich beim Stellen der Vorwand.',
+   'Es geht nicht um Armaturen und Farben, sondern um Maße: Wandhängendes WC oder bodenstehend, Dusche bodengleich oder mit Wanne, Waschtisch als Möbel oder als Becken. Jede Variante hat andere Anschlusshöhen. Steh einmal im Rohbau im Bad und stell dir die Objekte vor — auf dem Plan wirkt jedes Bad größer als es ist. Was du später bereust: eine bodengleiche Dusche, die erst nach dem Estrich gewünscht wurde; die Bodenplatte gibt die Höhe dann nicht mehr her.',
+   't21', 20, 'werktage', 90),
+  ('bodenbelag', 'Bodenbelag und Aufbauhöhe', 'Die Aufbauhöhe bestimmt den Estrich — und der kommt zuerst.',
+   'Fliesen, Parkett und Vinyl bauen unterschiedlich hoch auf. Diese Höhe geht in die Estrichdicke ein, und die wiederum in die Höhe der Türen und der Übergänge zwischen den Räumen. Deshalb wird der Belag ausgewählt, bevor der Estrich eingebracht wird, auch wenn er erst Monate später verlegt wird. Was du später bereust: unterschiedliche Beläge in angrenzenden Räumen ohne geplanten Höhenausgleich — die Stufe im Türrahmen bleibt.',
+   't26', 15, 'werktage', 100),
+  ('fliesen', 'Fliesen: Auswahl und Verlegemuster', 'Der häufigste Grund für Verzug im Innenausbau. Fliesen sind Lagerware oder eben nicht.',
+   'Entscheide früher, als es sich anfühlt: Zwischen Aussuchen und Verlegen liegen Bemusterung, Bestellung und Lieferung, und bei Sonderformaten sind das schnell zwei Monate. Neben der Fliese selbst gehören zwei Dinge dazu: das Verlegemuster, das bestimmt, wo die Schnitte landen, und die Fugenfarbe, die das Bild stärker verändert als die meisten erwarten. Was du später bereust: eine schmale Restreihe in der Sichtachse, weil kein Verlegeplan gemacht wurde.',
+   't28', 40, 'werktage', 110),
+  ('innentueren', 'Innentüren: Modell, Zargen, Beschläge', 'Lange Lieferzeiten, und die Zargen brauchen das Maß aus dem Rohbau.',
+   'Türblatt, Zarge und Beschlag werden zusammen bestellt und zusammen geliefert. Die Zargenbreite hängt an der fertigen Wandstärke, also an Putz und Estrichaufbau — deshalb wird nach dem Rohbau aufgemessen. Denk an die Details, die man erst im Alltag merkt: Türen, die in den Raum oder aus ihm heraus aufgehen, Lichtausschnitte in dunklen Fluren, Schwellen bei bodengleichen Übergängen. Was du später bereust: eine Standardhöhe, die nicht zur Deckenhöhe passt, oder fehlende Lüftungsspalte bei kontrollierter Wohnraumlüftung.',
+   't29', 50, 'werktage', 120),
+  ('treppe', 'Treppe: Material und Geländer', 'Aufgemessen wird am Rohbau, gefertigt wird danach — beides braucht Zeit.',
+   'Die Treppe ist ein Möbelstück und wird für deinen Rohbau gebaut. Material und Bauart bestimmen den Preis stärker als die Größe: Beton mit Belag, Holz eingestemmt oder eine freitragende Konstruktion sind drei verschiedene Welten. Beim Geländer gelten Vorschriften zu Höhe und Abstand, die nicht verhandelbar sind. Was du später bereust: eine offene Treppe ohne Setzstufen im Haus mit kleinen Kindern, und eine Wahl, die den Schallschutz nicht berücksichtigt — eine Holztreppe überträgt jeden Schritt.',
+   't32', 50, 'werktage', 130),
+  ('aussenanlagen', 'Außenanlagen: Zufahrt, Terrasse, Zaun', 'Das Letzte am Bau, und regelmäßig das, wofür das Geld nicht mehr reicht.',
+   'Plan die Außenanlagen früh, auch wenn sie zuletzt gebaut werden: Zufahrt, Stellplätze, Terrasse, Wege und Einfriedung summieren sich zu einem fünfstelligen Betrag, der in vielen Baubeschreibungen gar nicht enthalten ist. Kläre nebenbei zwei Dinge, die Vorlauf brauchen: die Entwässerung des Niederschlagswassers, für die es kommunale Vorgaben gibt, und Leerrohre für Außensteckdosen und Licht, solange der Graben noch offen ist. Was du später bereust: gepflastert zu haben, bevor die letzten schweren Fahrzeuge auf dem Grundstück waren.',
+   't35', 25, 'werktage', 140)
+on conflict (key) do nothing;
 

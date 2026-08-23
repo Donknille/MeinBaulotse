@@ -9,6 +9,7 @@
 import type {
   ChecklistItemDto,
   ChecklistUpdateRequest,
+  DecisionUpdateRequest,
   GuideCardView,
   OnboardingRequest,
   ProjectSchedule,
@@ -143,6 +144,14 @@ export const api = {
   // sondern „sind wir noch im Plan".
   updateTask: (projectId: string, taskId: string, change: TaskUpdateRequest) =>
     request<ProjectSchedule>(`/projects/${projectId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  // Antwortet mit dem ganzen Plan: Wer entscheidet, will wissen, ob der
+  // Vorgang dahinter jetzt sicher ist.
+  updateDecision: (projectId: string, decisionId: string, change: DecisionUpdateRequest) =>
+    request<ProjectSchedule>(`/projects/${projectId}/decisions/${decisionId}`, {
       method: 'PATCH',
       body: JSON.stringify(change),
     }),

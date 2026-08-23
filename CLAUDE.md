@@ -33,7 +33,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Rechteentzug *und* Trigger. Änderungen erzeugen Einträge, keine Ersetzungen.
 5. **Redaktionsinhalt und Stammdaten liegen als Daten in der Datenbank**, nicht
    als Konstanten im Code: Bauphasen, Gewerke, Ablaufvorlagen, Rechtematrix,
-   Lotsenkarten.
+   Lotsenkarten, Entscheidungsvorlagen.
 
    Die Karten kommen aus `content/lotsenkarten/*.md` über
    `pnpm --filter @meinbaulotse/db guide-cards:generate`. **Veröffentlicht ist
@@ -105,6 +105,7 @@ pnpm db:test        # RLS-Matrix und Invarianten
 pnpm dev            # API und Web parallel
 pnpm build:function # Vercel-Function neu bündeln (nach API-Änderungen)
 pnpm --filter @meinbaulotse/db guide-cards:generate   # nach Änderungen an den Lotsenkarten
+pnpm --filter @meinbaulotse/db decisions:generate     # nach Änderungen an den Entscheidungsvorlagen
 pnpm typecheck && pnpm lint
 ```
 

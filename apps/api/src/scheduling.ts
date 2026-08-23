@@ -32,6 +32,7 @@ import {
 } from '@meinbaulotse/schedule';
 import { HTTPException } from 'hono/http-exception';
 import type { Transaction } from '@meinbaulotse/db';
+import { recomputeDecisionDueDates } from './decisions.js';
 
 type Tx = Pick<Transaction, 'query'>;
 
@@ -141,6 +142,14 @@ async function loadPlan(
 export interface Recomputation {
   /** Wie viele Vorgänge sich tatsächlich verschoben haben. */
   movedTasks: number;
+  /**
+   * Wie viele Entscheidungsfristen mitgewandert sind.
+   *
+   * Das ist die Zahl, die den Bauherrn wirklich betrifft. „Sieben Vorgänge
+   * verschoben" ist eine Auskunft über den Plan; „zwei Fristen sind enger
+   * geworden" ist eine Aufforderung an ihn.
+   */
+  movedDecisions: number;
   computedEnd: string;
   /** Positiv heißt: später fertig als geschuldet. `null` ohne Vertragstermin. */
   deviationWorkdays: number | null;
@@ -202,8 +211,14 @@ export async function recomputeProject(tx: Tx, projectId: string): Promise<Recom
     );
   }
 
+  // Schritt 8 aus Abschnitt 3.5: Entscheidungsfristen neu rechnen. Er steht
+  // dort zuletzt und ist trotzdem der wichtigste — ohne ihn ist eine
+  // Verschiebung für den Bauherrn folgenlos, bis es zu spät ist.
+  const movedDecisions = await recomputeDecisionDueDates(tx, projectId, plan.calendar);
+
   return {
     movedTasks,
+    movedDecisions,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays,
   };

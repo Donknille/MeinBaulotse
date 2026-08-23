@@ -36,6 +36,9 @@ const EXPECTED: readonly Expectation[] = [
   // 0006 — fehlen die, bleibt die Anwendung heil und sagt „noch keine
   // Lotsenkarte". Das Schema aus 0005 dagegen ist Voraussetzung.
   { migration: '0005_guide_cards.sql', table: 'guide_card', column: 'template_task_codes' },
+  // Der Plan liefert die Entscheidungen mit aus; ohne die Tabelle endet jede
+  // Planansicht im Fehler, nicht nur die Entscheidungsliste.
+  { migration: '0007_decisions.sql', table: 'decision', column: 'due_date' },
 ];
 
 export interface SchemaState {

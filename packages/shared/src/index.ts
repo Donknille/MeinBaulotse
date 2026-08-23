@@ -129,6 +129,13 @@ export const projectSummary = z.object({
   plannedStart: isoDate,
   contractualCompletion: isoDate.nullable(),
   role: memberRole,
+  /**
+   * Überwiegend katholische Gemeinde — betrifft drei Feiertage.
+   *
+   * Steht hier, damit die Oberfläche denselben Kalender rechnen kann wie der
+   * Server. Ohne diese Angabe zählt sie in Bayern drei Werktage zu viel.
+   */
+  catholicMunicipality: z.boolean(),
 });
 export type ProjectSummary = z.infer<typeof projectSummary>;
 
@@ -184,6 +191,63 @@ export const phaseProgress = z.object({
 });
 export type PhaseProgress = z.infer<typeof phaseProgress>;
 
+// ---------------------------------------------------------------------------
+// Entscheidungen (Abschnitt 3.2)
+// ---------------------------------------------------------------------------
+
+export const decisionStatus = z.enum([
+  'offen',
+  'in_bemusterung',
+  'entschieden',
+  'beauftragt',
+  'hinfaellig',
+]);
+export type DecisionStatus = z.infer<typeof decisionStatus>;
+
+export const decision = z.object({
+  id: z.string().uuid(),
+  templateKey: z.string().nullable(),
+  title: z.string(),
+  description: z.string().nullable(),
+  /** Die Entscheidungshilfe: was die Optionen unterscheidet, was man bereut. */
+  helpText: z.string().nullable(),
+  blocksTaskId: z.string().uuid().nullable(),
+  blocksTaskName: z.string().nullable(),
+  blocksTaskStart: isoDate.nullable(),
+  leadTimeDays: z.number().int(),
+  leadTimeUnit: durationUnit,
+  /**
+   * Abgeleitet aus dem Beginn des blockierten Vorgangs, nicht selbst gesetzt.
+   * Verschiebt sich der Vorgang, wandert dieses Datum mit.
+   */
+  dueDate: isoDate.nullable(),
+  status: decisionStatus,
+  decidedAt: z.string().nullable(),
+  decidedNote: z.string().nullable(),
+  estimatedCostCents: z.number().int().nullable(),
+});
+export type DecisionDto = z.infer<typeof decision>;
+
+export const decisionUpdateRequest = z
+  .object({
+    status: decisionStatus.optional(),
+    decidedNote: z.string().trim().max(1000).nullable().optional(),
+    estimatedCostCents: z.number().int().min(0).nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.status !== undefined ||
+      value.decidedNote !== undefined ||
+      value.estimatedCostCents !== undefined,
+    { message: 'Es gibt nichts zu ändern.' },
+  );
+export type DecisionUpdateRequest = z.infer<typeof decisionUpdateRequest>;
+
+/** Gilt eine Entscheidung als erledigt? */
+export function decisionIsSettled(status: DecisionStatus): boolean {
+  return status === 'entschieden' || status === 'beauftragt' || status === 'hinfaellig';
+}
+
 export const projectSchedule = z.object({
   project: projectSummary,
   /**
@@ -197,6 +261,14 @@ export const projectSchedule = z.object({
   permissions: z.array(z.string()),
   phases: z.array(phaseProgress),
   tasks: z.array(scheduledTask),
+  /**
+   * Die Entscheidungen des Bauvorhabens mit ihren Fristen.
+   *
+   * Sie stehen im Plan und nicht hinter einer eigenen Abfrage, weil sie zum
+   * Plan gehören: Eine Verschiebung, die eine Frist reißt, muss in derselben
+   * Antwort sichtbar werden wie die Verschiebung selbst.
+   */
+  decisions: z.array(decision),
   /** Errechnetes Ende aus der Vorwärtsrechnung. */
   computedEnd: isoDate.nullable(),
   /** Vertraglich geschuldetes Ende, sofern erfasst. */
@@ -213,6 +285,24 @@ export const apiError = z.object({
   details: z.unknown().optional(),
 });
 export type ApiError = z.infer<typeof apiError>;
+
+/**
+ * Klartext für eine Entscheidungsfrist.
+ *
+ * „noch 4 Werktage" ist eine Auskunft, „überfällig" wäre ein Vorwurf. Auch die
+ * verstrichene Frist bekommt deshalb einen nächsten Schritt statt eines
+ * Ausrufezeichens (CI 11.4).
+ */
+export function decisionDueInPlainWords(remainingWorkdays: number | null): string {
+  if (remainingWorkdays === null) return 'Ohne Termin am Vorgang gibt es noch keine Frist.';
+  if (remainingWorkdays < 0) {
+    const tage = Math.abs(remainingWorkdays);
+    return `Seit ${tage === 1 ? 'einem Werktag' : `${tage} Werktagen`} offen. Je später die Entscheidung fällt, desto enger wird es für den Vorgang.`;
+  }
+  if (remainingWorkdays === 0) return 'Heute ist der letzte Tag ohne Auswirkung auf den Termin.';
+  if (remainingWorkdays === 1) return 'Noch ein Werktag.';
+  return `Noch ${remainingWorkdays} Werktage.`;
+}
 
 /** Klartext für den Gesamtpuffer, wie in Abschnitt 3.6 der Spezifikation. */
 export function floatInPlainWords(totalFloatDays: number | null): string {

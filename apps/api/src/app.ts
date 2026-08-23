@@ -18,6 +18,7 @@ import {
 } from '@meinbaulotse/schedule';
 import {
   checklistUpdateRequest,
+  decisionUpdateRequest,
   guideFeedbackRequest,
   onboardingRequest,
   taskUpdateRequest,
@@ -33,6 +34,7 @@ import {
   recordFeedback,
   updateChecklistItem,
 } from './guide-cards.js';
+import { loadDecisions, updateDecision } from './decisions.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { recomputeProject } from './scheduling.js';
@@ -231,7 +233,7 @@ export function createApp(): Hono<App> {
     const projects = await withUserTx(c.get('claims'), async (tx) => {
       const result = await tx.query<ProjectRow & { role: ProjectSummary['role'] }>(
         `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-                p.has_basement, p.planned_start, p.contractual_completion,
+                p.has_basement, p.catholic_municipality, p.planned_start, p.contractual_completion,
                 m.role
          from project p
          join project_member m on m.project_id = p.id
@@ -327,6 +329,29 @@ export function createApp(): Hono<App> {
   v1.get('/projects/:id/schedule', async (c) => {
     const projectId = parseId(c.req.param('id'));
     const schedule = await withUserTx(c.get('claims'), (tx) => loadSchedule(tx, projectId));
+    return c.json(schedule);
+  });
+
+  // -- Entscheidungen --------------------------------------------------------
+
+  // Antwortet mit dem ganzen Plan, nicht mit der Entscheidung: Wer eine
+  // Entscheidung trifft, will als Nächstes wissen, ob der Vorgang dahinter
+  // jetzt sicher ist — und das steht im Plan, nicht in der Zeile.
+  v1.patch('/projects/:id/decisions/:decisionId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const decisionId = parseId(c.req.param('decisionId'));
+    const parsed = decisionUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const schedule = await withUserTx(c.get('claims'), async (tx) => {
+      await updateDecision(tx, projectId, decisionId, parsed.data);
+      return loadSchedule(tx, projectId);
+    });
     return c.json(schedule);
   });
 
@@ -428,6 +453,7 @@ interface ProjectRow {
   build_type: ProjectSummary['buildType'];
   contract_type: ProjectSummary['contractType'];
   has_basement: boolean;
+  catholic_municipality: boolean;
   planned_start: string;
   contractual_completion: string | null;
   role: ProjectSummary['role'];
@@ -444,6 +470,7 @@ function toProjectSummary(row: ProjectRow): ProjectSummary {
     plannedStart: row.planned_start,
     contractualCompletion: row.contractual_completion,
     role: row.role,
+    catholicMunicipality: row.catholic_municipality,
   };
 }
 
@@ -460,7 +487,8 @@ type Tx = Parameters<Parameters<typeof withUserTx>[1]>[0];
 async function loadProject(tx: Tx, projectId: string): Promise<ProjectSummary> {
   const result = await tx.query<ProjectRow>(
     `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-            p.has_basement, p.planned_start, p.contractual_completion, m.role
+            p.has_basement, p.catholic_municipality, p.planned_start,
+                p.contractual_completion, m.role
      from project p
      join project_member m on m.project_id = p.id
        and m.user_id = mbl.current_user_id()
@@ -577,6 +605,7 @@ async function loadSchedule(tx: Tx, projectId: string): Promise<ProjectSchedule>
   const permissions = await loadPermissions(tx, projectId);
   const tasks = await loadTasks(tx, projectId);
   const phases = await loadPhases(tx, projectId);
+  const decisions = await loadDecisions(tx, projectId);
 
   const ends = tasks.map((task) => task.currentEnd).filter((end): end is string => end !== null);
   const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => (a > b ? a : b));
@@ -599,6 +628,7 @@ async function loadSchedule(tx: Tx, projectId: string): Promise<ProjectSchedule>
     permissions,
     phases,
     tasks,
+    decisions,
     computedEnd,
     contractualEnd: project.contractualCompletion,
     deviationWorkdays,

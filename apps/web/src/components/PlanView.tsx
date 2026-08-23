@@ -10,8 +10,13 @@
  */
 
 import { useState } from 'react';
-import { CalendarDays, Check, ChevronDown, GanttChartSquare } from 'lucide-react';
-import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
+import { CalendarClock, CalendarDays, Check, ChevronDown, GanttChartSquare } from 'lucide-react';
+import type {
+  DecisionDto,
+  ProjectSchedule,
+  ScheduledTaskDto,
+  TaskUpdateRequest,
+} from '@meinbaulotse/shared';
 import { Card, Pill, SectionPill } from './ui';
 import { TaskRow } from './schedule';
 import { Cockpit } from './Cockpit';
@@ -19,11 +24,13 @@ import { Timeline } from './Timeline';
 import { TaskSheet } from './TaskSheet';
 import { formatDate } from '../lib/format';
 import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
+import { calendarOf, decisionState, DECISION_STATUS_LABEL } from '../lib/decisions';
 
 export function PlanView({
   schedule,
   onChangeTask,
   onOpenGuide,
+  onOpenDecision,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
@@ -36,6 +43,8 @@ export function PlanView({
    * eine Funktion herein und zeigt das Blatt selbst an.
    */
   onOpenGuide?: (task: ScheduledTaskDto) => void;
+  /** Öffnet eine Entscheidung. Fehlt sie, bleibt die Liste zum Lesen. */
+  onOpenDecision?: (decision: DecisionDto) => void;
 }) {
   const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -69,6 +78,7 @@ export function PlanView({
           currentPhase={currentPhase}
           {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
           {...(onOpenGuide === undefined ? {} : { onOpenGuide })}
+          {...(onOpenDecision === undefined ? {} : { onOpenDecision })}
         />
       </header>
 
@@ -88,6 +98,39 @@ export function PlanView({
           baut, sieht darin alles und weiß nichts. Wer sie braucht, klappt sie
           auf; der Browser merkt sich das nicht, und das ist richtig so: Der
           Einstieg soll bei jedem Öffnen derselbe sein. */}
+      {/* Alle Entscheidungen, auch die erledigten. Im Cockpit stehen nur die
+          nächsten vier — hier ist der Ort, an dem jemand nachschlägt, was
+          schon feststeht. */}
+      {schedule.decisions.length > 0 ? (
+        <details className="group flex flex-col gap-8">
+          <summary className="cursor-pointer list-none">
+            <SectionPill tone="blue" icon={<CalendarClock size={18} />}>
+              Alle Entscheidungen · {schedule.decisions.length}
+              <ChevronDown
+                size={16}
+                className="ml-1 transition-transform duration-[var(--motion-micro)] group-open:rotate-180"
+                aria-hidden
+              />
+            </SectionPill>
+          </summary>
+          <div className="mt-6">
+            <Card className="py-0">
+              <ul>
+                {schedule.decisions.map((decision) => (
+                  <DecisionRow
+                    key={decision.id}
+                    decision={decision}
+                    schedule={schedule}
+                    referenceYear={referenceYear}
+                    {...(onOpenDecision === undefined ? {} : { onOpenDecision })}
+                  />
+                ))}
+              </ul>
+            </Card>
+          </div>
+        </details>
+      ) : null}
+
       <details className="group flex flex-col gap-8">
         <summary className="cursor-pointer list-none">
           <SectionPill tone="blue" icon={<CalendarDays size={18} />}>
@@ -163,6 +206,61 @@ export function PlanView({
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Eine Entscheidung in der vollständigen Liste.
+ *
+ * Anders als im Cockpit steht hier auch das Erledigte — mit Stand und Datum,
+ * damit nachvollziehbar bleibt, wann was festgelegt wurde.
+ */
+function DecisionRow({
+  decision,
+  schedule,
+  referenceYear,
+  onOpenDecision,
+}: {
+  decision: DecisionDto;
+  schedule: ProjectSchedule;
+  referenceYear: number;
+  onOpenDecision?: (decision: DecisionDto) => void;
+}) {
+  const state = decisionState(decision, calendarOf(schedule.project));
+  const Element = onOpenDecision === undefined ? 'div' : 'button';
+
+  return (
+    <li className="border-b border-ash last:border-b-0">
+      <Element
+        {...(onOpenDecision === undefined
+          ? {}
+          : { type: 'button' as const, onClick: () => onOpenDecision(decision) })}
+        className={`flex w-full flex-col gap-1 py-3 text-left sm:flex-row sm:items-baseline sm:gap-4 ${
+          onOpenDecision === undefined
+            ? ''
+            : 'cursor-pointer transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist'
+        }`}
+      >
+        <span className="font-mono text-caption text-steel sm:min-w-[6rem]">
+          {decision.dueDate === null ? '—' : formatDate(decision.dueDate, referenceYear)}
+        </span>
+        <span className="flex flex-1 flex-col gap-0.5">
+          <span className="text-body-lg font-medium text-charcoal">{decision.title}</span>
+          <span className="text-caption text-steel">
+            {decision.blocksTaskName === null
+              ? 'Ohne Vorgang'
+              : `${decision.leadTimeDays} Werktage vor „${decision.blocksTaskName}"`}
+          </span>
+        </span>
+        <Pill
+          tone={
+            state.isSettled ? 'green' : state.isOverdue || state.isUrgent ? 'amber' : 'neutral'
+          }
+        >
+          {DECISION_STATUS_LABEL[decision.status]}
+        </Pill>
+      </Element>
+    </li>
   );
 }
 

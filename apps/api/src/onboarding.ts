@@ -19,6 +19,7 @@ import {
 } from '@meinbaulotse/schedule';
 import type { JwtClaims, Transaction } from '@meinbaulotse/db';
 import type { OnboardingRequest } from '@meinbaulotse/shared';
+import { createDecisionsFromTemplates, recomputeDecisionDueDates } from './decisions.js';
 
 /**
  * In Stufe 1 gibt es genau eine Vorlage. Fertighaus und Sanierung greifen
@@ -95,6 +96,8 @@ export interface OnboardingResult {
   projectId: string;
   taskCount: number;
   dependencyCount: number;
+  /** Entscheidungen aus den Vorlagen, mit gerechneter Frist. */
+  decisionCount: number;
   computedEnd: string;
   deviationWorkdays: number | null;
 }
@@ -221,6 +224,12 @@ export async function createProjectFromAnswers(
     );
   }
 
+  // Die Entscheidungen entstehen aus denselben Vorlagen wie der Ablauf und
+  // bekommen ihre Frist von derselben Rechnung, die sie später bei jeder
+  // Verschiebung neu bekommt.
+  const decisionCount = await createDecisionsFromTemplates(tx, projectId, idByCode);
+  await recomputeDecisionDueDates(tx, projectId, calendar);
+
   await tx.query(
     `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
      values ($1, 'app', 'project.created', 'project', $1, $2)`,
@@ -230,6 +239,7 @@ export async function createProjectFromAnswers(
         template: template.key,
         hasBasement: answers.hasBasement,
         taskCount: plan.tasks.length,
+        decisionCount,
       }),
     ],
   );
@@ -238,6 +248,7 @@ export async function createProjectFromAnswers(
     projectId,
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
+    decisionCount,
     computedEnd: schedule.projectEnd,
     deviationWorkdays:
       answers.contractualCompletion === undefined ? null : floats.deviationWorkdays,

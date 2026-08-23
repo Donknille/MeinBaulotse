@@ -34,6 +34,8 @@ import { fileURLToPath } from 'node:url';
 import {
   computeSchedule,
   criticalPath,
+  DECISION_TEMPLATES,
+  decisionDueDate,
   EFH_MASSIV_UNTERKELLERT,
   instantiateTemplate,
   workdayOffset,
@@ -125,6 +127,10 @@ function dependencyId(project: ProjectDefinition, index: number): string {
   return `dddddddd-0000-4000-8000-${String(project.idOffset + index + 1).padStart(12, '0')}`;
 }
 
+function decisionId(project: ProjectDefinition, index: number): string {
+  return `eeeeeeee-0000-4000-8000-${String(project.idOffset + index + 1).padStart(12, '0')}`;
+}
+
 const TODAY = new Date().toISOString().slice(0, 10);
 
 /** Baustart: `offsetDays` Kalendertage ab heute, dann vor auf den nächsten Montag. */
@@ -187,6 +193,7 @@ interface RenderedProject {
   readonly contractualEnd: string;
   readonly taskCount: number;
   readonly dependencyCount: number;
+  readonly decisionCount: number;
   readonly sql: string;
 }
 
@@ -250,6 +257,40 @@ function render(project: ProjectDefinition, ordinal: number): RenderedProject {
       `${lit(dependency.type ?? 'FS')}::mbl.dependency_type, ${lit(dependency.lagDays ?? 0)}, ` +
       `${lit(dependency.lagUnit ?? 'werktage')}::mbl.duration_unit)`
     );
+  });
+
+  // Die Entscheidungen mit ihren Fristen.
+  //
+  // Im laufenden Bauvorhaben gilt: Was vor heute fällig war, ist getroffen.
+  // Alles andere wäre eine Demolage, in der ein Haus im Rohbau steht, obwohl
+  // die Fenster nie ausgesucht wurden — dann stünden vierzehn verstrichene
+  // Fristen im Cockpit, und der Kasten sagte nichts mehr aus. Offen bleibt,
+  // was noch bevorsteht; genau das soll man sehen.
+  const decisionRows = DECISION_TEMPLATES.flatMap((template, index) => {
+    const planTask = plan.tasks.find((task) => task.code === template.blocksTaskCode);
+    if (planTask === undefined) return [];
+
+    const taskStart = schedule.tasks.get(planTask.id)!.start;
+    const due = decisionDueDate(
+      {
+        id: template.key,
+        blocksTaskId: planTask.id,
+        leadTimeDays: template.leadTimeDays,
+        leadTimeUnit: template.leadTimeUnit,
+      },
+      taskStart,
+      calendar,
+    );
+    const erledigt = project.trackProgress && due < TODAY;
+
+    return [
+      `  (${lit(decisionId(project, index))}, ${lit(project.id)}, ${lit(template.key)}, ` +
+        `${lit(template.title)}, ${lit(template.description)}, ${lit(template.helpText)}, ` +
+        `${lit(sqlIdByPlanId.get(planTask.id)!)}, ${lit(template.leadTimeDays)}, ` +
+        `${lit(template.leadTimeUnit)}::mbl.duration_unit, ${lit(due)}, ` +
+        `${lit(erledigt ? 'entschieden' : 'offen')}::mbl.decision_status, ` +
+        `${lit(erledigt ? 'Beim Bemusterungstermin festgelegt.' : null)})`,
+    ];
   });
 
   const meta = JSON.stringify({
@@ -326,6 +367,18 @@ values
 ${dependencyRows.join(',\n')}
 on conflict do nothing;
 
+-- Die Entscheidungen aus Abschnitt 7.3, mit gerechneter Frist. Die Frist ist
+-- eine abgeleitete Größe: Sie liegt so viele Werktage vor dem Beginn des
+-- Vorgangs, wie die Vorlage vorgibt.
+
+insert into public.decision (
+  id, project_id, template_key, title, description, help_text,
+  blocks_task_id, lead_time_days, lead_time_unit, due_date, status, decided_note
+)
+values
+${decisionRows.join(',\n')}
+on conflict do nothing;
+
 -- Der Protokolleintrag zum Projektstart, wie ihn das Onboarding schreibt.
 
 insert into public.audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
@@ -344,6 +397,7 @@ where not exists (
     contractualEnd,
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
+    decisionCount: decisionRows.length,
     sql,
   };
 }
