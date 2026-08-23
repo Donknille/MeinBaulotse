@@ -124,6 +124,8 @@ export function Plan() {
           }}
           onOpenGuide={(task) => setGuideTask(task)}
           onOpenDecision={(decision) => setDecisionId(decision.id)}
+          weeklyReportHref={`/projekt/${projectId ?? ''}/wochenbericht`}
+          onPreviewTask={(taskId, body) => api.previewTask(projectId!, taskId, body)}
         />
       )}
 

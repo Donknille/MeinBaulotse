@@ -25,6 +25,9 @@
 import {
   computeSchedule,
   criticalPath,
+  daysBetween,
+  decisionDueDate,
+  workdayDifference,
   type Calendar,
   type FederalState,
   type ScheduleDependency,
@@ -32,6 +35,7 @@ import {
 } from '@meinbaulotse/schedule';
 import { HTTPException } from 'hono/http-exception';
 import type { Transaction } from '@meinbaulotse/db';
+import type { SchedulePreview } from '@meinbaulotse/shared';
 import { recomputeDecisionDueDates } from './decisions.js';
 
 type Tx = Pick<Transaction, 'query'>;
@@ -221,5 +225,143 @@ export async function recomputeProject(tx: Tx, projectId: string): Promise<Recom
     movedDecisions,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays,
+  };
+}
+
+/**
+ * Was eine Änderung bewirken würde, ohne sie zu tun.
+ *
+ * Abschnitt 3.5.6 verlangt, betroffene Folgevorgänge „als Vorschlag" zu
+ * zeigen. Das ist mehr als Höflichkeit: Eine Verschiebung um drei Tage, die
+ * sieben Gewerke nachzieht und den Endtermin kostet, ist eine andere
+ * Entscheidung als eine, die im Puffer verschwindet — und der Unterschied ist
+ * dem Plan nicht anzusehen, solange man nicht gerechnet hat.
+ *
+ * Gerechnet wird vollständig im Speicher. Es wird nichts geschrieben, keine
+ * Transaktion zurückgerollt und nichts protokolliert: Eine Vorschau, die
+ * Spuren hinterlässt, wäre in einer append-only-Historie ein Problem.
+ */
+export async function previewChange(
+  tx: Tx,
+  projectId: string,
+  taskId: string,
+  change: {
+    earliestStart?: string | null;
+    actualStart?: string | null;
+    actualEnd?: string | null;
+  },
+): Promise<SchedulePreview> {
+  const plan = await loadPlan(tx, projectId);
+  const namen = await tx.query<{ id: string; name: string }>(
+    'select id, name from task where project_id = $1',
+    [projectId],
+  );
+  const nameById = new Map(namen.rows.map((row) => [row.id, row.name]));
+
+  if (!nameById.has(taskId)) {
+    throw new HTTPException(404, {
+      message: 'Diesen Vorgang gibt es in deinem Bauvorhaben nicht.',
+    });
+  }
+
+  const angepasst = plan.tasks.map((task) => {
+    if (task.id !== taskId) return task;
+    const kopie = { ...task };
+    // `undefined` heißt „dazu sage ich nichts", `null` heißt „wegnehmen".
+    if (change.earliestStart !== undefined) {
+      if (change.earliestStart === null) delete kopie.earliestStart;
+      else kopie.earliestStart = change.earliestStart;
+    }
+    if (change.actualStart !== undefined) {
+      if (change.actualStart === null) delete kopie.actualStart;
+      else kopie.actualStart = change.actualStart;
+    }
+    if (change.actualEnd !== undefined) {
+      if (change.actualEnd === null) delete kopie.actualEnd;
+      else kopie.actualEnd = change.actualEnd;
+    }
+    return kopie;
+  });
+
+  const neu = computeSchedule({
+    tasks: angepasst,
+    dependencies: plan.dependencies,
+    calendar: plan.calendar,
+    projectStart: plan.projectStart,
+  });
+
+  const bewegt: SchedulePreview['tasks'] = [];
+  for (const row of plan.rows) {
+    const nachher = neu.tasks.get(row.id)!;
+    if (row.current_start === nachher.start && row.current_end === nachher.end) continue;
+    bewegt.push({
+      id: row.id,
+      name: nameById.get(row.id) ?? 'Vorgang',
+      fromStart: row.current_start,
+      toStart: nachher.start,
+      fromEnd: row.current_end,
+      toEnd: nachher.end,
+      shiftDays:
+        row.current_start === null ? 0 : daysBetween(row.current_start, nachher.start),
+    });
+  }
+
+  // Die Fristen, die mitwandern. Sie sind der Grund, warum eine Verschiebung
+  // den Bauherrn überhaupt betrifft.
+  const entscheidungen = await tx.query<{
+    id: string;
+    title: string;
+    due_date: string | null;
+    lead_time_days: number;
+    lead_time_unit: 'werktage' | 'kalendertage';
+    blocks_task_id: string | null;
+  }>(
+    `select id, title, due_date, lead_time_days, lead_time_unit, blocks_task_id
+       from decision
+      where project_id = $1 and blocks_task_id is not null
+        and status in ('offen','in_bemusterung')`,
+    [projectId],
+  );
+
+  const fristen: SchedulePreview['decisions'] = [];
+  for (const row of entscheidungen.rows) {
+    const nachher = neu.tasks.get(row.blocks_task_id!);
+    if (nachher === undefined) continue;
+    const neueFrist = decisionDueDate(
+      {
+        id: row.id,
+        blocksTaskId: row.blocks_task_id!,
+        leadTimeDays: row.lead_time_days,
+        leadTimeUnit: row.lead_time_unit,
+      },
+      nachher.start,
+      plan.calendar,
+    );
+    if (neueFrist === row.due_date) continue;
+    fristen.push({
+      id: row.id,
+      title: row.title,
+      fromDueDate: row.due_date,
+      toDueDate: neueFrist,
+    });
+  }
+
+  const vorherEnde = plan.rows
+    .map((row) => row.current_end)
+    .filter((end): end is string => end !== null)
+    .reduce<string | null>((a, b) => (a === null || b > a ? b : a), null);
+
+  return {
+    taskId,
+    tasks: bewegt,
+    decisions: fristen,
+    previousEnd: vorherEnde,
+    computedEnd: neu.projectEnd,
+    endShiftWorkdays:
+      vorherEnde === null ? 0 : workdayDifference(vorherEnde, neu.projectEnd, plan.calendar),
+    deviationWorkdays:
+      plan.contractualEnd === null
+        ? null
+        : workdayDifference(plan.contractualEnd, neu.projectEnd, plan.calendar),
   };
 }

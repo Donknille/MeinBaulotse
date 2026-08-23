@@ -278,6 +278,140 @@ export const projectSchedule = z.object({
 });
 export type ProjectSchedule = z.infer<typeof projectSchedule>;
 
+/**
+ * Was eine Verschiebung nach sich zieht — **bevor** sie gespeichert wird.
+ *
+ * Abschnitt 3.5.6: „Betroffene Folgevorgänge als Vorschlag anzeigen." Wer
+ * einen Termin schiebt, soll vorher sehen, was daran hängt: sieben Vorgänge
+ * und zehn Tage am Ende sind eine andere Entscheidung als ein Vorgang mit
+ * Puffer.
+ */
+export const schedulePreviewTask = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  fromStart: isoDate.nullable(),
+  toStart: isoDate.nullable(),
+  fromEnd: isoDate.nullable(),
+  toEnd: isoDate.nullable(),
+  /** Verschiebung in Kalendertagen. Positiv heißt später. */
+  shiftDays: z.number().int(),
+});
+export type SchedulePreviewTask = z.infer<typeof schedulePreviewTask>;
+
+export const schedulePreviewDecision = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  fromDueDate: isoDate.nullable(),
+  toDueDate: isoDate.nullable(),
+});
+export type SchedulePreviewDecision = z.infer<typeof schedulePreviewDecision>;
+
+export const schedulePreview = z.object({
+  /** Der Vorgang, den jemand anfassen will. */
+  taskId: z.string().uuid(),
+  /** Alle Vorgänge, die sich dadurch bewegen — der angefasste eingeschlossen. */
+  tasks: z.array(schedulePreviewTask),
+  /** Fristen, die mitwandern. */
+  decisions: z.array(schedulePreviewDecision),
+  previousEnd: isoDate.nullable(),
+  computedEnd: isoDate.nullable(),
+  /** Wie viele Werktage der Endtermin wandert. Positiv heißt später. */
+  endShiftWorkdays: z.number().int(),
+  /** Positiv heißt: später fertig als geschuldet. */
+  deviationWorkdays: z.number().int().nullable(),
+});
+export type SchedulePreview = z.infer<typeof schedulePreview>;
+
+// ---------------------------------------------------------------------------
+// Wochenbericht (Abschnitt 3.11)
+// ---------------------------------------------------------------------------
+
+/**
+ * Der Retention-Anker des Produkts: Montagmorgen, sechs Blöcke, in dieser
+ * Reihenfolge. Sie ist dieselbe wie im Cockpit und aus demselben Grund —
+ * erst wo ihr steht, dann was kommt, dann was **du** tun musst, dann erst,
+ * was schiefgeht.
+ */
+export const weeklyReportTask = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  tradeName: z.string().nullable(),
+  start: isoDate.nullable(),
+  end: isoDate.nullable(),
+  isWait: z.boolean(),
+  isMilestone: z.boolean(),
+  /** Kurzfassung der Lotsenkarte, sofern es eine gibt. */
+  guideCardTitle: z.string().nullable(),
+  guideCardSummary: z.string().nullable(),
+});
+export type WeeklyReportTask = z.infer<typeof weeklyReportTask>;
+
+export const weeklyReportDecision = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  dueDate: isoDate.nullable(),
+  remainingWorkdays: z.number().int().nullable(),
+  blocksTaskName: z.string().nullable(),
+});
+export type WeeklyReportDecision = z.infer<typeof weeklyReportDecision>;
+
+export const weeklyReportChange = z.object({
+  taskName: z.string().nullable(),
+  field: z.string(),
+  from: isoDate.nullable(),
+  to: isoDate.nullable(),
+  reason: z.string().nullable(),
+  reasonText: z.string().nullable(),
+  actorRole: memberRole.nullable(),
+  changedAt: z.string(),
+});
+export type WeeklyReportChange = z.infer<typeof weeklyReportChange>;
+
+export const weeklyReportPhoto = z.object({
+  taskName: z.string(),
+  what: z.string(),
+  why: z.string(),
+});
+export type WeeklyReportPhoto = z.infer<typeof weeklyReportPhoto>;
+
+export const weeklyReport = z.object({
+  project: z.object({ id: z.string().uuid(), name: z.string() }),
+  /** Der Montag, für den der Bericht gilt. */
+  weekStart: isoDate,
+  weekEnd: isoDate,
+  phase: z.object({ name: z.string(), ordinal: z.number().int(), total: z.number().int() }).nullable(),
+  /** 1. Diese Woche auf der Baustelle. */
+  thisWeek: z.array(weeklyReportTask),
+  /** 2. Was du entscheiden musst. */
+  decisions: z.array(weeklyReportDecision),
+  /** 3. Was sich verschoben hat — seit dem letzten Bericht. */
+  changes: z.array(weeklyReportChange),
+  /** 4. Prognose. */
+  forecast: z.object({
+    computedEnd: isoDate.nullable(),
+    contractualEnd: isoDate.nullable(),
+    deviationWorkdays: z.number().int().nullable(),
+  }),
+  /** 5. Fotos, die jetzt fällig sind. */
+  photos: z.array(weeklyReportPhoto),
+  /**
+   * 6. Geld — nächste fällige Zahlung und ihre Voraussetzung.
+   *
+   * `null`, solange es keinen Zahlungsplan gibt. Ein leerer Block mit
+   * Überschrift wäre ein Versprechen, das der Bericht nicht hält.
+   */
+  money: z
+    .object({
+      name: z.string(),
+      amountCents: z.number().int().nullable(),
+      dueDate: isoDate.nullable(),
+      requirement: z.string(),
+      releasable: z.boolean(),
+    })
+    .nullable(),
+});
+export type WeeklyReport = z.infer<typeof weeklyReport>;
+
 export const apiError = z.object({
   error: z.string(),
   /** Was der Nutzer als Nächstes tun kann — nie eine Fehlermeldung ohne Ausweg. */

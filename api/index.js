@@ -12314,6 +12314,9 @@ function fromEpochDay(epochDay) {
 function addDays(date, days) {
   return fromEpochDay(toEpochDay(date) + days);
 }
+function daysBetween(from, to) {
+  return toEpochDay(to) - toEpochDay(from);
+}
 function compareDates(a, b) {
   const left = toEpochDay(a);
   const right = toEpochDay(b);
@@ -13196,6 +13199,104 @@ var projectSchedule = external_exports.object({
   contractualEnd: isoDate.nullable(),
   /** Positiv bedeutet: später fertig als geschuldet. */
   deviationWorkdays: external_exports.number().int().nullable()
+});
+var schedulePreviewTask = external_exports.object({
+  id: external_exports.string().uuid(),
+  name: external_exports.string(),
+  fromStart: isoDate.nullable(),
+  toStart: isoDate.nullable(),
+  fromEnd: isoDate.nullable(),
+  toEnd: isoDate.nullable(),
+  /** Verschiebung in Kalendertagen. Positiv heißt später. */
+  shiftDays: external_exports.number().int()
+});
+var schedulePreviewDecision = external_exports.object({
+  id: external_exports.string().uuid(),
+  title: external_exports.string(),
+  fromDueDate: isoDate.nullable(),
+  toDueDate: isoDate.nullable()
+});
+var schedulePreview = external_exports.object({
+  /** Der Vorgang, den jemand anfassen will. */
+  taskId: external_exports.string().uuid(),
+  /** Alle Vorgänge, die sich dadurch bewegen — der angefasste eingeschlossen. */
+  tasks: external_exports.array(schedulePreviewTask),
+  /** Fristen, die mitwandern. */
+  decisions: external_exports.array(schedulePreviewDecision),
+  previousEnd: isoDate.nullable(),
+  computedEnd: isoDate.nullable(),
+  /** Wie viele Werktage der Endtermin wandert. Positiv heißt später. */
+  endShiftWorkdays: external_exports.number().int(),
+  /** Positiv heißt: später fertig als geschuldet. */
+  deviationWorkdays: external_exports.number().int().nullable()
+});
+var weeklyReportTask = external_exports.object({
+  id: external_exports.string().uuid(),
+  name: external_exports.string(),
+  tradeName: external_exports.string().nullable(),
+  start: isoDate.nullable(),
+  end: isoDate.nullable(),
+  isWait: external_exports.boolean(),
+  isMilestone: external_exports.boolean(),
+  /** Kurzfassung der Lotsenkarte, sofern es eine gibt. */
+  guideCardTitle: external_exports.string().nullable(),
+  guideCardSummary: external_exports.string().nullable()
+});
+var weeklyReportDecision = external_exports.object({
+  id: external_exports.string().uuid(),
+  title: external_exports.string(),
+  dueDate: isoDate.nullable(),
+  remainingWorkdays: external_exports.number().int().nullable(),
+  blocksTaskName: external_exports.string().nullable()
+});
+var weeklyReportChange = external_exports.object({
+  taskName: external_exports.string().nullable(),
+  field: external_exports.string(),
+  from: isoDate.nullable(),
+  to: isoDate.nullable(),
+  reason: external_exports.string().nullable(),
+  reasonText: external_exports.string().nullable(),
+  actorRole: memberRole.nullable(),
+  changedAt: external_exports.string()
+});
+var weeklyReportPhoto = external_exports.object({
+  taskName: external_exports.string(),
+  what: external_exports.string(),
+  why: external_exports.string()
+});
+var weeklyReport = external_exports.object({
+  project: external_exports.object({ id: external_exports.string().uuid(), name: external_exports.string() }),
+  /** Der Montag, für den der Bericht gilt. */
+  weekStart: isoDate,
+  weekEnd: isoDate,
+  phase: external_exports.object({ name: external_exports.string(), ordinal: external_exports.number().int(), total: external_exports.number().int() }).nullable(),
+  /** 1. Diese Woche auf der Baustelle. */
+  thisWeek: external_exports.array(weeklyReportTask),
+  /** 2. Was du entscheiden musst. */
+  decisions: external_exports.array(weeklyReportDecision),
+  /** 3. Was sich verschoben hat — seit dem letzten Bericht. */
+  changes: external_exports.array(weeklyReportChange),
+  /** 4. Prognose. */
+  forecast: external_exports.object({
+    computedEnd: isoDate.nullable(),
+    contractualEnd: isoDate.nullable(),
+    deviationWorkdays: external_exports.number().int().nullable()
+  }),
+  /** 5. Fotos, die jetzt fällig sind. */
+  photos: external_exports.array(weeklyReportPhoto),
+  /**
+   * 6. Geld — nächste fällige Zahlung und ihre Voraussetzung.
+   *
+   * `null`, solange es keinen Zahlungsplan gibt. Ein leerer Block mit
+   * Überschrift wäre ein Versprechen, das der Bericht nicht hält.
+   */
+  money: external_exports.object({
+    name: external_exports.string(),
+    amountCents: external_exports.number().int().nullable(),
+    dueDate: isoDate.nullable(),
+    requirement: external_exports.string(),
+    releasable: external_exports.boolean()
+  }).nullable()
 });
 var apiError = external_exports.object({
   error: external_exports.string(),
@@ -14824,6 +14925,179 @@ async function updateDecision(tx, projectId, decisionId, change) {
   return toDecision(result.rows[0]);
 }
 
+// src/weekly-report.ts
+var VORSCHAU_TAGE = 7;
+var RUECKBLICK_TAGE = 7;
+function plusDays(date, days) {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 864e5).toISOString().slice(0, 10);
+}
+function ersterSatz(text) {
+  const bereinigt = text.replace(/\s+/g, " ").trim();
+  const punkt = bereinigt.search(/[.!?](\s|$)/);
+  return punkt === -1 ? bereinigt : bereinigt.slice(0, punkt + 1);
+}
+async function buildWeeklyReport(tx, projectId, today) {
+  const project = await tx.query(
+    `select id, name, federal_state, catholic_municipality, contractual_completion
+       from project where id = $1`,
+    [projectId]
+  );
+  const head = project.rows[0];
+  if (head === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const calendar = {
+    federalState: head.federal_state,
+    catholicMunicipality: head.catholic_municipality
+  };
+  const weekEnd = plusDays(today, VORSCHAU_TAGE);
+  const seit = plusDays(today, -RUECKBLICK_TAGE);
+  const tasks = await tx.query(
+    `select t.id, t.name, tr.name as trade_name, t.current_start, t.current_end,
+            t.is_wait, t.is_milestone,
+            guide.title as guide_title, guide.whats_happening as guide_summary
+       from task t
+       left join trade tr on tr.id = t.trade_id
+       left join lateral (
+         select gc.title, gc.whats_happening
+           from guide_card gc
+          where gc.published_at is not null
+            and gc.superseded_by is null
+            and t.template_task_code is not null
+            and t.template_task_code = any (gc.template_task_codes)
+          order by gc.version desc
+          limit 1
+       ) guide on true
+      where t.project_id = $1
+        and t.status <> 'entfallen'
+        and t.current_start is not null
+        and (
+              (t.current_start between $2 and $3)
+           or (t.current_end   between $2 and $3)
+           or (t.current_start <= $2 and t.current_end >= $3)
+        )
+      order by t.current_start, t.sort_order`,
+    [projectId, today, weekEnd]
+  );
+  const thisWeek = tasks.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    tradeName: row.trade_name,
+    start: row.current_start,
+    end: row.current_end,
+    isWait: row.is_wait,
+    isMilestone: row.is_milestone,
+    guideCardTitle: row.guide_title,
+    guideCardSummary: row.guide_summary === null ? null : ersterSatz(row.guide_summary)
+  }));
+  const decisions = await tx.query(
+    `select d.id, d.title, d.due_date, t.name as blocks_task_name
+       from decision d
+       left join task t on t.id = d.blocks_task_id
+      where d.project_id = $1
+        and d.status in ('offen','in_bemusterung')
+      order by d.due_date nulls last
+      limit 8`,
+    [projectId]
+  );
+  const offeneEntscheidungen = decisions.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    dueDate: row.due_date,
+    remainingWorkdays: row.due_date === null ? null : workdayDifference(today, row.due_date, calendar),
+    blocksTaskName: row.blocks_task_name
+  }));
+  const changes = await tx.query(
+    `select t.name as task_name, c.field,
+            c.old_value #>> '{}' as old_value, c.new_value #>> '{}' as new_value,
+            c.reason_code, c.reason_text, c.actor_role, c.created_at
+       from schedule_change c
+       left join task t on t.id = c.task_id
+      where c.project_id = $1
+        and c.field in ('current_start','current_end')
+        and c.created_at >= $2::date
+        and c.old_value is not null
+      order by c.created_at desc
+      limit 20`,
+    [projectId, seit]
+  );
+  const verschiebungen = changes.rows.map((row) => ({
+    taskName: row.task_name,
+    field: row.field,
+    from: row.old_value,
+    to: row.new_value,
+    reason: row.reason_code,
+    reasonText: row.reason_text,
+    actorRole: row.actor_role,
+    changedAt: new Date(row.created_at).toISOString()
+  }));
+  const ende = await tx.query(
+    `select max(current_end)::text as computed_end from task
+      where project_id = $1 and status <> 'entfallen'`,
+    [projectId]
+  );
+  const computedEnd = ende.rows[0]?.computed_end ?? null;
+  const contractualEnd = head.contractual_completion;
+  const deviationWorkdays = computedEnd === null || contractualEnd === null ? null : workdayDifference(contractualEnd, computedEnd, calendar);
+  const photos = await tx.query(
+    `select t.name as task_name, prompt
+       from task t
+       join lateral (
+         select gc.photo_prompts
+           from guide_card gc
+          where gc.published_at is not null
+            and gc.superseded_by is null
+            and t.template_task_code is not null
+            and t.template_task_code = any (gc.template_task_codes)
+          order by gc.version desc
+          limit 1
+       ) guide on true
+       cross join lateral jsonb_array_elements(guide.photo_prompts) as prompt
+      where t.project_id = $1
+        and t.status <> 'entfallen'
+        and t.current_start is not null
+        and t.current_start <= $3
+        and (t.current_end is null or t.current_end >= $2)
+      order by t.current_start
+      limit 6`,
+    [projectId, today, weekEnd]
+  );
+  const fotos = photos.rows.map((row) => ({
+    taskName: row.task_name,
+    what: row.prompt.what,
+    why: row.prompt.why
+  }));
+  const phase = await tx.query(
+    `with grenzen as (
+       select ph.key, ph.name, ph.ordinal,
+              min(t.current_start) as beginn, max(t.current_end) as ende
+         from task t join phase ph on ph.key = t.phase_key
+        where t.project_id = $1 and t.status <> 'entfallen'
+        group by ph.key, ph.name, ph.ordinal
+     )
+     select name, ordinal, (select count(*)::text from grenzen) as total
+       from grenzen
+      where $2::date between beginn and ende
+      order by ordinal
+      limit 1`,
+    [projectId, today]
+  );
+  const phaseRow = phase.rows[0];
+  return {
+    project: { id: head.id, name: head.name },
+    weekStart: today,
+    weekEnd,
+    phase: phaseRow === void 0 ? null : { name: phaseRow.name, ordinal: phaseRow.ordinal, total: Number(phaseRow.total) },
+    thisWeek,
+    decisions: offeneEntscheidungen,
+    changes: verschiebungen,
+    forecast: { computedEnd, contractualEnd, deviationWorkdays },
+    photos: fotos,
+    // Block 6 kommt mit den Zahlungsmeilensteinen aus AP 8.
+    money: null
+  };
+}
+
 // src/demo.ts
 var import_node_crypto6 = require("node:crypto");
 var DEMO_IDENTITIES = {
@@ -15192,6 +15466,95 @@ async function recomputeProject(tx, projectId) {
     deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays
   };
 }
+async function previewChange(tx, projectId, taskId, change) {
+  const plan = await loadPlan(tx, projectId);
+  const namen = await tx.query(
+    "select id, name from task where project_id = $1",
+    [projectId]
+  );
+  const nameById = new Map(namen.rows.map((row) => [row.id, row.name]));
+  if (!nameById.has(taskId)) {
+    throw new HTTPException(404, {
+      message: "Diesen Vorgang gibt es in deinem Bauvorhaben nicht."
+    });
+  }
+  const angepasst = plan.tasks.map((task) => {
+    if (task.id !== taskId) return task;
+    const kopie = { ...task };
+    if (change.earliestStart !== void 0) {
+      if (change.earliestStart === null) delete kopie.earliestStart;
+      else kopie.earliestStart = change.earliestStart;
+    }
+    if (change.actualStart !== void 0) {
+      if (change.actualStart === null) delete kopie.actualStart;
+      else kopie.actualStart = change.actualStart;
+    }
+    if (change.actualEnd !== void 0) {
+      if (change.actualEnd === null) delete kopie.actualEnd;
+      else kopie.actualEnd = change.actualEnd;
+    }
+    return kopie;
+  });
+  const neu = computeSchedule({
+    tasks: angepasst,
+    dependencies: plan.dependencies,
+    calendar: plan.calendar,
+    projectStart: plan.projectStart
+  });
+  const bewegt = [];
+  for (const row of plan.rows) {
+    const nachher = neu.tasks.get(row.id);
+    if (row.current_start === nachher.start && row.current_end === nachher.end) continue;
+    bewegt.push({
+      id: row.id,
+      name: nameById.get(row.id) ?? "Vorgang",
+      fromStart: row.current_start,
+      toStart: nachher.start,
+      fromEnd: row.current_end,
+      toEnd: nachher.end,
+      shiftDays: row.current_start === null ? 0 : daysBetween(row.current_start, nachher.start)
+    });
+  }
+  const entscheidungen = await tx.query(
+    `select id, title, due_date, lead_time_days, lead_time_unit, blocks_task_id
+       from decision
+      where project_id = $1 and blocks_task_id is not null
+        and status in ('offen','in_bemusterung')`,
+    [projectId]
+  );
+  const fristen = [];
+  for (const row of entscheidungen.rows) {
+    const nachher = neu.tasks.get(row.blocks_task_id);
+    if (nachher === void 0) continue;
+    const neueFrist = decisionDueDate(
+      {
+        id: row.id,
+        blocksTaskId: row.blocks_task_id,
+        leadTimeDays: row.lead_time_days,
+        leadTimeUnit: row.lead_time_unit
+      },
+      nachher.start,
+      plan.calendar
+    );
+    if (neueFrist === row.due_date) continue;
+    fristen.push({
+      id: row.id,
+      title: row.title,
+      fromDueDate: row.due_date,
+      toDueDate: neueFrist
+    });
+  }
+  const vorherEnde = plan.rows.map((row) => row.current_end).filter((end) => end !== null).reduce((a, b) => a === null || b > a ? b : a, null);
+  return {
+    taskId,
+    tasks: bewegt,
+    decisions: fristen,
+    previousEnd: vorherEnde,
+    computedEnd: neu.projectEnd,
+    endShiftWorkdays: vorherEnde === null ? 0 : workdayDifference(vorherEnde, neu.projectEnd, plan.calendar),
+    deviationWorkdays: plan.contractualEnd === null ? null : workdayDifference(plan.contractualEnd, neu.projectEnd, plan.calendar)
+  };
+}
 
 // src/schema-check.ts
 var EXPECTED = [
@@ -15397,10 +15760,36 @@ function createApp() {
     );
     return c.json(schedule);
   });
+  v1.post("/projects/:id/tasks/:taskId/preview", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const preview = await withUserTx(
+      c.get("claims"),
+      (tx) => previewChange(tx, projectId, taskId, parsed.data)
+    );
+    return c.json(preview);
+  });
   v1.get("/projects/:id/schedule", async (c) => {
     const projectId = parseId(c.req.param("id"));
     const schedule = await withUserTx(c.get("claims"), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+  v1.get("/projects/:id/weekly-report", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const angefragt = c.req.query("today");
+    const today = angefragt !== void 0 && /^\d{4}-\d{2}-\d{2}$/.test(angefragt) ? angefragt : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const report = await withUserTx(
+      c.get("claims"),
+      (tx) => buildWeeklyReport(tx, projectId, today)
+    );
+    return c.json(report);
   });
   v1.patch("/projects/:id/decisions/:decisionId", async (c) => {
     const projectId = parseId(c.req.param("id"));

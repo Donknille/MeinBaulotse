@@ -17,6 +17,7 @@
     "dev": "tsx watch src/server.ts",
     "demo:seed": "tsx scripts/demo.ts",
     "demo:sql": "tsx scripts/demo-sql.ts",
+    "report:weekly": "tsx scripts/weekly-report.ts",
     "start": "node dist/server.js",
     "test": "vitest run"
   },

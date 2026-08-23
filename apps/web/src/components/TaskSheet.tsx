@@ -20,7 +20,12 @@
 
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { BookOpen, X } from 'lucide-react';
-import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
+import type {
+  ProjectSchedule,
+  ScheduledTaskDto,
+  SchedulePreview,
+  TaskUpdateRequest,
+} from '@meinbaulotse/shared';
 import { Button, Field, Select, TextInput } from './ui';
 import { ApiError } from '../lib/api';
 import { formatDate, formatRange, STATUS_LABEL } from '../lib/format';
@@ -49,6 +54,7 @@ export function TaskSheet({
   onClose,
   onSave,
   onOpenGuide,
+  onPreview,
 }: {
   task: ScheduledTaskDto;
   schedule: ProjectSchedule;
@@ -56,6 +62,11 @@ export function TaskSheet({
   onSave: (change: TaskUpdateRequest) => Promise<void>;
   /** Führt zur Lotsenkarte, sofern es zu diesem Vorgang eine gibt. */
   onOpenGuide?: () => void;
+  /**
+   * Rechnet vor, was die Verschiebung nach sich zöge (Abschnitt 3.5.6).
+   * Fehlt sie, gibt es keinen Vorschlag — so wie im Styleguide.
+   */
+  onPreview?: (change: TaskUpdateRequest) => Promise<SchedulePreview>;
 }) {
   const darfPlanen = schedule.permissions.includes('task.schedule');
   // Eine verstrichene Entscheidungsfrist zu diesem Vorgang ist der wahr-
@@ -78,6 +89,8 @@ export function TaskSheet({
   const [actualEnd, setActualEnd] = useState(task.actualEnd ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SchedulePreview | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   // Ein Blatt, das sich nicht mit Escape schließen lässt, fühlt sich wie eine
   // Falle an — besonders auf dem Rechner.
@@ -280,10 +293,84 @@ export function TaskSheet({
 
             {error !== null ? <p className="text-body text-alarm-red">{error}</p> : null}
 
+            {/* Der Vorschlag aus Abschnitt 3.5.6: was daran hängt, **bevor**
+                gespeichert wird. Eine Verschiebung um drei Tage, die sieben
+                Gewerke nachzieht, ist eine andere Entscheidung als eine, die
+                im Puffer verschwindet — und das sieht man dem Plan nicht an. */}
+            {preview !== null ? (
+              <div className="flex flex-col gap-2 rounded-[var(--radius-large)] bg-paper-mist p-4">
+                {preview.tasks.length === 0 ? (
+                  <p className="text-body text-charcoal">
+                    Das zieht nichts nach. Der Vorgang bleibt, wo er ist.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-body font-medium text-charcoal">
+                      Das zieht {preview.tasks.length === 1 ? 'einen Vorgang' : `${preview.tasks.length} Vorgänge`} nach
+                      {preview.endShiftWorkdays === 0
+                        ? ' — der Endtermin bleibt.'
+                        : preview.endShiftWorkdays > 0
+                          ? `, und der Endtermin wandert um ${preview.endShiftWorkdays} Werktage nach hinten.`
+                          : `, und der Endtermin rückt um ${Math.abs(preview.endShiftWorkdays)} Werktage vor.`}
+                    </p>
+                    <ul className="flex flex-col gap-0.5">
+                      {preview.tasks.slice(0, 6).map((entry) => (
+                        <li key={entry.id} className="text-caption text-steel">
+                          {entry.name}: {formatDate(entry.fromStart, referenceYear)} →{' '}
+                          {formatDate(entry.toStart, referenceYear)}
+                        </li>
+                      ))}
+                      {preview.tasks.length > 6 ? (
+                        <li className="text-caption text-steel">
+                          und {preview.tasks.length - 6} weitere
+                        </li>
+                      ) : null}
+                    </ul>
+                    {preview.decisions.length > 0 ? (
+                      <p className="text-caption text-tangerine">
+                        {preview.decisions.length === 1
+                          ? 'Eine Entscheidungsfrist wandert mit: '
+                          : `${preview.decisions.length} Entscheidungsfristen wandern mit: `}
+                        {preview.decisions.map((entry) => entry.title).join(', ')}.
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
                 Abbrechen
               </Button>
+              {onPreview !== undefined ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || previewBusy}
+                  onClick={() => {
+                    const change = collect();
+                    if (change === null) {
+                      setError('Trag zuerst ein, was sich ändern soll.');
+                      return;
+                    }
+                    setPreviewBusy(true);
+                    setError(null);
+                    onPreview(change)
+                      .then(setPreview)
+                      .catch((fehler: unknown) =>
+                        setError(
+                          fehler instanceof ApiError
+                            ? fehler.message
+                            : 'Die Vorschau ließ sich nicht rechnen.',
+                        ),
+                      )
+                      .finally(() => setPreviewBusy(false));
+                  }}
+                >
+                  {previewBusy ? 'Wird gerechnet.' : 'Was zieht das nach?'}
+                </Button>
+              ) : null}
               <Button type="submit" variant="primary" size="field" disabled={busy}>
                 {busy ? 'Wird gerechnet.' : 'Speichern und neu rechnen'}
               </Button>

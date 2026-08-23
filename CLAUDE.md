@@ -106,6 +106,7 @@ pnpm dev            # API und Web parallel
 pnpm build:function # Vercel-Function neu bündeln (nach API-Änderungen)
 pnpm --filter @meinbaulotse/db guide-cards:generate   # nach Änderungen an den Lotsenkarten
 pnpm --filter @meinbaulotse/db decisions:generate     # nach Änderungen an den Entscheidungsvorlagen
+pnpm report:weekly  # Wochenbericht als Probelauf; --send verschickt (docs/BETRIEB.md)
 pnpm typecheck && pnpm lint
 ```
 

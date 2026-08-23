@@ -10,11 +10,19 @@
  */
 
 import { useState } from 'react';
-import { CalendarClock, CalendarDays, Check, ChevronDown, GanttChartSquare } from 'lucide-react';
+import {
+  CalendarClock,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  GanttChartSquare,
+  Mail,
+} from 'lucide-react';
 import type {
   DecisionDto,
   ProjectSchedule,
   ScheduledTaskDto,
+  SchedulePreview,
   TaskUpdateRequest,
 } from '@meinbaulotse/shared';
 import { Card, Pill, SectionPill } from './ui';
@@ -31,6 +39,8 @@ export function PlanView({
   onChangeTask,
   onOpenGuide,
   onOpenDecision,
+  weeklyReportHref,
+  onPreviewTask,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
@@ -45,6 +55,10 @@ export function PlanView({
   onOpenGuide?: (task: ScheduledTaskDto) => void;
   /** Öffnet eine Entscheidung. Fehlt sie, bleibt die Liste zum Lesen. */
   onOpenDecision?: (decision: DecisionDto) => void;
+  /** Adresse des Wochenberichts. Fehlt sie, wird er nicht verlinkt. */
+  weeklyReportHref?: string;
+  /** Rechnet vor, was eine Verschiebung nach sich zöge. */
+  onPreviewTask?: (taskId: string, change: TaskUpdateRequest) => Promise<SchedulePreview>;
 }) {
   const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -69,6 +83,19 @@ export function PlanView({
             Vorgänge
           </p>
         </div>
+
+        {/* Der Wochenbericht ist die Zusammenfassung, die montags per Mail
+            kommt. Der Verweis steht hier, weil eine Mail eine Einbahnstraße
+            ist: Wer sie sucht, findet sie nicht mehr. */}
+        {weeklyReportHref === undefined ? null : (
+          <a
+            href={weeklyReportHref}
+            className="inline-flex w-fit items-center gap-2 text-body text-electric-blue underline-offset-4 hover:underline"
+          >
+            <Mail size={16} aria-hidden />
+            Die Woche im Überblick
+          </a>
+        )}
 
         {/* Das Cockpit steht vor allem anderen. Reihenfolge nach CI 10.2:
             erst wo wir stehen, dann was kommt, dann was du tun musst, dann
@@ -193,6 +220,9 @@ export function PlanView({
           schedule={schedule}
           onClose={() => setSelected(null)}
           onSave={(change) => onChangeTask(selected.id, change)}
+          {...(onPreviewTask === undefined
+            ? {}
+            : { onPreview: (change: TaskUpdateRequest) => onPreviewTask(selected.id, change) })}
           {...(onOpenGuide === undefined
             ? {}
             : {

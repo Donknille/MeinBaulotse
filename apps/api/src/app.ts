@@ -35,9 +35,10 @@ import {
   updateChecklistItem,
 } from './guide-cards.js';
 import { loadDecisions, updateDecision } from './decisions.js';
+import { buildWeeklyReport } from './weekly-report.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { createProjectFromAnswers } from './onboarding.js';
-import { recomputeProject } from './scheduling.js';
+import { previewChange, recomputeProject } from './scheduling.js';
 import { checkSchema } from './schema-check.js';
 
 type App = { Variables: AuthedVariables };
@@ -326,10 +327,54 @@ export function createApp(): Hono<App> {
     return c.json(schedule);
   });
 
+  // Was eine Verschiebung nach sich zöge, ohne sie zu tun (Abschnitt 3.5.6).
+  // Bewusst POST, obwohl nichts geschrieben wird: Die Anfrage trägt einen
+  // Körper, und GET mit Körper ist ein Weg in Ärger mit Zwischenspeichern.
+  v1.post('/projects/:id/tasks/:taskId/preview', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const preview = await withUserTx(c.get('claims'), (tx) =>
+      previewChange(tx, projectId, taskId, parsed.data),
+    );
+    return c.json(preview);
+  });
+
   v1.get('/projects/:id/schedule', async (c) => {
     const projectId = parseId(c.req.param('id'));
     const schedule = await withUserTx(c.get('claims'), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+
+  // -- Wochenbericht ---------------------------------------------------------
+
+  // Derselbe Bericht, den die Montagsmail verschickt — nur als Ansicht. Er
+  // wird unter den Rechten des Fragenden gebaut, wie jede andere Abfrage: Ein
+  // Bericht, der mehr sieht als sein Empfänger, wäre ein Leck mit Zustellung.
+  //
+  // `today` ist überschreibbar, damit sich der Bericht für einen bestimmten
+  // Montag ansehen lässt, ohne die Systemuhr zu stellen. Es verschiebt das
+  // Fenster, spielt aber keine Vergangenheit nach: Der Block „was sich
+  // verschoben hat" misst am tatsächlichen Zeitpunkt der Änderung.
+  v1.get('/projects/:id/weekly-report', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const angefragt = c.req.query('today');
+    const today =
+      angefragt !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(angefragt)
+        ? angefragt
+        : new Date().toISOString().slice(0, 10);
+
+    const report = await withUserTx(c.get('claims'), (tx) =>
+      buildWeeklyReport(tx, projectId, today),
+    );
+    return c.json(report);
   });
 
   // -- Entscheidungen --------------------------------------------------------

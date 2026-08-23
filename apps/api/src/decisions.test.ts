@@ -324,3 +324,75 @@ describe('Klartext für die Frist', () => {
     expect(decisionDueInPlainWords(null)).toContain('noch keine Frist');
   });
 });
+
+describe('Der Fortpflanzungsvorschlag (Abschnitt 3.5.6)', () => {
+  it('nennt die Folgevorgänge, bevor etwas gespeichert wird', async () => {
+    const vorher = await plan();
+    const innenputz = vorher.tasks.find((task) => task.name.includes('Innenputz'))!;
+    const spaeter = workdayOffset(innenputz.currentStart!, 10, KALENDER);
+
+    const antwort = await request(
+      `/api/v1/projects/${projektId}/tasks/${innenputz.id}/preview`,
+      {
+        method: 'POST',
+        token: bauherrToken,
+        body: JSON.stringify({ earliestStart: spaeter, reason: 'lieferzeit' }),
+      },
+    );
+    expect(antwort.status).toBe(200);
+
+    const vorschau = (await antwort.json()) as {
+      tasks: { id: string; name: string; shiftDays: number }[];
+      decisions: { title: string }[];
+      endShiftWorkdays: number;
+      computedEnd: string;
+      previousEnd: string;
+    };
+
+    // Der Innenputz selbst und alles, was daran hängt.
+    expect(vorschau.tasks.length).toBeGreaterThan(5);
+    expect(vorschau.tasks.some((task) => task.id === innenputz.id)).toBe(true);
+    expect(vorschau.tasks.every((task) => task.shiftDays >= 0)).toBe(true);
+    expect(vorschau.endShiftWorkdays).toBeGreaterThan(0);
+    expect(vorschau.computedEnd > vorschau.previousEnd).toBe(true);
+    // Und die Fristen, die mitwandern.
+    expect(vorschau.decisions.length).toBeGreaterThan(0);
+
+    // Nichts davon ist passiert: Der Plan steht unverändert.
+    const nachher = await plan();
+    const putzNachher = nachher.tasks.find((task) => task.id === innenputz.id)!;
+    expect(putzNachher.currentStart).toBe(innenputz.currentStart);
+    expect(putzNachher.earliestStart).toBeNull();
+    expect(nachher.computedEnd).toBe(vorher.computedEnd);
+  });
+
+  it('meldet eine leere Vorschau, wenn sich nichts bewegt', async () => {
+    const vorher = await plan();
+    const vorgang = vorher.tasks.find((task) => task.name.includes('Baugrundgutachten'))!;
+
+    const antwort = await request(
+      `/api/v1/projects/${projektId}/tasks/${vorgang.id}/preview`,
+      {
+        method: 'POST',
+        token: bauherrToken,
+        body: JSON.stringify({ earliestStart: vorgang.currentStart, reason: 'sonstiges' }),
+      },
+    );
+    const vorschau = (await antwort.json()) as { tasks: unknown[]; endShiftWorkdays: number };
+    expect(vorschau.tasks).toHaveLength(0);
+    expect(vorschau.endShiftWorkdays).toBe(0);
+  });
+
+  it('lässt einen Unbeteiligten nicht rechnen', async () => {
+    const vorher = await plan();
+    const antwort = await request(
+      `/api/v1/projects/${projektId}/tasks/${vorher.tasks[0]!.id}/preview`,
+      {
+        method: 'POST',
+        token: gastToken,
+        body: JSON.stringify({ earliestStart: '2026-12-01', reason: 'sonstiges' }),
+      },
+    );
+    expect(antwort.status).toBe(404);
+  });
+});

@@ -14,7 +14,9 @@ import type {
   OnboardingRequest,
   ProjectSchedule,
   ProjectSummary,
+  SchedulePreview,
   TaskUpdateRequest,
+  WeeklyReport,
 } from '@meinbaulotse/shared';
 import { clearDemoSession, readDemoSession } from './demo-auth';
 import { supabase } from './supabase';
@@ -147,6 +149,16 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(change),
     }),
+
+  // Was eine Verschiebung nach sich zöge — ohne sie zu tun.
+  previewTask: (projectId: string, taskId: string, change: TaskUpdateRequest) =>
+    request<SchedulePreview>(`/projects/${projectId}/tasks/${taskId}/preview`, {
+      method: 'POST',
+      body: JSON.stringify(change),
+    }),
+
+  weeklyReport: (projectId: string) =>
+    request<WeeklyReport>(`/projects/${projectId}/weekly-report`),
 
   // Antwortet mit dem ganzen Plan: Wer entscheidet, will wissen, ob der
   // Vorgang dahinter jetzt sicher ist.

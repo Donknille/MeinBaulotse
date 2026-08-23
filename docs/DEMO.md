@@ -178,6 +178,16 @@ Zum Ausprobieren: *Fliesen: Auswahl und Verlegemuster* öffnen, dann den
 Fliesenvorgang im Ablauf um vier Wochen verschieben. Die Frist wandert um
 dieselbe Strecke mit, ohne dass jemand sie anfasst.
 
+## Der Wochenbericht
+
+Über dem Cockpit steht **Die Woche im Überblick**. Das ist derselbe Bericht,
+den die Montagsmail verschickt: was diese Woche auf der Baustelle passiert
+(mit der Kurzfassung der Lotsenkarte), was du entscheiden musst, was sich
+verschoben hat, die Prognose und die Fotos, die jetzt fällig sind.
+
+Im Terminal zeigt `pnpm report:weekly`, wie die Mail aussähe — ohne etwas zu
+verschicken. Einzelheiten in `docs/BETRIEB.md`.
+
 ## Was noch fehlt
 
 - **Termine abstimmen.** Die vier Bestätigungsgrade werden angezeigt, aber
