@@ -13043,6 +13043,25 @@ var scheduleChangeReason = external_exports.enum([
   "nachtrag",
   "sonstiges"
 ]);
+var schedulePreviewRequest = external_exports.object({
+  earliestStart: isoDate.nullable().optional(),
+  actualStart: isoDate.nullable().optional(),
+  actualEnd: isoDate.nullable().optional()
+}).refine((value) => value.earliestStart !== void 0 || value.actualStart !== void 0 || value.actualEnd !== void 0, { message: "Es gibt nichts vorzurechnen." });
+var decoupleRequest = external_exports.object({
+  reason: external_exports.string().trim().min(3).max(500)
+});
+var dependencyDto = external_exports.object({
+  id: external_exports.string().uuid(),
+  predecessorId: external_exports.string().uuid(),
+  predecessorName: external_exports.string(),
+  successorId: external_exports.string().uuid(),
+  successorName: external_exports.string(),
+  type: external_exports.enum(["FS", "SS", "FF"]),
+  lagDays: external_exports.number().int(),
+  decoupledAt: external_exports.string().nullable(),
+  decoupledReason: external_exports.string().nullable()
+});
 var taskUpdateRequest = external_exports.object({
   earliestStart: isoDate.nullable().optional(),
   actualStart: isoDate.nullable().optional(),
@@ -13214,6 +13233,13 @@ var projectSchedule = external_exports.object({
   /** Positiv bedeutet: später fertig als geschuldet. */
   deviationWorkdays: external_exports.number().int().nullable()
 });
+var previewDependency = external_exports.object({
+  id: external_exports.string().uuid(),
+  predecessorId: external_exports.string().uuid(),
+  predecessorName: external_exports.string(),
+  type: external_exports.enum(["FS", "SS", "FF"]),
+  lagDays: external_exports.number().int()
+});
 var schedulePreviewTask = external_exports.object({
   id: external_exports.string().uuid(),
   name: external_exports.string(),
@@ -13222,7 +13248,14 @@ var schedulePreviewTask = external_exports.object({
   fromEnd: isoDate.nullable(),
   toEnd: isoDate.nullable(),
   /** Verschiebung in Kalendertagen. Positiv heißt später. */
-  shiftDays: external_exports.number().int()
+  shiftDays: external_exports.number().int(),
+  /**
+   * Über welche Kanten dieser Vorgang mitgezogen wird.
+   *
+   * Leer beim angefassten Vorgang selbst — der bewegt sich, weil jemand ihn
+   * bewegt, nicht weil etwas ihn zieht.
+   */
+  viaDependencies: external_exports.array(previewDependency)
 });
 var schedulePreviewDecision = external_exports.object({
   id: external_exports.string().uuid(),
@@ -16219,8 +16252,13 @@ async function loadPlan(tx, projectId) {
     [projectId]
   );
   const dependencies = await tx.query(
+    // Entkoppelte Kanten bleiben in der Tabelle stehen, aber sie rechnen
+    // nicht mehr mit (Abschnitt 3.5, Punkt 6). Der Filter steht hier und
+    // nicht im Berechnungskern: Der Kern kennt keine Datenbank und soll von
+    // dieser Unterscheidung nichts wissen — er bekommt einen Graphen, und
+    // welche Kanten darin sind, entscheidet der Aufrufer.
     `select predecessor_id, successor_id, type, lag_days, lag_unit
-     from dependency where project_id = $1`,
+     from dependency where project_id = $1 and decoupled_at is null`,
     [projectId]
   );
   return {
@@ -16347,7 +16385,28 @@ async function previewChange(tx, projectId, taskId, change) {
       toStart: nachher.start,
       fromEnd: row.current_end,
       toEnd: nachher.end,
-      shiftDays: row.current_start === null ? 0 : daysBetween(row.current_start, nachher.start)
+      shiftDays: row.current_start === null ? 0 : daysBetween(row.current_start, nachher.start),
+      viaDependencies: []
+    });
+  }
+  const bewegteIds = new Set(bewegt.map((eintrag) => eintrag.id));
+  bewegteIds.add(taskId);
+  const kanten = await tx.query(
+    `select id, predecessor_id, successor_id, type, lag_days
+       from dependency where project_id = $1 and decoupled_at is null`,
+    [projectId]
+  );
+  const nachId = new Map(bewegt.map((eintrag) => [eintrag.id, eintrag]));
+  for (const kante of kanten.rows) {
+    if (!bewegteIds.has(kante.predecessor_id)) continue;
+    const ziel = nachId.get(kante.successor_id);
+    if (ziel === void 0) continue;
+    ziel.viaDependencies.push({
+      id: kante.id,
+      predecessorId: kante.predecessor_id,
+      predecessorName: nameById.get(kante.predecessor_id) ?? "Vorgang",
+      type: kante.type,
+      lagDays: kante.lag_days
     });
   }
   const entscheidungen = await tx.query(
@@ -18045,6 +18104,96 @@ function createApp(options = {}) {
     const project = await withUserTx(c.get("claims"), (tx) => loadProject(tx, projectId));
     return c.json(project);
   });
+  v1.get("/projects/:id/dependencies", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const dependencies = await withUserTx(
+      c.get("claims"),
+      (tx) => loadDependencies(tx, projectId)
+    );
+    return c.json({ dependencies });
+  });
+  v1.post("/projects/:id/dependencies/:depId/decouple", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const depId = parseId(c.req.param("depId"));
+    const parsed = decoupleRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Schreib kurz, warum dieser Vorgang nicht darauf wartet.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const schedule = await withUserTx(c.get("claims"), async (tx) => {
+      const geaendert = await tx.query(
+        `update dependency d
+            set decoupled_at = now(), decoupled_reason = $3,
+                decoupled_by = mbl.current_member_id($2),
+                pinned_successor_start = (
+                  select t.current_start from task t
+                   where t.id = d.successor_id and t.earliest_start is null
+                )
+          where d.id = $1 and d.project_id = $2 and d.decoupled_at is null
+          returning pinned_successor_start as pinned`,
+        [depId, projectId, parsed.data.reason]
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(404, {
+          message: "Diese Abh\xE4ngigkeit gibt es nicht oder sie ist schon gel\xF6st."
+        });
+      }
+      const gemerkt = geaendert.rows[0]?.pinned ?? null;
+      if (gemerkt !== null) {
+        await tx.query(
+          `update task set earliest_start = $2
+             where id = (select successor_id from dependency where id = $1)`,
+          [depId, gemerkt]
+        );
+      }
+      await recomputeProject(tx, projectId);
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id, meta)
+         values ($1, mbl.current_member_id($1), 'app', 'dependency.decoupled',
+                 'dependency', $2, $3)`,
+        [projectId, depId, JSON.stringify({ reason: parsed.data.reason })]
+      );
+      return loadSchedule(tx, projectId);
+    });
+    return c.json(schedule);
+  });
+  v1.delete("/projects/:id/dependencies/:depId/decouple", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const depId = parseId(c.req.param("depId"));
+    const schedule = await withUserTx(c.get("claims"), async (tx) => {
+      const geaendert = await tx.query(
+        `update dependency
+            set decoupled_at = null, decoupled_reason = null, decoupled_by = null,
+                pinned_successor_start = null
+          where id = $1 and project_id = $2 and decoupled_at is not null
+          returning successor_id, pinned_successor_start as pinned`,
+        [depId, projectId]
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(404, { message: "Diese Abh\xE4ngigkeit ist nicht gel\xF6st." });
+      }
+      const zeile2 = geaendert.rows[0];
+      if (zeile2.pinned !== null) {
+        await tx.query(
+          "update task set earliest_start = null where id = $1 and earliest_start = $2",
+          [zeile2.successor_id, zeile2.pinned]
+        );
+      }
+      await recomputeProject(tx, projectId);
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id)
+         values ($1, mbl.current_member_id($1), 'app', 'dependency.recoupled',
+                 'dependency', $2)`,
+        [projectId, depId]
+      );
+      return loadSchedule(tx, projectId);
+    });
+    return c.json(schedule);
+  });
   v1.post("/projects/:id/deletion", async (c) => {
     const projectId = parseId(c.req.param("id"));
     const body = await c.req.json().catch(() => ({}));
@@ -18254,7 +18403,7 @@ function createApp(options = {}) {
   v1.post("/projects/:id/tasks/:taskId/preview", async (c) => {
     const projectId = parseId(c.req.param("id"));
     const taskId = parseId(c.req.param("taskId"));
-    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    const parsed = schedulePreviewRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       throw new HTTPException(422, {
         message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
@@ -18781,6 +18930,30 @@ function createApp(options = {}) {
     );
   });
   return app;
+}
+async function loadDependencies(tx, projectId) {
+  const result = await tx.query(
+    `select d.id, d.predecessor_id, v.name as predecessor_name,
+            d.successor_id, n.name as successor_name, d.type::text as type, d.lag_days,
+            d.decoupled_at, d.decoupled_reason
+       from dependency d
+       join task v on v.id = d.predecessor_id
+       join task n on n.id = d.successor_id
+      where d.project_id = $1
+      order by (d.decoupled_at is null), n.sort_order`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    predecessorId: row.predecessor_id,
+    predecessorName: row.predecessor_name,
+    successorId: row.successor_id,
+    successorName: row.successor_name,
+    type: row.type,
+    lagDays: row.lag_days,
+    decoupledAt: row.decoupled_at === null ? null : new Date(row.decoupled_at).toISOString(),
+    decoupledReason: row.decoupled_reason
+  }));
 }
 async function deletionState(tx, projectId) {
   const result = await tx.query("select * from mbl.deletion_state($1)", [projectId]);

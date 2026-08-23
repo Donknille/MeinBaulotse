@@ -161,6 +161,10 @@ export function Plan() {
           moneyHref={`/projekt/${projectId ?? ''}/geld`}
           dossierHref={`/projekt/${projectId ?? ''}/akte`}
           onPreviewTask={(taskId, body) => api.previewTask(projectId!, taskId, body)}
+          onDecouple={async (dependencyId, reason) => {
+            await api.decouple(projectId!, dependencyId, reason);
+            await queryClient.invalidateQueries({ queryKey: ['schedule', projectId] });
+          }}
           onInvite={async (body) => {
             await api.inviteMember(projectId!, body);
             await queryClient.invalidateQueries({ queryKey: ['schedule', projectId] });

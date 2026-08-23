@@ -56,6 +56,7 @@ export function PlanView({
   moneyHref,
   dossierHref,
   onPreviewTask,
+  onDecouple,
   onCreateGuestLink,
   onInvite,
   onRemoveMember,
@@ -83,6 +84,8 @@ export function PlanView({
   dossierHref?: string;
   /** Rechnet vor, was eine Verschiebung nach sich zöge. */
   onPreviewTask?: (taskId: string, change: TaskUpdateRequest) => Promise<SchedulePreview>;
+  /** Löst eine Abhängigkeit (Abschnitt 3.5, Punkt 6). */
+  onDecouple?: (dependencyId: string, reason: string) => Promise<void>;
   /** Legt einen Abstimmungslink an und gibt ihn genau einmal zurück. */
   onCreateGuestLink?: (memberId: string) => Promise<GuestTokenCreated>;
   /** Nimmt jemanden ins Bauvorhaben auf. */
@@ -325,6 +328,7 @@ export function PlanView({
           {...(onPreviewTask === undefined
             ? {}
             : { onPreview: (change: TaskUpdateRequest) => onPreviewTask(selected.id, change) })}
+          {...(onDecouple === undefined ? {} : { onDecouple })}
           {...(onOpenGuide === undefined
             ? {}
             : {

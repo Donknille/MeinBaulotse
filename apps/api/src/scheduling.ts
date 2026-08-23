@@ -109,8 +109,13 @@ async function loadPlan(
     lag_days: number;
     lag_unit: 'werktage' | 'kalendertage';
   }>(
+    // Entkoppelte Kanten bleiben in der Tabelle stehen, aber sie rechnen
+    // nicht mehr mit (Abschnitt 3.5, Punkt 6). Der Filter steht hier und
+    // nicht im Berechnungskern: Der Kern kennt keine Datenbank und soll von
+    // dieser Unterscheidung nichts wissen — er bekommt einen Graphen, und
+    // welche Kanten darin sind, entscheidet der Aufrufer.
     `select predecessor_id, successor_id, type, lag_days, lag_unit
-     from dependency where project_id = $1`,
+     from dependency where project_id = $1 and decoupled_at is null`,
     [projectId],
   );
 
@@ -303,6 +308,42 @@ export async function previewChange(
       toEnd: nachher.end,
       shiftDays:
         row.current_start === null ? 0 : daysBetween(row.current_start, nachher.start),
+      viaDependencies: [],
+    });
+  }
+
+  // Über welche Kanten die Vorgänge mitgezogen werden (Abschnitt 3.5,
+  // Punkt 6).
+  //
+  // Gezählt wird die eingehende Kante, deren Vorgänger sich ebenfalls bewegt:
+  // Sie ist der Weg, auf dem die Verschiebung ankommt. Eine Kante von einem
+  // Vorgang, der stehen bleibt, zieht nichts — sie zu lösen brächte nichts
+  // und stünde nur im Weg.
+  const bewegteIds = new Set(bewegt.map((eintrag) => eintrag.id));
+  bewegteIds.add(taskId);
+  const kanten = await tx.query<{
+    id: string;
+    predecessor_id: string;
+    successor_id: string;
+    type: 'FS' | 'SS' | 'FF';
+    lag_days: number;
+  }>(
+    `select id, predecessor_id, successor_id, type, lag_days
+       from dependency where project_id = $1 and decoupled_at is null`,
+    [projectId],
+  );
+
+  const nachId = new Map(bewegt.map((eintrag) => [eintrag.id, eintrag]));
+  for (const kante of kanten.rows) {
+    if (!bewegteIds.has(kante.predecessor_id)) continue;
+    const ziel = nachId.get(kante.successor_id);
+    if (ziel === undefined) continue;
+    ziel.viaDependencies.push({
+      id: kante.id,
+      predecessorId: kante.predecessor_id,
+      predecessorName: nameById.get(kante.predecessor_id) ?? 'Vorgang',
+      type: kante.type,
+      lagDays: kante.lag_days,
     });
   }
 

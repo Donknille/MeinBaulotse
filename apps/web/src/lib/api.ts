@@ -24,6 +24,7 @@ import type {
   MemberInviteRequest,
   ProjectMemberDto,
   ContractUpdateRequest,
+  DependencyDto,
   DefectCreateRequest,
   DefectDto,
   DefectUpdateRequest,
@@ -251,6 +252,21 @@ export const api = {
 
   photoPrompts: async (projectId: string) =>
     (await request<{ fulfilled: string[] }>(`/projects/${projectId}/photo-prompts`)).fulfilled,
+
+  decouple: (projectId: string, dependencyId: string, reason: string) =>
+    request<ProjectSchedule>(`/projects/${projectId}/dependencies/${dependencyId}/decouple`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  recouple: (projectId: string, dependencyId: string) =>
+    request<ProjectSchedule>(`/projects/${projectId}/dependencies/${dependencyId}/decouple`, {
+      method: 'DELETE',
+    }),
+
+  dependencies: async (projectId: string) =>
+    (await request<{ dependencies: DependencyDto[] }>(`/projects/${projectId}/dependencies`))
+      .dependencies,
 
   deletionState: (projectId: string) =>
     request<DeletionState>(`/projects/${projectId}/deletion`),

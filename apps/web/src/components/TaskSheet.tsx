@@ -23,7 +23,9 @@ import { BookOpen, X } from 'lucide-react';
 import type {
   ProjectSchedule,
   ScheduledTaskDto,
+  PreviewDependency,
   SchedulePreview,
+  SchedulePreviewTask,
   TaskUpdateRequest,
 } from '@meinbaulotse/shared';
 import { Button, Field, Select, TextInput } from './ui';
@@ -55,6 +57,7 @@ export function TaskSheet({
   onSave,
   onOpenGuide,
   onPreview,
+  onDecouple,
 }: {
   task: ScheduledTaskDto;
   schedule: ProjectSchedule;
@@ -67,6 +70,8 @@ export function TaskSheet({
    * Fehlt sie, gibt es keinen Vorschlag — so wie im Styleguide.
    */
   onPreview?: (change: TaskUpdateRequest) => Promise<SchedulePreview>;
+  /** Löst eine Abhängigkeit, damit dieser Vorgang nicht mitwandert. */
+  onDecouple?: (dependencyId: string, reason: string) => Promise<void>;
 }) {
   const darfPlanen = schedule.permissions.includes('task.schedule');
   // Eine verstrichene Entscheidungsfrist zu diesem Vorgang ist der wahr-
@@ -90,6 +95,11 @@ export function TaskSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
+  const [loesen, setLoesen] = useState<{
+    dependency: PreviewDependency;
+    task: SchedulePreviewTask;
+  } | null>(null);
+  const [loesenGrund, setLoesenGrund] = useState('');
   const [previewBusy, setPreviewBusy] = useState(false);
 
   // Ein Blatt, das sich nicht mit Escape schließen lässt, fühlt sich wie eine
@@ -313,11 +323,30 @@ export function TaskSheet({
                           ? `, und der Endtermin wandert um ${preview.endShiftWorkdays} Werktage nach hinten.`
                           : `, und der Endtermin rückt um ${Math.abs(preview.endShiftWorkdays)} Werktage vor.`}
                     </p>
-                    <ul className="flex flex-col gap-0.5">
+                    {/* Einzeln entkoppelbar (Abschnitt 3.5, Punkt 6).
+                        In der Vorlage steht die Kante, weil sie meistens
+                        stimmt. Manchmal stimmt sie nicht — dann braucht der
+                        Bauherr keinen Weg, den Ablaufplan umzubauen, sondern
+                        einen Satz: „Der wartet nicht darauf." */}
+                    <ul className="flex flex-col gap-1">
                       {preview.tasks.slice(0, 6).map((entry) => (
-                        <li key={entry.id} className="text-caption text-steel">
-                          {entry.name}: {formatDate(entry.fromStart, referenceYear)} →{' '}
-                          {formatDate(entry.toStart, referenceYear)}
+                        <li key={entry.id} className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="text-caption text-steel">
+                            {entry.name}: {formatDate(entry.fromStart, referenceYear)} →{' '}
+                            {formatDate(entry.toStart, referenceYear)}
+                          </span>
+                          {onDecouple === undefined || entry.viaDependencies.length === 0
+                            ? null
+                            : entry.viaDependencies.map((kante) => (
+                                <button
+                                  key={kante.id}
+                                  type="button"
+                                  className="text-caption text-electric-blue underline underline-offset-4"
+                                  onClick={() => setLoesen({ dependency: kante, task: entry })}
+                                >
+                                  wartet nicht auf {kante.predecessorName}
+                                </button>
+                              ))}
                         </li>
                       ))}
                       {preview.tasks.length > 6 ? (
@@ -326,6 +355,50 @@ export function TaskSheet({
                         </li>
                       ) : null}
                     </ul>
+
+                    {loesen === null ? null : (
+                      <div className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-ash bg-canvas-white p-3">
+                        <p className="text-body text-charcoal">
+                          „{loesen.task.name}" wartet nicht auf „
+                          {loesen.dependency.predecessorName}"?
+                        </p>
+                        <p className="text-caption text-steel">
+                          Der Vorgang bleibt dann, wo er ist, und zieht nicht mehr mit. Die
+                          Abhängigkeit bleibt mit deiner Begründung stehen — sie rechnet nur
+                          nicht mehr mit.
+                        </p>
+                        <input
+                          value={loesenGrund}
+                          onChange={(event) => setLoesenGrund(event.target.value)}
+                          placeholder="Warum nicht? Ein Satz genügt."
+                          className="h-11 w-full rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            disabled={busy || loesenGrund.trim().length < 3}
+                            onClick={() => {
+                              const auftrag = loesen;
+                              setLoesen(null);
+                              setLoesenGrund('');
+                              void onDecouple?.(auftrag.dependency.id, loesenGrund.trim());
+                            }}
+                          >
+                            Abhängigkeit lösen
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setLoesen(null)}
+                          >
+                            Abbrechen
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     {preview.decisions.length > 0 ? (
                       <p className="text-caption text-tangerine">
                         {preview.decisions.length === 1

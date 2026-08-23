@@ -77,6 +77,54 @@ export type ScheduleChangeReason = z.infer<typeof scheduleChangeReason>;
  * ist der Unterschied zwischen „ich nehme die Verschiebung zurück" und „ich
  * sage dazu nichts".
  */
+/**
+ * Eine Abhängigkeit lösen oder wieder verbinden.
+ *
+ * Der Grund ist Pflicht, aus demselben Grund wie bei einer Verschiebung: Wer
+ * eine Abhängigkeit löst, greift in die Bauablauflogik ein, und in vier
+ * Wochen weiß niemand mehr, warum der Maler vor dem Estrich dran war.
+ */
+/**
+ * Die Anfrage an die Vorschau.
+ *
+ * Wie `taskUpdateRequest`, aber **ohne** Begründungspflicht. Eine Vorschau
+ * schreibt nichts; sie beantwortet die Frage „was passiert dann?". Wer erst
+ * begründen muss, um die Folgen zu sehen, begründet, bevor er sie kennt —
+ * und genau darum geht es bei einer Vorschau.
+ */
+export const schedulePreviewRequest = z
+  .object({
+    earliestStart: isoDate.nullable().optional(),
+    actualStart: isoDate.nullable().optional(),
+    actualEnd: isoDate.nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.earliestStart !== undefined
+      || value.actualStart !== undefined
+      || value.actualEnd !== undefined,
+    { message: 'Es gibt nichts vorzurechnen.' },
+  );
+export type SchedulePreviewRequest = z.infer<typeof schedulePreviewRequest>;
+
+export const decoupleRequest = z.object({
+  reason: z.string().trim().min(3).max(500),
+});
+export type DecoupleRequest = z.infer<typeof decoupleRequest>;
+
+export const dependencyDto = z.object({
+  id: z.string().uuid(),
+  predecessorId: z.string().uuid(),
+  predecessorName: z.string(),
+  successorId: z.string().uuid(),
+  successorName: z.string(),
+  type: z.enum(['FS', 'SS', 'FF']),
+  lagDays: z.number().int(),
+  decoupledAt: z.string().nullable(),
+  decoupledReason: z.string().nullable(),
+});
+export type DependencyDto = z.infer<typeof dependencyDto>;
+
 export const taskUpdateRequest = z
   .object({
     earliestStart: isoDate.nullable().optional(),
@@ -303,6 +351,23 @@ export type ProjectSchedule = z.infer<typeof projectSchedule>;
  * und zehn Tage am Ende sind eine andere Entscheidung als ein Vorgang mit
  * Puffer.
  */
+/**
+ * Eine Abhängigkeit, die diesen Vorgang mitzieht — und die sich lösen lässt.
+ *
+ * Abschnitt 3.5, Punkt 6: „Betroffene Folgevorgänge als Vorschlag anzeigen,
+ * einzeln entkoppelbar." Ohne diese Angabe wüsste die Oberfläche nicht,
+ * **welche** Kante sie zum Lösen anbieten soll — und „irgendeine lösen" wäre
+ * schlimmer als gar nichts.
+ */
+export const previewDependency = z.object({
+  id: z.string().uuid(),
+  predecessorId: z.string().uuid(),
+  predecessorName: z.string(),
+  type: z.enum(['FS', 'SS', 'FF']),
+  lagDays: z.number().int(),
+});
+export type PreviewDependency = z.infer<typeof previewDependency>;
+
 export const schedulePreviewTask = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -312,6 +377,13 @@ export const schedulePreviewTask = z.object({
   toEnd: isoDate.nullable(),
   /** Verschiebung in Kalendertagen. Positiv heißt später. */
   shiftDays: z.number().int(),
+  /**
+   * Über welche Kanten dieser Vorgang mitgezogen wird.
+   *
+   * Leer beim angefassten Vorgang selbst — der bewegt sich, weil jemand ihn
+   * bewegt, nicht weil etwas ihn zieht.
+   */
+  viaDependencies: z.array(previewDependency),
 });
 export type SchedulePreviewTask = z.infer<typeof schedulePreviewTask>;
 

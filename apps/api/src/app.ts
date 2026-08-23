@@ -29,14 +29,17 @@ import {
   defectCreateRequest,
   defectUpdateRequest,
   guideFeedbackRequest,
+  decoupleRequest,
   lotseAskRequest,
   memberInviteRequest,
   paymentCreateRequest,
   paymentReleaseRequest,
   onboardingRequest,
+  schedulePreviewRequest,
   taskUpdateRequest,
   type PhaseProgress,
   type ProjectSchedule,
+  type DependencyDto,
   type ProjectMemberDto,
   type ProjectSummary,
   type ScheduledTaskDto,
@@ -371,6 +374,124 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return c.json(project);
   });
 
+  // -- Abhängigkeiten lösen (Abschnitt 3.5, Punkt 6) --------------------------
+
+  v1.get('/projects/:id/dependencies', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const dependencies = await withUserTx(c.get('claims'), (tx) =>
+      loadDependencies(tx, projectId),
+    );
+    return c.json({ dependencies });
+  });
+
+  /**
+   * „Der wartet nicht darauf."
+   *
+   * Die Kante bleibt stehen und rechnet nur nicht mehr mit. Eine gelöschte
+   * Abhängigkeit wäre weg; eine gelöste steht mit Grund und Datum da, und
+   * wenn in vier Wochen jemand fragt, warum der Maler vor dem Estrich dran
+   * war, steht die Antwort in der Zeile.
+   */
+  v1.post('/projects/:id/dependencies/:depId/decouple', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const depId = parseId(c.req.param('depId'));
+    const parsed = decoupleRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Schreib kurz, warum dieser Vorgang nicht darauf wartet.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const schedule = await withUserTx(c.get('claims'), async (tx) => {
+      // Den Termin des Nachfolgers festhalten, **bevor** die Kante fällt.
+      //
+      // Ohne das tut das Lösen etwas anderes, als der Bauherr meint: Hat der
+      // Vorgang nur diese eine Kante, hält ihn danach gar nichts mehr, und
+      // die Vorwärtsrechnung setzt ihn an den Baubeginn — der Maler steht
+      // plötzlich im Mai statt im September. „Der wartet nicht darauf" heißt
+      // aber: Er bleibt, wo er ist.
+      const geaendert = await tx.query<{ pinned: string | null }>(
+        `update dependency d
+            set decoupled_at = now(), decoupled_reason = $3,
+                decoupled_by = mbl.current_member_id($2),
+                pinned_successor_start = (
+                  select t.current_start from task t
+                   where t.id = d.successor_id and t.earliest_start is null
+                )
+          where d.id = $1 and d.project_id = $2 and d.decoupled_at is null
+          returning pinned_successor_start as pinned`,
+        [depId, projectId, parsed.data.reason],
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(404, {
+          message: 'Diese Abhängigkeit gibt es nicht oder sie ist schon gelöst.',
+        });
+      }
+
+      const gemerkt = geaendert.rows[0]?.pinned ?? null;
+      if (gemerkt !== null) {
+        await tx.query(
+          `update task set earliest_start = $2
+             where id = (select successor_id from dependency where id = $1)`,
+          [depId, gemerkt],
+        );
+      }
+      // Die Rechnung neu — sonst stünde der Plan noch auf der alten Kante.
+      await recomputeProject(tx, projectId);
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id, meta)
+         values ($1, mbl.current_member_id($1), 'app', 'dependency.decoupled',
+                 'dependency', $2, $3)`,
+        [projectId, depId, JSON.stringify({ reason: parsed.data.reason })],
+      );
+      return loadSchedule(tx, projectId);
+    });
+    return c.json(schedule);
+  });
+
+  /** Es sich anders überlegen: Die Kante rechnet wieder mit. */
+  v1.delete('/projects/:id/dependencies/:depId/decouple', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const depId = parseId(c.req.param('depId'));
+
+    const schedule = await withUserTx(c.get('claims'), async (tx) => {
+      const geaendert = await tx.query<{ successor_id: string; pinned: string | null }>(
+        `update dependency
+            set decoupled_at = null, decoupled_reason = null, decoupled_by = null,
+                pinned_successor_start = null
+          where id = $1 and project_id = $2 and decoupled_at is not null
+          returning successor_id, pinned_successor_start as pinned`,
+        [depId, projectId],
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(404, { message: 'Diese Abhängigkeit ist nicht gelöst.' });
+      }
+
+      // Den beim Lösen gesetzten Halt wieder wegnehmen — aber nur, wenn er
+      // noch derselbe ist. Hat jemand den Vorgang inzwischen von Hand
+      // verschoben, ist das seine Entscheidung und nicht unsere.
+      const zeile = geaendert.rows[0]!;
+      if (zeile.pinned !== null) {
+        await tx.query(
+          'update task set earliest_start = null where id = $1 and earliest_start = $2',
+          [zeile.successor_id, zeile.pinned],
+        );
+      }
+      await recomputeProject(tx, projectId);
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id)
+         values ($1, mbl.current_member_id($1), 'app', 'dependency.recoupled',
+                 'dependency', $2)`,
+        [projectId, depId],
+      );
+      return loadSchedule(tx, projectId);
+    });
+    return c.json(schedule);
+  });
+
   // -- Löschung (Abschnitt 6.5) ----------------------------------------------
 
   /**
@@ -670,7 +791,10 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   v1.post('/projects/:id/tasks/:taskId/preview', async (c) => {
     const projectId = parseId(c.req.param('id'));
     const taskId = parseId(c.req.param('taskId'));
-    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    // Ohne Begründungspflicht: Eine Vorschau schreibt nichts und beantwortet
+    // nur die Frage „was passiert dann?". Wer erst begründen muss, um die
+    // Folgen zu sehen, begründet, bevor er sie kennt.
+    const parsed = schedulePreviewRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       throw new HTTPException(422, {
         message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
@@ -1314,6 +1438,42 @@ export function createApp(options: AppOptions = {}): Hono<App> {
 }
 
 // -- Hilfsfunktionen --------------------------------------------------------
+
+/** Die Abhängigkeiten mit Namen — gelöste eingeschlossen, sonst wären sie weg. */
+async function loadDependencies(tx: Tx, projectId: string): Promise<DependencyDto[]> {
+  const result = await tx.query<{
+    id: string;
+    predecessor_id: string;
+    predecessor_name: string;
+    successor_id: string;
+    successor_name: string;
+    type: 'FS' | 'SS' | 'FF';
+    lag_days: number;
+    decoupled_at: Date | null;
+    decoupled_reason: string | null;
+  }>(
+    `select d.id, d.predecessor_id, v.name as predecessor_name,
+            d.successor_id, n.name as successor_name, d.type::text as type, d.lag_days,
+            d.decoupled_at, d.decoupled_reason
+       from dependency d
+       join task v on v.id = d.predecessor_id
+       join task n on n.id = d.successor_id
+      where d.project_id = $1
+      order by (d.decoupled_at is null), n.sort_order`,
+    [projectId],
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    predecessorId: row.predecessor_id,
+    predecessorName: row.predecessor_name,
+    successorId: row.successor_id,
+    successorName: row.successor_name,
+    type: row.type,
+    lagDays: row.lag_days,
+    decoupledAt: row.decoupled_at === null ? null : new Date(row.decoupled_at).toISOString(),
+    decoupledReason: row.decoupled_reason,
+  }));
+}
 
 /**
  * Was zur Löschung dieses Bauvorhabens ansteht.

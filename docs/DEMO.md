@@ -130,6 +130,21 @@ Zum Ausprobieren: *Estrich* im Bauvorhaben Ahornweg vier Wochen nach hinten
 schieben. Danach steht oben statt „20 Werktage früher" in Grün ein „1 Werktag
 später" in Tangerine, und alles ab dem Estrich liegt später — bis in den Januar.
 
+**Was zieht das nach?** rechnet die Folgen vor, bevor etwas passiert — und
+verlangt dafür keinen Grund: Wer erst begründen muss, um die Folgen zu sehen,
+begründet, bevor er sie kennt.
+
+Neben jedem mitgezogenen Vorgang steht *wartet nicht auf …*. Das ist die
+Einzelentkopplung aus Abschnitt 3.5, Punkt 6. In der Vorlage steht die Kante,
+weil sie meistens stimmt; manchmal stimmt sie nicht — der Maler im Erdgeschoss
+wartet nicht auf den Estrich im Obergeschoss. Ein Klick, ein Satz zur
+Begründung, und der Vorgang bleibt, wo er ist.
+
+Die Abhängigkeit wird dabei **nicht gelöscht**, sondern gelöst: Sie bleibt mit
+Grund und Datum stehen und rechnet nur nicht mehr mit. Wenn in vier Wochen
+jemand fragt, warum der Maler vor dem Estrich dran war, steht die Antwort in
+der Zeile. Rückgängig machen geht jederzeit.
+
 Jede Verschiebung landet mit ihrem Grund in `schedule_change`. Diese Historie
 ist append-only; nachträglich ändern lässt sich dort nichts.
 
