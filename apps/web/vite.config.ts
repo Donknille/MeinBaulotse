@@ -49,6 +49,29 @@ export default defineConfig({
       },
     }),
   ],
+  /**
+   * Die Bibliotheken bekommen ein eigenes Bündel.
+   *
+   * Nicht, um die erste Ladung kleiner zu machen — die bleibt gleich groß.
+   * Sondern damit eine Auslieferung, die nur den Anwendungscode ändert, nicht
+   * auch React, den Router und den Supabase-Client neu über die Leitung
+   * schickt. Auf einer Baustelle mit einem Balken Empfang ist das der
+   * Unterschied zwischen „lädt kurz" und „lädt".
+   *
+   * `registerType: 'autoUpdate'` heißt, dass genau das regelmäßig passiert.
+   */
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          supabase: ['@supabase/supabase-js'],
+          daten: ['@tanstack/react-query'],
+        },
+      },
+    },
+  },
+
   server: {
     port: 5173,
     // Web und API laufen auf Vercel unter derselben Herkunft. Lokal bildet der

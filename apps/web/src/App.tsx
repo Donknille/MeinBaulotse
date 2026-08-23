@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@supabase/supabase-js';
@@ -6,17 +6,38 @@ import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { onDemoSessionChange, readDemoSession, type DemoSession } from './lib/demo-auth';
 import { DemoLogin } from './routes/DemoLogin';
 import { SignIn } from './routes/SignIn';
-import { Onboarding } from './routes/Onboarding';
 import { Plan } from './routes/Plan';
-import { WeeklyReport } from './routes/WeeklyReport';
-import { Diary } from './routes/Diary';
-import { Lotse } from './routes/Lotse';
-import { Defects } from './routes/Defects';
-import { Money } from './routes/Money';
-import { Dossier } from './routes/Dossier';
 import { GuestConfirm } from './routes/GuestConfirm';
 import { Projects } from './routes/Projects';
-import { Styleguide } from './routes/Styleguide';
+
+/**
+ * Was nicht am Anfang gebraucht wird, kommt nicht am Anfang mit.
+ *
+ * Diese Anwendung wird auf einer Baustelle geöffnet, oft an einem Funkloch
+ * (CI 10.1). Ein Bündel, das jede Ansicht enthält — Bauakte, Vertragsspiegel,
+ * Styleguide samt seiner Beispieldaten —, lässt den Bauherrn auf Dinge
+ * warten, die er in diesem Augenblick nicht ansieht.
+ *
+ * Nicht getrennt sind die drei Wege hinein: Anmeldung, Projektliste, Plan.
+ * Sie sind der Anfang jedes Besuchs, und ein Nachladen mitten im Einstieg
+ * wäre genau die Verzögerung, die vermieden werden soll. Und die
+ * Abstimmungsseite: Der Bauleiter öffnet sie einmal, für zehn Sekunden,
+ * und für ihn ist das Nachladen der ganze Besuch.
+ */
+const Onboarding = lazy(() =>
+  import('./routes/Onboarding').then((m) => ({ default: m.Onboarding })),
+);
+const WeeklyReport = lazy(() =>
+  import('./routes/WeeklyReport').then((m) => ({ default: m.WeeklyReport })),
+);
+const Diary = lazy(() => import('./routes/Diary').then((m) => ({ default: m.Diary })));
+const Lotse = lazy(() => import('./routes/Lotse').then((m) => ({ default: m.Lotse })));
+const Defects = lazy(() => import('./routes/Defects').then((m) => ({ default: m.Defects })));
+const Money = lazy(() => import('./routes/Money').then((m) => ({ default: m.Money })));
+const Dossier = lazy(() => import('./routes/Dossier').then((m) => ({ default: m.Dossier })));
+const Styleguide = lazy(() =>
+  import('./routes/Styleguide').then((m) => ({ default: m.Styleguide })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -70,6 +91,12 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        {/* „Einen Moment." und kein Ladebalken: Das Nachladen dauert im
+            Normalfall keine hundert Millisekunden, und ein Balken, der
+            aufblitzt und verschwindet, ist unruhiger als ein Satz. */}
+        <Suspense
+          fallback={<div className="p-6 text-body text-steel">Einen Moment.</div>}
+        >
         <Routes>
           {/* Der Styleguide ist die lebende Gegenprobe zum CI und braucht
               keine Anmeldung. */}
@@ -105,6 +132,7 @@ export function App() {
             </>
           )}
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   );

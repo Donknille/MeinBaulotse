@@ -481,6 +481,16 @@ Bauherrn.
 
 ## Was noch fehlt
 
+- **Wetterdaten vom DWD.** Abschnitt 3.8 sieht vor, dass die Wetterlage
+  automatisch von der nächstgelegenen Station kommt und mit dem Eintrag
+  eingefroren wird. Dafür braucht es die Koordinaten des Bauvorhabens, die das
+  Onboarding heute nicht erhebt, und einen Abruf bei `opendata.dwd.de`. Von
+  Hand erfasstes Wetter wird bereits mit dem Eintrag eingefroren.
+- **Push zum Wochenbericht.** Er geht als Mail hinaus (`pnpm report:weekly
+  --send`). Der zweite Kanal aus 3.11 fehlt: Er verlangt eigene Schlüssel und
+  einen Umbau am Service Worker, den Regel 7 des Repositoriums nicht ohne Not
+  angefasst sehen will.
+
 - **Lotsenkarten für die übrigen Vorgänge.** Zwölf Karten decken die Phasen ab,
   in denen am meisten schiefgeht; die anderen 22 Vorgänge sagen ehrlich, dass es
   zu ihnen noch keine gibt. Und die fachliche Prüfung durch einen
