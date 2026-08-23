@@ -84,6 +84,66 @@ export const STATUS_LABEL = {
   entfallen: 'Entfallen',
 } as const;
 
+/**
+ * Was in der Datenbank ein Enum-Wert ist, heißt hier, wie ein Mensch es sagt.
+ *
+ * Die Listen stehen hier und nicht in der Maske, in der sie zuerst gebraucht
+ * wurden: Beim Setzen der Bauakte fiel auf, dass dort `einzelgewerke` und
+ * `geringfuegig` im Klartext standen — in einem Dokument, das jemand seinem
+ * Anwalt vorlegt.
+ */
+export const BUILD_TYPE_LABEL: Record<string, string> = {
+  efh_massiv: 'Einfamilienhaus, massiv',
+  efh_fertighaus: 'Fertighaus',
+  sanierung: 'Sanierung im Bestand',
+  sonstiges: 'Sonstiges',
+};
+
+export const CONTRACT_TYPE_LABEL: Record<string, string> = {
+  verbraucherbauvertrag: 'Verbraucherbauvertrag',
+  einzelgewerke: 'Einzelgewerke',
+  architektenvertrag: 'Architektenvertrag',
+  sonstiges: 'Sonstiges',
+};
+
+export const SEVERITY_LABEL: Record<string, string> = {
+  geringfuegig: 'geringfügig',
+  wesentlich: 'wesentlich',
+};
+
+export const DEFECT_STATUS_LABEL: Record<string, string> = {
+  offen: 'offen',
+  anerkannt: 'vom Unternehmen anerkannt',
+  behoben_gemeldet: 'als behoben gemeldet',
+  behoben: 'behoben',
+  // CI 11.2: nicht „strittig", sondern die Sache benennen.
+  strittig: 'zwei Angaben',
+  zurueckgestellt: 'zurückgestellt',
+};
+
+export const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  geplant: 'geplant',
+  faellig: 'fällig',
+  freigegeben: 'freigegeben',
+  teilfreigabe: 'teilweise freigegeben',
+  bezahlt: 'bezahlt',
+};
+
+/** Die Gründe aus `mbl.schedule_change_reason`, ausgeschrieben. */
+export const CHANGE_REASON_LABEL: Record<string, string> = {
+  witterung: 'Witterung',
+  lieferzeit: 'Lieferzeit',
+  kapazitaet: 'Kapazität',
+  planungsaenderung: 'Planungsänderung',
+  bauherren_entscheidung: 'Entscheidung des Bauherrn',
+  vorgewerk_verzug: 'Vorgewerk später fertig',
+  behoerde: 'Behörde',
+  mangelbeseitigung: 'Mängelbeseitigung',
+  nachtrag: 'Nachtrag',
+  planinitialisierung: 'Plan angelegt',
+  sonstiges: 'Sonstiges',
+};
+
 export const FEDERAL_STATE_LABEL: Record<string, string> = {
   BW: 'Baden-Württemberg',
   BY: 'Bayern',

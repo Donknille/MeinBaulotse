@@ -357,6 +357,49 @@ Darunter steht das **Darlehen** mit den Bereitstellungszinsen — die Zahl, die
 sonst erst auf einer Abrechnung auftaucht und bei einem verzögerten Bau
 schnell vierstellig wird.
 
+## Die Bauakte
+
+Der letzte Verweis im Plan heißt **Bauakte**. Er führt auf eine Seite, die
+gedruckt werden will: Deckblatt mit Projekt-, Vertrags- und
+Beteiligtendaten, die Prüfsumme der Tagebuchkette, danach die Chronologie und
+zuletzt die Fotos.
+
+Voreingestellt sind drei Monate zurück; der Zeitraum lässt sich ändern.
+
+Das Besondere ist die **Chronologie**: fünf Quellen in einem Strang —
+Vorgänge, Terminänderungen, Tagebucheinträge, Mängel und Zahlungen. Was am
+selben Tag passiert ist, steht am selben Tag. Das ist der Unterschied zu fünf
+Listen, zwischen denen man hin- und herblättert.
+
+Die Bestätigungsgrade sind darin **optisch unterscheidbar** — und nicht durch
+Farbe allein:
+
+| Zeichen | Grad |
+|---|---|
+| ○ | Von dir eingetragen |
+| ◐ | Vom GU genannt |
+| ● | Abgestimmt |
+| ◑ | Zwei Angaben |
+
+Der Grund ist banal und wichtig: Eine Akte wird gedruckt, und gedruckt wird
+oft in Graustufen. Dann sähen Grün und Tangerine gleich aus, und ausgerechnet
+der Unterschied zwischen „abgestimmt" und „zwei Angaben" wäre verschwunden.
+
+**Das PDF macht der Browser.** „Drucken → Als PDF sichern" ist auf jedem Gerät
+derselbe Griff, und das Ergebnis ist ein PDF wie jedes andere. Es gibt keinen
+Erzeuger auf dem Server, und das ist kein Sparzwang: Fotos gehen nie durch den
+Anwendungsserver (Abschnitt 6.1), ein Erzeuger dort müsste jedes einzelne
+durchziehen.
+
+Daneben steht **Alle Daten als Datei** — der vollständige Export nach
+Abschnitt 6.5, als JSON, mit allem, was zu diesem Bauvorhaben in der Datenbank
+steht. Gelesen unter deinen Rechten, also genau das, was du ohnehin sehen
+darfst.
+
+Anlegen darf die Akte, wer laut Rechtematrix `export.run` hat: Bauherr,
+Zweitbauherr, Sachverständiger. Der GU sieht den Verweis nicht und käme auch
+über die Adresse nicht hinein.
+
 ## Was noch fehlt
 
 - **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
@@ -365,8 +408,6 @@ schnell vierstellig wird.
   in denen am meisten schiefgeht; die anderen 22 Vorgänge sagen ehrlich, dass es
   zu ihnen noch keine gibt. Und die fachliche Prüfung durch einen
   Sachverständigen steht aus, siehe `docs/REDAKTION.md`.
-- **Die Bauakte.** Der Export als PDF mit Chronologie, Fotoanhang und Prüfsumme
-  der Tagebuchkette kommt mit AP 9.
 - **Nachträge anlegen.** Die Tabelle steht, die Route auch; eine Maske dafür
   gibt es noch nicht. In der Demolage sind deshalb keine erfasst.
 

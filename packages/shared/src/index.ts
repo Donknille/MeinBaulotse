@@ -1055,3 +1055,80 @@ export const contractUpdateRequest = z.object({
     .optional(),
 });
 export type ContractUpdateRequest = z.infer<typeof contractUpdateRequest>;
+
+// -- Bauakte (Abschnitt 5.6) -------------------------------------------------
+
+/**
+ * Ein Ereignis in der Chronologie.
+ *
+ * Fünf Quellen, ein Strang: Vorgänge, Terminänderungen, Tagebucheinträge,
+ * Mängel, Zahlungen. Das ist der Punkt einer Akte — was am selben Tag
+ * passiert ist, steht am selben Tag, und nicht in fünf Kapiteln, zwischen
+ * denen der Leser hin- und herblättern muss.
+ */
+export const dossierEvent = z.object({
+  kind: z.enum(['vorgang', 'aenderung', 'tagebuch', 'mangel', 'zahlung']),
+  date: isoDate,
+  title: z.string(),
+  detail: z.string(),
+  /** Bei Vorgängen: der Bestätigungsgrad, optisch zu unterscheiden. */
+  confirmation: z.string().optional(),
+  status: z.string().optional(),
+  severity: z.string().optional(),
+  isWait: z.boolean().optional(),
+  actor: z.string().nullable().optional(),
+  channel: z.string().optional(),
+  /** Bei Tagebucheinträgen: versiegelt, mit Prüfsumme. */
+  sealed: z.boolean().optional(),
+  hash: z.string().nullable().optional(),
+  retracted: z.boolean().optional(),
+  mediaIds: z.array(z.string().uuid()),
+});
+export type DossierEvent = z.infer<typeof dossierEvent>;
+
+/**
+ * Die Fotos der Akte sind dieselben wie überall — `mediaItem`.
+ *
+ * Eine eigene, kleinere Form wäre schnell geschrieben und hätte eine zweite
+ * Ansicht nötig gemacht: Das Bauteil, das ein Foto darstellt, gibt es schon,
+ * samt der Regel, dass eine abweichende Aufnahmezeit angezeigt und nicht
+ * versteckt wird. Genau die will man in einer Akte nicht verlieren.
+ */
+export const dossierPhoto = mediaItem;
+export type DossierPhoto = z.infer<typeof dossierPhoto>;
+
+export const dossier = z.object({
+  project: z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    address: z.string(),
+    federalState: z.string(),
+    buildType: z.string(),
+    contractType: z.string(),
+    hasBasement: z.boolean(),
+    plannedStart: isoDate,
+    contractualCompletion: isoDate.nullable(),
+    contractSumCents: z.number().nullable(),
+    securityPct: z.number().nullable(),
+  }),
+  period: z.object({ from: isoDate, to: isoDate }),
+  members: z.array(
+    z.object({
+      displayName: z.string().nullable(),
+      company: z.string().nullable(),
+      role: z.string(),
+      tradeName: z.string().nullable(),
+      email: z.string().nullable(),
+    }),
+  ),
+  /** Die Prüfsumme der Tagebuchkette — sie gehört aufs Deckblatt. */
+  chain: z.object({
+    headHash: z.string().nullable(),
+    sealedCount: z.number().int(),
+    intact: z.boolean(),
+  }),
+  events: z.array(dossierEvent),
+  photos: z.array(dossierPhoto),
+  createdAt: z.string(),
+});
+export type Dossier = z.infer<typeof dossier>;

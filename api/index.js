@@ -13696,6 +13696,57 @@ var contractUpdateRequest = external_exports.object({
   commitmentFreeMonths: external_exports.number().int().min(0).max(60).nullable().optional(),
   descriptionItems: external_exports.array(external_exports.object({ key: external_exports.string(), present: external_exports.boolean(), note: external_exports.string().max(500).optional() })).optional()
 });
+var dossierEvent = external_exports.object({
+  kind: external_exports.enum(["vorgang", "aenderung", "tagebuch", "mangel", "zahlung"]),
+  date: isoDate,
+  title: external_exports.string(),
+  detail: external_exports.string(),
+  /** Bei Vorgängen: der Bestätigungsgrad, optisch zu unterscheiden. */
+  confirmation: external_exports.string().optional(),
+  status: external_exports.string().optional(),
+  severity: external_exports.string().optional(),
+  isWait: external_exports.boolean().optional(),
+  actor: external_exports.string().nullable().optional(),
+  channel: external_exports.string().optional(),
+  /** Bei Tagebucheinträgen: versiegelt, mit Prüfsumme. */
+  sealed: external_exports.boolean().optional(),
+  hash: external_exports.string().nullable().optional(),
+  retracted: external_exports.boolean().optional(),
+  mediaIds: external_exports.array(external_exports.string().uuid())
+});
+var dossierPhoto = mediaItem;
+var dossier = external_exports.object({
+  project: external_exports.object({
+    id: external_exports.string().uuid(),
+    name: external_exports.string(),
+    address: external_exports.string(),
+    federalState: external_exports.string(),
+    buildType: external_exports.string(),
+    contractType: external_exports.string(),
+    hasBasement: external_exports.boolean(),
+    plannedStart: isoDate,
+    contractualCompletion: isoDate.nullable(),
+    contractSumCents: external_exports.number().nullable(),
+    securityPct: external_exports.number().nullable()
+  }),
+  period: external_exports.object({ from: isoDate, to: isoDate }),
+  members: external_exports.array(external_exports.object({
+    displayName: external_exports.string().nullable(),
+    company: external_exports.string().nullable(),
+    role: external_exports.string(),
+    tradeName: external_exports.string().nullable(),
+    email: external_exports.string().nullable()
+  })),
+  /** Die Prüfsumme der Tagebuchkette — sie gehört aufs Deckblatt. */
+  chain: external_exports.object({
+    headHash: external_exports.string().nullable(),
+    sealedCount: external_exports.number().int(),
+    intact: external_exports.boolean()
+  }),
+  events: external_exports.array(dossierEvent),
+  photos: external_exports.array(dossierPhoto),
+  createdAt: external_exports.string()
+});
 
 // ../../node_modules/hono/dist/helper/factory/index.js
 var createMiddleware = (middleware) => middleware;
@@ -15239,8 +15290,8 @@ async function recomputeDecisionDueDates(tx, projectId, calendar) {
 async function updateDecision(tx, projectId, decisionId, change) {
   const felder = [];
   const werte = [decisionId, projectId];
-  const setze = (spalte, wert) => {
-    werte.push(wert);
+  const setze = (spalte, wert2) => {
+    werte.push(wert2);
     felder.push(`${spalte} = $${werte.length}`);
   };
   if (change.status !== void 0) setze("status", change.status);
@@ -15572,8 +15623,8 @@ async function updateDiaryEntry(tx, projectId, entryId, request) {
   await sealDue(tx, projectId);
   const felder = [];
   const werte = [entryId, projectId];
-  const setze = (spalte, wert) => {
-    werte.push(wert);
+  const setze = (spalte, wert2) => {
+    werte.push(wert2);
     felder.push(`${spalte} = $${werte.length}`);
   };
   if (request.body !== void 0) setze("body", request.body);
@@ -16454,7 +16505,8 @@ async function buildLotseContext(tx, projectId, today) {
     `select t.name, c.reason_text, c.reason_code::text as reason_code,
             c.new_value #>> '{}' as new_value
        from schedule_change c join task t on t.id = c.task_id
-      where c.project_id = $1 and c.created_at >= $2::date and c.field = 'earliest_start'
+      where c.project_id = $1 and c.created_at >= $2::date
+        and c.field in ('current_start', 'current_end', 'status')
       order by c.created_at desc limit 10`,
     [projectId, seit]
   );
@@ -17179,6 +17231,313 @@ async function loadDefectEvents(tx, projectId, defectId) {
   }));
 }
 
+// src/dossier.ts
+async function darfExportieren(tx, projectId) {
+  const erlaubt = await tx.query(
+    "select mbl.has_perm($1, 'export.run') as ok",
+    [projectId]
+  );
+  if (erlaubt.rows[0]?.ok !== true) {
+    throw new HTTPException(403, {
+      message: "Die Bauakte legt der Bauherr an \u2014 oder ein Sachverst\xE4ndiger.",
+      cause: { hint: "Was du sehen darfst, steht im Plan und im Bautagebuch." }
+    });
+  }
+}
+var FELD_NAME = {
+  current_start: "Beginn",
+  current_end: "Ende",
+  duration_days: "Dauer in Tagen",
+  status: "Stand",
+  earliest_start: "fr\xFChester Beginn",
+  proposed_start: "vorgeschlagener Beginn"
+};
+var KEINE_AENDERUNG = "task_created";
+var SCHWERE = {
+  geringfuegig: "geringf\xFCgig",
+  wesentlich: "wesentlich"
+};
+var MANGELSTAND = {
+  offen: "offen",
+  anerkannt: "vom Unternehmen anerkannt",
+  behoben_gemeldet: "als behoben gemeldet",
+  behoben: "behoben",
+  strittig: "zwei Angaben",
+  zurueckgestellt: "zur\xFCckgestellt"
+};
+var GRUND = {
+  witterung: "Witterung",
+  lieferzeit: "Lieferzeit",
+  kapazitaet: "Kapazit\xE4t",
+  planungsaenderung: "Planungs\xE4nderung",
+  bauherren_entscheidung: "Entscheidung des Bauherrn",
+  vorgewerk_verzug: "Vorgewerk sp\xE4ter fertig",
+  behoerde: "Beh\xF6rde",
+  mangelbeseitigung: "M\xE4ngelbeseitigung",
+  nachtrag: "Nachtrag",
+  planinitialisierung: "Plan angelegt",
+  sonstiges: "Sonstiges"
+};
+var ZAHLUNGSSTAND = {
+  geplant: "geplant",
+  faellig: "f\xE4llig",
+  freigegeben: "freigegeben",
+  teilfreigabe: "teilweise freigegeben",
+  bezahlt: "bezahlt"
+};
+function tag2(iso) {
+  const [jahr, monat, tagOfMonth] = iso.split("-");
+  return `${tagOfMonth}.${monat}.${jahr}`;
+}
+function wert(roh) {
+  if (roh === null) return "\u2014";
+  return /^\d{4}-\d{2}-\d{2}$/.test(roh) ? tag2(roh) : roh;
+}
+function sortiert(events) {
+  return events.sort((a, b) => a.date === b.date ? a.kind.localeCompare(b.kind) : a.date.localeCompare(b.date));
+}
+async function buildDossier(tx, projectId, zeitraum) {
+  await darfExportieren(tx, projectId);
+  const kopf = await tx.query(
+    `select id, name, address, postal_code, city, federal_state::text as federal_state,
+            build_type::text as build_type, contract_type::text as contract_type,
+            has_basement, planned_start, contractual_completion, contract_sum_cents,
+            security_pct
+       from project where id = $1`,
+    [projectId]
+  );
+  const p = kopf.rows[0];
+  if (p === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const mitglieder = await tx.query(
+    `select m.display_name, m.company, m.role::text as role, t.name as trade_name, m.email
+       from project_member m
+       left join trade t on t.id = m.trade_id
+      where m.project_id = $1 and m.revoked_at is null
+      order by m.role, m.display_name`,
+    [projectId]
+  );
+  const kette = await verifyDiaryChain(tx, projectId);
+  const events = [];
+  const vorgaenge = await tx.query(
+    `select t.id, t.name, t.current_start, t.current_end, t.actual_start, t.actual_end,
+            t.status::text as status, t.confirmation::text as confirmation, t.is_wait,
+            tr.name as trade_name
+       from task t left join trade tr on tr.id = t.trade_id
+      where t.project_id = $1
+        and t.current_start is not null
+        and t.current_start <= $3
+        and coalesce(t.current_end, t.current_start) >= $2
+      order by t.current_start`,
+    [projectId, zeitraum.from, zeitraum.to]
+  );
+  for (const row of vorgaenge.rows) {
+    events.push({
+      kind: "vorgang",
+      date: row.actual_start ?? row.current_start,
+      title: row.name,
+      detail: `${tag2(row.current_start)} bis ${tag2(row.current_end ?? row.current_start)}` + (row.actual_start === null ? "" : `, tats\xE4chlich ab ${tag2(row.actual_start)}` + (row.actual_end === null ? "" : ` bis ${tag2(row.actual_end)}`)) + (row.trade_name === null ? "" : `, ${row.trade_name}`),
+      confirmation: row.confirmation,
+      status: row.status,
+      isWait: row.is_wait,
+      mediaIds: []
+    });
+  }
+  const aenderungen = await tx.query(
+    `select t.name as task_name, c.field, c.old_value #>> '{}' as old_value,
+            c.new_value #>> '{}' as new_value, c.reason_code::text as reason_code,
+            c.reason_text, m.display_name as actor_name,
+            c.actor_channel::text as actor_channel, c.effect_days_on_completion,
+            c.created_at::date as created_date
+       from schedule_change c
+       left join task t on t.id = c.task_id
+       left join project_member m on m.id = c.actor_member_id
+      where c.project_id = $1 and c.created_at::date between $2 and $3
+        and c.field <> '${KEINE_AENDERUNG}'
+      order by c.created_at`,
+    [projectId, zeitraum.from, zeitraum.to]
+  );
+  for (const row of aenderungen.rows) {
+    events.push({
+      kind: "aenderung",
+      date: row.created_date,
+      title: `${row.task_name ?? "Bauvorhaben"}: ${FELD_NAME[row.field] ?? row.field}`,
+      detail: `${wert(row.old_value)} \u2192 ${wert(row.new_value)}` + (row.reason_code === null ? "" : `, Grund: ${GRUND[row.reason_code] ?? row.reason_code}`) + (row.reason_text === null ? "" : ` (${row.reason_text})`) + (row.effect_days_on_completion === null || row.effect_days_on_completion === 0 ? "" : `, Endtermin ${row.effect_days_on_completion > 0 ? "+" : ""}${row.effect_days_on_completion} Werktage`),
+      actor: row.actor_name,
+      channel: row.actor_channel,
+      mediaIds: []
+    });
+  }
+  const eintraege = await tx.query(
+    `select d.id, d.entry_date, d.body, m.display_name as author_name, d.locked_at,
+            d.content_hash, d.retracted_at, d.retraction_reason,
+            (select array_agg(md.id order by md.created_at) from media md
+              where md.diary_entry_id = d.id) as media_ids
+       from diary_entry d
+       left join project_member m on m.id = d.author_member_id
+      where d.project_id = $1 and d.entry_date between $2 and $3
+      order by d.entry_date`,
+    [projectId, zeitraum.from, zeitraum.to]
+  );
+  for (const row of eintraege.rows) {
+    events.push({
+      kind: "tagebuch",
+      date: row.entry_date,
+      title: row.retracted_at === null ? "Bautagebuch" : "Bautagebuch (zur\xFCckgezogen)",
+      detail: row.body + (row.retraction_reason === null ? "" : `
+
+Zur\xFCckgezogen: ${row.retraction_reason}`),
+      actor: row.author_name,
+      sealed: row.locked_at !== null,
+      hash: row.content_hash,
+      retracted: row.retracted_at !== null,
+      mediaIds: row.media_ids ?? []
+    });
+  }
+  const maengel = await tx.query(
+    `select d.id, d.title, d.description, d.location_text, d.severity::text as severity,
+            d.status::text as status, d.deadline, d.reported_at::date as reported_date,
+            t.name as task_name,
+            (select array_agg(md.id order by md.created_at) from media md
+              where md.defect_id = d.id) as media_ids
+       from defect d left join task t on t.id = d.task_id
+      where d.project_id = $1 and d.reported_at::date between $2 and $3
+      order by d.reported_at`,
+    [projectId, zeitraum.from, zeitraum.to]
+  );
+  for (const row of maengel.rows) {
+    events.push({
+      kind: "mangel",
+      date: row.reported_date,
+      title: row.title,
+      detail: [
+        row.description,
+        row.location_text === null ? null : `Ort: ${row.location_text}`,
+        row.task_name === null ? null : `Vorgang: ${row.task_name}`,
+        `Schwere: ${SCHWERE[row.severity] ?? row.severity}, Stand: ${MANGELSTAND[row.status] ?? row.status}`,
+        row.deadline === null ? null : `Frist: ${tag2(row.deadline)}`
+      ].filter((teil) => teil !== null).join("\n"),
+      severity: row.severity,
+      status: row.status,
+      mediaIds: row.media_ids ?? []
+    });
+  }
+  const zahlungen = await tx.query(
+    `select name, amount_cents, status::text as status, released_at::date as released_date,
+            withheld_cents, withheld_reason
+       from payment_milestone
+      where project_id = $1 and released_at::date between $2 and $3
+      order by released_at`,
+    [projectId, zeitraum.from, zeitraum.to]
+  );
+  for (const row of zahlungen.rows) {
+    events.push({
+      kind: "zahlung",
+      date: row.released_date ?? zeitraum.to,
+      title: row.name,
+      detail: `${row.amount_cents === null ? "\u2014" : `${Math.round(Number(row.amount_cents) / 100)} Euro`}, ${ZAHLUNGSSTAND[row.status] ?? row.status}` + (row.withheld_cents === null ? "" : `, einbehalten ${Math.round(Number(row.withheld_cents) / 100)} Euro \u2014 ${row.withheld_reason}`),
+      status: row.status,
+      mediaIds: []
+    });
+  }
+  const fotos = await tx.query(
+    `select id, storage_path, mime, bytes, sha256, exif_taken_at, exif_lat, exif_lon,
+            stated_date, caption, photo_prompt_key, task_id, created_at
+       from media
+      where project_id = $1
+        and coalesce(stated_date, created_at::date) between $2 and $3
+      order by coalesce(exif_taken_at, created_at)`,
+    [projectId, zeitraum.from, zeitraum.to]
+  );
+  return {
+    project: {
+      id: p.id,
+      name: p.name,
+      address: [p.address, [p.postal_code, p.city].filter(Boolean).join(" ")].filter((teil) => teil !== null && teil !== "").join(", "),
+      federalState: p.federal_state,
+      buildType: p.build_type,
+      contractType: p.contract_type,
+      hasBasement: p.has_basement,
+      plannedStart: p.planned_start,
+      contractualCompletion: p.contractual_completion,
+      contractSumCents: p.contract_sum_cents === null ? null : Number(p.contract_sum_cents),
+      securityPct: p.security_pct === null ? null : Number(p.security_pct)
+    },
+    period: zeitraum,
+    members: mitglieder.rows.map((row) => ({
+      displayName: row.display_name,
+      company: row.company,
+      role: row.role,
+      tradeName: row.trade_name,
+      email: row.email
+    })),
+    chain: {
+      headHash: kette.headHash,
+      sealedCount: kette.sealedCount,
+      intact: kette.intact
+    },
+    events: sortiert(events),
+    photos: fotos.rows.map((row) => ({
+      id: row.id,
+      storagePath: row.storage_path,
+      mime: row.mime,
+      bytes: Number(row.bytes),
+      sha256: row.sha256,
+      exifTakenAt: row.exif_taken_at === null ? null : new Date(row.exif_taken_at).toISOString(),
+      exifLat: row.exif_lat === null ? null : Number(row.exif_lat),
+      exifLon: row.exif_lon === null ? null : Number(row.exif_lon),
+      statedDate: row.stated_date,
+      caption: row.caption,
+      photoPromptKey: row.photo_prompt_key,
+      taskId: row.task_id,
+      createdAt: new Date(row.created_at).toISOString()
+    })),
+    // Das Datum der Erstellung gehört aufs Deckblatt: Eine Akte ohne Stichtag
+    // sagt nicht, worauf sie sich bezieht.
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+var EXPORT_TABELLEN = [
+  "project",
+  "project_member",
+  "task",
+  "dependency",
+  "schedule_change",
+  "decision",
+  "diary_entry",
+  "media",
+  "defect",
+  "defect_event",
+  "payment_milestone",
+  "change_order",
+  "loan_drawdown",
+  "contract_check",
+  "contract_description_item",
+  "task_confirmation",
+  "guide_card_read",
+  "checklist_item",
+  "audit_log"
+];
+async function buildExport(tx, projectId) {
+  await darfExportieren(tx, projectId);
+  const daten = {};
+  for (const tabelle of EXPORT_TABELLEN) {
+    const spalte = tabelle === "project" ? "id" : "project_id";
+    const result = await tx.query(
+      `select * from ${tabelle} where ${spalte} = $1`,
+      [projectId]
+    );
+    daten[tabelle] = result.rows;
+  }
+  return {
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    projectId,
+    note: "Vollst\xE4ndiger Export dieses Bauvorhabens. Enth\xE4lt nur, was du in der Anwendung ohnehin sehen darfst \u2014 dieselben Rechte, dieselbe Sicht.",
+    data: daten
+  };
+}
+
 // src/contract-rules.ts
 var DESCRIPTION_ITEMS = [
   { key: "allgemeine_beschreibung", label: "Allgemeine Beschreibung des Geb\xE4udes und Art der Ausf\xFChrung" },
@@ -17272,8 +17631,8 @@ function commitmentInterest(options) {
   return { cents: Math.round(zinsen), days: tageGesamt };
 }
 function tage(iso) {
-  const [jahr, monat, tag2] = iso.split("-").map(Number);
-  return jahr * 360 + (monat - 1) * 30 + Math.min(tag2, 30);
+  const [jahr, monat, tag3] = iso.split("-").map(Number);
+  return jahr * 360 + (monat - 1) * 30 + Math.min(tag3, 30);
 }
 
 // src/money.ts
@@ -17412,7 +17771,7 @@ async function refreshContractChecks(tx, projectId) {
     contractSumCents: p.contract_sum_cents === null ? null : Number(p.contract_sum_cents),
     contractualCompletion: p.contractual_completion,
     securityPct: p.security_pct === null ? null : Number(p.security_pct),
-    milestonePcts: anteile.rows.map((row) => row.pct === null ? null : Number(row.pct)).filter((wert) => wert !== null),
+    milestonePcts: anteile.rows.map((row) => row.pct === null ? null : Number(row.pct)).filter((wert2) => wert2 !== null),
     agreedChangeOrderCents: Number(nachtraege.rows[0]?.summe ?? 0),
     descriptionReviewed: punkte.rowCount ?? 0,
     descriptionMissing: fehlend
@@ -17696,8 +18055,8 @@ function createApp(options = {}) {
       async (tx) => {
         const felder = [];
         const werte = [taskId, projectId];
-        const setze = (spalte, wert) => {
-          werte.push(wert);
+        const setze = (spalte, wert2) => {
+          werte.push(wert2);
           felder.push(`${spalte} = $${werte.length}`);
         };
         if (change.earliestStart !== void 0) setze("earliest_start", change.earliestStart);
@@ -18011,6 +18370,30 @@ function createApp(options = {}) {
       return loadContractMirror(tx, projectId);
     });
     return c.json(mirror);
+  });
+  v1.get("/projects/:id/dossier", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const bis = heute(c);
+    const von = c.req.query("from");
+    const from = von !== void 0 && /^\d{4}-\d{2}-\d{2}$/.test(von) ? von : new Date(Date.parse(`${bis}T00:00:00Z`) - 90 * 864e5).toISOString().slice(0, 10);
+    const to = c.req.query("to");
+    const dossier2 = await withUserTx(
+      c.get("claims"),
+      (tx) => buildDossier(tx, projectId, {
+        from,
+        to: to !== void 0 && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : bis
+      })
+    );
+    return c.json(dossier2);
+  });
+  v1.get("/projects/:id/export", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const daten = await withUserTx(c.get("claims"), (tx) => buildExport(tx, projectId));
+    c.header(
+      "content-disposition",
+      `attachment; filename="meinbaulotse-${projectId}-${heute(c)}.json"`
+    );
+    return c.json(daten);
   });
   const lotseModel = options.lotseModel === void 0 ? modelAusUmgebung() : options.lotseModel;
   v1.post("/projects/:id/lotse", async (c) => {

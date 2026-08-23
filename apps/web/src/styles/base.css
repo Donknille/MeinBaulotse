@@ -56,3 +56,54 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Druck — die Bauakte (Abschnitt 5.6)
+ 
+   Diese Regeln gelten der einen Ansicht, die auf Papier gehört. Das PDF macht
+   der Browser: „Drucken → Als PDF sichern" ist auf jedem Gerät derselbe
+   Griff, und das Ergebnis ist ein PDF wie jedes andere. Ein Erzeuger im
+   Serverbündel müsste dagegen jedes Baustellenfoto durch die Function ziehen,
+   und genau das schließt Abschnitt 6.1 aus.
+   --------------------------------------------------------------------------- */
+
+@page {
+  size: A4;
+  /* Links mehr Rand: Eine Akte wird abgeheftet. */
+  margin: 18mm 16mm 20mm 22mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  /* Farben sind im Druck eine Zugabe, nie die Aussage — der Bestätigungsgrad
+     trägt zusätzlich ein Zeichen und seinen Namen. Trotzdem sollen sie
+     kommen, wenn der Drucker sie kann. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Der Browser druckt Adressen hinter Verweise. In einer Akte ist das
+     Rauschen: Die Adressen führen hinter eine Anmeldung. */
+  a[href]::after {
+    content: '';
+  }
+
+  /* Eine Überschrift allein am Seitenende ist schlechte Typografie und in
+     einer Akte auch schlecht zu lesen. */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  img {
+    max-height: 8cm;
+    object-fit: contain;
+  }
+}

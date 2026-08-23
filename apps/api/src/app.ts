@@ -72,6 +72,7 @@ import { checkSchema } from './schema-check.js';
 import { frage, loadConversation, loadConversations } from './lotse.js';
 import { modelAusUmgebung, type LotseModel } from './lotse-model.js';
 import { createDefect, loadDefectEvents, loadDefects, updateDefect } from './defects.js';
+import { buildDossier, buildExport } from './dossier.js';
 import {
   loadChangeOrders,
   loadContractMirror,
@@ -750,6 +751,51 @@ export function createApp(options: AppOptions = {}): Hono<App> {
       return loadContractMirror(tx, projectId);
     });
     return c.json(mirror);
+  });
+
+  // -- Bauakte ---------------------------------------------------------------
+
+  /**
+   * Die Akte als Daten, nicht als PDF.
+   *
+   * Das PDF macht der Browser. Der Grund steht in `dossier.ts` und ist kein
+   * Bequemlichkeitsargument: Fotos gehen nie durch den Anwendungsserver
+   * (Abschnitt 6.1), und ein Erzeuger hier müsste jedes einzelne durchziehen.
+   */
+  v1.get('/projects/:id/dossier', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const bis = heute(c);
+    const von = c.req.query('from');
+    const from =
+      von !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(von)
+        ? von
+        : new Date(Date.parse(`${bis}T00:00:00Z`) - 90 * 86_400_000).toISOString().slice(0, 10);
+    const to = c.req.query('to');
+
+    const dossier = await withUserTx(c.get('claims'), (tx) =>
+      buildDossier(tx, projectId, {
+        from,
+        to: to !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : bis,
+      }),
+    );
+    return c.json(dossier);
+  });
+
+  /**
+   * Der vollständige Datenexport (Abschnitt 6.5).
+   *
+   * Als Datei, nicht als Ansicht: `content-disposition` sorgt dafür, dass der
+   * Browser sie ablegt statt sie anzuzeigen. Ein Export, den man aus dem
+   * Adressfeld kopieren muss, ist keine Selbstbedienung.
+   */
+  v1.get('/projects/:id/export', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const daten = await withUserTx(c.get('claims'), (tx) => buildExport(tx, projectId));
+    c.header(
+      'content-disposition',
+      `attachment; filename="meinbaulotse-${projectId}-${heute(c)}.json"`,
+    );
+    return c.json(daten);
   });
 
   // -- Frag den Lotsen -------------------------------------------------------

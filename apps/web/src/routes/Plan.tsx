@@ -141,6 +141,7 @@ export function Plan() {
           lotseHref={`/projekt/${projectId ?? ''}/lotse`}
           defectsHref={`/projekt/${projectId ?? ''}/maengel`}
           moneyHref={`/projekt/${projectId ?? ''}/geld`}
+          dossierHref={`/projekt/${projectId ?? ''}/akte`}
           onPreviewTask={(taskId, body) => api.previewTask(projectId!, taskId, body)}
           onCreateGuestLink={async (memberId) => {
             const created = await api.createGuestLink(projectId!, { memberId });

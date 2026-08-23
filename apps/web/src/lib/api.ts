@@ -20,6 +20,7 @@ import type {
   GuestTokenCreateRequest,
   ChangeOrderCreateRequest,
   ContractMirror,
+  Dossier,
   ContractUpdateRequest,
   DefectCreateRequest,
   DefectDto,
@@ -353,6 +354,9 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(change),
     }),
+
+  dossier: (projectId: string, from: string, to: string) =>
+    request<Dossier>(`/projects/${projectId}/dossier?from=${from}&to=${to}`),
 
   dismissFinding: (projectId: string, findingId: string, reason: string) =>
     request<ContractMirror>(`/projects/${projectId}/contract/findings/${findingId}/dismiss`, {

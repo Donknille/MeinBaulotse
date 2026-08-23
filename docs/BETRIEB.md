@@ -223,3 +223,37 @@ Methode, aber die, nach der die Bank abrechnet. Die Zahl soll zur Abrechnung
 passen und nicht zum Kalender. Grundlage sind `project.loan_total_cents`,
 `commitment_interest_pct`, `commitment_free_months` und die Abrufe in
 `loan_drawdown`.
+
+## Die Bauakte
+
+### Warum es keinen PDF-Erzeuger gibt
+
+`GET /api/v1/projects/:id/dossier` liefert die Akte als Daten. Gesetzt wird sie
+in `apps/web/src/routes/Dossier.tsx`, gedruckt vom Browser.
+
+Zwei Gründe, und der zweite wiegt schwerer:
+
+1. Eine PDF-Bibliothek in der Vercel-Function wäre ein Vielfaches ihrer
+   heutigen Größe, samt eingebetteter Schriften, und lieferte eine schlechtere
+   Typografie als der Browser, der die CI-Schriften ohnehin hat.
+2. **Fotos gehen nie durch den Anwendungsserver** (Abschnitt 6.1). Ein
+   Erzeuger dort müsste jedes Baustellenfoto durch die Function ziehen — genau
+   der Weg, den die Spezifikation ausschließt.
+
+Die Druckregeln stehen am Ende von `apps/web/src/styles/base.css`: A4, links
+mehr Rand zum Abheften, keine Überschrift allein am Seitenende, Bedienelemente
+weg.
+
+### Wer die Akte anlegen darf
+
+`export.run` aus der Rechtematrix: `owner`, `co_owner`, `expert`. Geprüft wird
+in `dossier.ts` und nicht nur über die RLS — die begrenzt, **was** jemand
+sieht, und ein GU bekäme damit seinen Ausschnitt als Dokument mit Deckblatt
+und Prüfsumme. Das ist etwas anderes als eine Bildschirmansicht.
+
+### Der vollständige Datenexport
+
+`GET /api/v1/projects/:id/export` gibt jede Tabelle des Bauvorhabens als JSON,
+mit `content-disposition: attachment`. Die Liste der Tabellen steht in
+`EXPORT_TABELLEN`; wer eine Tabelle ergänzt, ergänzt sie dort — sonst fehlt
+sie still im Export, und das fällt erst auf, wenn jemand sie braucht.

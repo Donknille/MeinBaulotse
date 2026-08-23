@@ -175,6 +175,10 @@ export async function buildLotseContext(
     [projectId],
   );
 
+  // `earliest_start` ist eine Spalte am Vorgang, keine, die der Trigger
+  // protokolliert: Er schreibt `current_start`, sobald die Rechnung den Termin
+  // daraufhin verschiebt. Der Filter zeigte auf ein Feld, das es in der
+  // Historie nie gibt — der Block blieb dadurch immer leer.
   const verschiebungen = await tx.query<{
     name: string;
     reason_text: string | null;
@@ -184,7 +188,8 @@ export async function buildLotseContext(
     `select t.name, c.reason_text, c.reason_code::text as reason_code,
             c.new_value #>> '{}' as new_value
        from schedule_change c join task t on t.id = c.task_id
-      where c.project_id = $1 and c.created_at >= $2::date and c.field = 'earliest_start'
+      where c.project_id = $1 and c.created_at >= $2::date
+        and c.field in ('current_start', 'current_end', 'status')
       order by c.created_at desc limit 10`,
     [projectId, seit],
   );

@@ -13,6 +13,7 @@ import { Diary } from './routes/Diary';
 import { Lotse } from './routes/Lotse';
 import { Defects } from './routes/Defects';
 import { Money } from './routes/Money';
+import { Dossier } from './routes/Dossier';
 import { GuestConfirm } from './routes/GuestConfirm';
 import { Projects } from './routes/Projects';
 import { Styleguide } from './routes/Styleguide';
@@ -99,6 +100,7 @@ export function App() {
               <Route path="/projekt/:projectId/lotse" element={<Lotse />} />
               <Route path="/projekt/:projectId/maengel" element={<Defects />} />
               <Route path="/projekt/:projectId/geld" element={<Money />} />
+              <Route path="/projekt/:projectId/akte" element={<Dossier />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}
