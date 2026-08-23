@@ -423,6 +423,25 @@ Anlegen darf die Akte, wer laut Rechtematrix `export.run` hat: Bauherr,
 Zweitbauherr, Sachverständiger. Der GU sieht den Verweis nicht und käme auch
 über die Adresse nicht hinein.
 
+## Ein Bauvorhaben löschen
+
+Ganz unten im Plan, ohne Überschrift: *Dieses Bauvorhaben löschen*. Löschen
+ist keine Aufgabe, die jemand sucht, sondern eine, die es geben muss
+(Abschnitt 6.5).
+
+Es ist ein Antrag mit Frist, kein Knopf. Zum Bestätigen wird der Projektname
+abgetippt — ein „Wirklich?"-Dialog wird weggeklickt, ein Name nicht. Danach
+verschwindet das Bauvorhaben aus der Liste, und dreißig Tage lang steht oben
+*Doch behalten*.
+
+Gelöscht ist in dieser Zeit nichts. Entfernt werden die Daten erst vom
+Betreiber, mit `pnpm project:purge`. Der Grund steht in `docs/BETRIEB.md`: Die
+Anwendungsrolle darf Historie gar nicht löschen, und das soll so bleiben.
+
+Läuft die Gewährleistung noch — also weniger als fünf Jahre seit der Abnahme —
+steht das im Dialog. Als Auskunft, nicht als Sperre: Es sind die Daten des
+Bauherrn.
+
 ## Was noch fehlt
 
 - **Lotsenkarten für die übrigen Vorgänge.** Zwölf Karten decken die Phasen ab,

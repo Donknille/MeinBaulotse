@@ -257,3 +257,44 @@ und Prüfsumme. Das ist etwas anderes als eine Bildschirmansicht.
 mit `content-disposition: attachment`. Die Liste der Tabellen steht in
 `EXPORT_TABELLEN`; wer eine Tabelle ergänzt, ergänzt sie dort — sonst fehlt
 sie still im Export, und das fällt erst auf, wenn jemand sie braucht.
+
+## Löschung (Abschnitt 6.5)
+
+Zwei Schritte, und die Trennung ist Absicht.
+
+**Der Bauherr beantragt.** Im Plan ganz unten steht *Dieses Bauvorhaben
+löschen*. Er tippt den Projektnamen ab, das Bauvorhaben verschwindet aus
+seiner Liste, und dreißig Tage lang kann er es zurückholen. Gelöscht ist bis
+dahin nichts.
+
+**Der Betreiber löscht.** Danach, mit einem Werkzeug, das die Anwendung nicht
+hat:
+
+```bash
+pnpm project:purge              # zeigt nur an, was anliegt
+pnpm project:purge --wirklich   # entfernt, was die Frist hinter sich hat
+```
+
+Der Grund für die Trennung: Die Anwendungsrolle hat auf `schedule_change`,
+`diary_entry`, `task_confirmation`, `defect_event`, `assistant_message` und
+`media` **kein** Löschrecht, und Trigger halten zusätzlich dagegen. Das ist
+die Grenze, an der es hängen soll — ein Fehler im Anwendungscode kann keine
+Akte vernichten.
+
+Das Skript schaltet die Schutztrigger ab, löscht und schaltet sie wieder ein,
+alles in **einer** Transaktion. Bricht etwas ab, war nichts.
+
+**Die Fotos gehen nicht mit.** Sie liegen in der Ablage unter
+`bauakte/<projektkennung>/` und sind dort zu entfernen — im Supabase-Dashboard
+unter *Storage* oder über die Storage-API. Sie wandern nicht automatisch mit,
+weil kein Anwendungspfad Dateien löscht: Was einmal in der Bauakte war, soll
+nicht durch einen Programmfehler verschwinden können.
+
+**Was der Bauherr vorher mitnehmen sollte:** die Bauakte als PDF und den
+vollständigen Datenexport. Beides steht unter *Bauakte*. Die Ansicht sagt es
+ihm auch.
+
+Die Gewährleistung läuft fünf Jahre ab Abnahme (§ 634a Abs. 1 Nr. 2 BGB). Ist
+das Bauvorhaben abgenommen und liegt die Abnahme weniger als fünf Jahre
+zurück, weist die Ansicht darauf hin — als Auskunft, nicht als Sperre. Es sind
+seine Daten.

@@ -357,6 +357,7 @@ export function createApp(options: AppOptions = {}): Hono<App> {
          from project p
          join project_member m on m.project_id = p.id
          where m.user_id = mbl.current_user_id() and m.revoked_at is null
+           and p.deletion_requested_at is null
          order by p.created_at desc`,
       );
       return result.rows.map(toProjectSummary);
@@ -368,6 +369,94 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const projectId = parseId(c.req.param('id'));
     const project = await withUserTx(c.get('claims'), (tx) => loadProject(tx, projectId));
     return c.json(project);
+  });
+
+  // -- Löschung (Abschnitt 6.5) ----------------------------------------------
+
+  /**
+   * Die Löschung beantragen.
+   *
+   * Beantragen, nicht auslösen: Was hier passiert, ist eine Vormerkung. Das
+   * Bauvorhaben verschwindet aus der Liste, die Zeilen bleiben stehen, und
+   * dreißig Tage lang lässt sich das zurücknehmen. Erst danach entfernt der
+   * Betreiber die Daten — mit einem Werkzeug, das die Anwendung nicht hat.
+   *
+   * Der Grund für die Frist steht in derselben Spezifikation wie die
+   * Löschpflicht: Die Gewährleistung läuft fünf Jahre ab Abnahme, und in
+   * dieser Zeit ist die Bauakte das Einzige, worauf sich der Bauherr berufen
+   * kann. Ein Knopf, der das sofort wegwirft, wäre keine Selbstbedienung,
+   * sondern eine Falle.
+   */
+  v1.post('/projects/:id/deletion', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const body = (await c.req.json().catch(() => ({}))) as { reason?: string };
+
+    const stand = await withUserTx(c.get('claims'), async (tx) => {
+      const darf = await tx.query<{ ok: boolean }>(
+        "select mbl.has_perm($1, 'project.delete') as ok",
+        [projectId],
+      );
+      if (darf.rows[0]?.ok !== true) {
+        throw new HTTPException(403, {
+          message: 'Ein Bauvorhaben löscht nur, wer es angelegt hat.',
+        });
+      }
+
+      await tx.query(
+        `update project
+            set deletion_requested_at = now(),
+                deletion_requested_by = mbl.current_member_id($1),
+                deletion_reason = $2
+          where id = $1`,
+        [projectId, typeof body.reason === 'string' ? body.reason.trim() : null],
+      );
+
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id)
+         values ($1, mbl.current_member_id($1), 'app', 'project.deletion_requested',
+                 'project', $1)`,
+        [projectId],
+      );
+
+      return deletionState(tx, projectId);
+    });
+    return c.json(stand);
+  });
+
+  /** Es sich anders überlegen. Das ist der eigentliche Zweck der Frist. */
+  v1.delete('/projects/:id/deletion', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+
+    const stand = await withUserTx(c.get('claims'), async (tx) => {
+      const geaendert = await tx.query(
+        `update project
+            set deletion_requested_at = null, deletion_requested_by = null,
+                deletion_reason = null
+          where id = $1 and deletion_requested_at is not null`,
+        [projectId],
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(404, {
+          message: 'Für dieses Bauvorhaben liegt keine Löschung an.',
+        });
+      }
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id)
+         values ($1, mbl.current_member_id($1), 'app', 'project.deletion_cancelled',
+                 'project', $1)`,
+        [projectId],
+      );
+      return deletionState(tx, projectId);
+    });
+    return c.json(stand);
+  });
+
+  v1.get('/projects/:id/deletion', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const stand = await withUserTx(c.get('claims'), (tx) => deletionState(tx, projectId));
+    return c.json(stand);
   });
 
   // -- Beteiligte ------------------------------------------------------------
@@ -1225,6 +1314,41 @@ export function createApp(options: AppOptions = {}): Hono<App> {
 }
 
 // -- Hilfsfunktionen --------------------------------------------------------
+
+/**
+ * Was zur Löschung dieses Bauvorhabens ansteht.
+ *
+ * `withinWarranty` ist kein Verbot, sondern eine Auskunft: Es sind die Daten
+ * des Bauherrn, und er darf sie wegwerfen. Er soll nur wissen, dass die
+ * Gewährleistung noch läuft und die Akte das Einzige ist, worauf er sich in
+ * dieser Zeit berufen kann.
+ */
+async function deletionState(
+  tx: Tx,
+  projectId: string,
+): Promise<{
+  requestedAt: string | null;
+  purgeAfter: string | null;
+  withinWarranty: boolean;
+  graceDays: number;
+}> {
+  const result = await tx.query<{
+    requested_at: Date | null;
+    purge_after: Date | null;
+    within_warranty: boolean;
+  }>('select * from mbl.deletion_state($1)', [projectId]);
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new HTTPException(404, { message: 'Dieses Bauvorhaben gibt es nicht.' });
+  }
+  const tage = await tx.query<{ days: number }>('select mbl.deletion_grace_days() as days');
+  return {
+    requestedAt: row.requested_at === null ? null : new Date(row.requested_at).toISOString(),
+    purgeAfter: row.purge_after === null ? null : new Date(row.purge_after).toISOString(),
+    withinWarranty: row.within_warranty,
+    graceDays: tage.rows[0]?.days ?? 30,
+  };
+}
 
 /**
  * Hat die Datenbank den Schreibversuch aus Rechtegründen abgewiesen?

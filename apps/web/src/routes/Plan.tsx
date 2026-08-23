@@ -10,6 +10,7 @@ import { enqueue, flushQueue, indexedDbStore } from '../lib/queue';
 import { uploadPhoto } from '../lib/media';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
+import { DeleteProject } from '../components/DeleteProject';
 import type {
   DecisionDto,
   DecisionUpdateRequest,
@@ -34,6 +35,23 @@ export function Plan() {
   // Zwischenspeicher gelegt, statt eine zweite Abfrage auszulösen: Der Server
   // hat gerade gerechnet, ein Nachfragen brächte dasselbe Ergebnis und ein
   // Flackern dazu.
+  const loeschung = useQuery({
+    queryKey: ['deletion', projectId],
+    queryFn: () => api.deletionState(projectId!),
+    enabled: projectId !== undefined,
+  });
+
+  const loeschen = useMutation({
+    mutationFn: (befehl: { art: 'beantragen'; reason: string } | { art: 'zurueck' }) =>
+      befehl.art === 'beantragen'
+        ? api.requestDeletion(projectId!, befehl.reason)
+        : api.cancelDeletion(projectId!),
+    onSuccess: (stand) => {
+      queryClient.setQueryData(['deletion', projectId], stand);
+      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+
   const change = useMutation({
     mutationFn: ({ taskId, body }: { taskId: string; body: TaskUpdateRequest }) =>
       api.updateTask(projectId!, taskId, body),
@@ -239,6 +257,22 @@ export function Plan() {
             return { queued: ergebnis.remaining > 0 };
           }}
         />
+      ) : null}
+
+      {/* Ganz unten und ohne Überschrift: Löschen ist keine Aufgabe, die
+          jemand sucht, sondern eine, die es geben muss. */}
+      {query.data !== undefined
+      && loeschung.data !== undefined
+      && query.data.permissions.includes('project.delete') ? (
+        <div className="pt-4">
+          <DeleteProject
+            state={loeschung.data}
+            projectName={query.data.project.name}
+            busy={loeschen.isPending}
+            onRequest={(reason) => loeschen.mutate({ art: 'beantragen', reason })}
+            onCancel={() => loeschen.mutate({ art: 'zurueck' })}
+          />
+        </div>
       ) : null}
 
       {/* Solange die Karte lädt, steht da ein Satz und kein Blatt: Ein leeres

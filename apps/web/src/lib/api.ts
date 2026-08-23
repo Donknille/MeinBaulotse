@@ -252,6 +252,18 @@ export const api = {
   photoPrompts: async (projectId: string) =>
     (await request<{ fulfilled: string[] }>(`/projects/${projectId}/photo-prompts`)).fulfilled,
 
+  deletionState: (projectId: string) =>
+    request<DeletionState>(`/projects/${projectId}/deletion`),
+
+  requestDeletion: (projectId: string, reason: string) =>
+    request<DeletionState>(`/projects/${projectId}/deletion`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  cancelDeletion: (projectId: string) =>
+    request<DeletionState>(`/projects/${projectId}/deletion`, { method: 'DELETE' }),
+
   inviteMember: (projectId: string, body: MemberInviteRequest) =>
     request<{ members: ProjectMemberDto[] }>(`/projects/${projectId}/members`, {
       method: 'POST',
@@ -377,6 +389,15 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
 };
+
+/** Was zur Löschung dieses Bauvorhabens ansteht (Abschnitt 6.5). */
+export interface DeletionState {
+  requestedAt: string | null;
+  purgeAfter: string | null;
+  /** Läuft die Gewährleistung noch? Keine Sperre, eine Auskunft. */
+  withinWarranty: boolean;
+  graceDays: number;
+}
 
 /** Ein Schritt im Verlauf eines Mangels. */
 export interface DefectEventDto {

@@ -18033,6 +18033,7 @@ function createApp(options = {}) {
          from project p
          join project_member m on m.project_id = p.id
          where m.user_id = mbl.current_user_id() and m.revoked_at is null
+           and p.deletion_requested_at is null
          order by p.created_at desc`
       );
       return result.rows.map(toProjectSummary);
@@ -18043,6 +18044,69 @@ function createApp(options = {}) {
     const projectId = parseId(c.req.param("id"));
     const project = await withUserTx(c.get("claims"), (tx) => loadProject(tx, projectId));
     return c.json(project);
+  });
+  v1.post("/projects/:id/deletion", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const body = await c.req.json().catch(() => ({}));
+    const stand = await withUserTx(c.get("claims"), async (tx) => {
+      const darf = await tx.query(
+        "select mbl.has_perm($1, 'project.delete') as ok",
+        [projectId]
+      );
+      if (darf.rows[0]?.ok !== true) {
+        throw new HTTPException(403, {
+          message: "Ein Bauvorhaben l\xF6scht nur, wer es angelegt hat."
+        });
+      }
+      await tx.query(
+        `update project
+            set deletion_requested_at = now(),
+                deletion_requested_by = mbl.current_member_id($1),
+                deletion_reason = $2
+          where id = $1`,
+        [projectId, typeof body.reason === "string" ? body.reason.trim() : null]
+      );
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id)
+         values ($1, mbl.current_member_id($1), 'app', 'project.deletion_requested',
+                 'project', $1)`,
+        [projectId]
+      );
+      return deletionState(tx, projectId);
+    });
+    return c.json(stand);
+  });
+  v1.delete("/projects/:id/deletion", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const stand = await withUserTx(c.get("claims"), async (tx) => {
+      const geaendert = await tx.query(
+        `update project
+            set deletion_requested_at = null, deletion_requested_by = null,
+                deletion_reason = null
+          where id = $1 and deletion_requested_at is not null`,
+        [projectId]
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(404, {
+          message: "F\xFCr dieses Bauvorhaben liegt keine L\xF6schung an."
+        });
+      }
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id)
+         values ($1, mbl.current_member_id($1), 'app', 'project.deletion_cancelled',
+                 'project', $1)`,
+        [projectId]
+      );
+      return deletionState(tx, projectId);
+    });
+    return c.json(stand);
+  });
+  v1.get("/projects/:id/deletion", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const stand = await withUserTx(c.get("claims"), (tx) => deletionState(tx, projectId));
+    return c.json(stand);
   });
   v1.post("/projects/:id/members", async (c) => {
     const projectId = parseId(c.req.param("id"));
@@ -18717,6 +18781,20 @@ function createApp(options = {}) {
     );
   });
   return app;
+}
+async function deletionState(tx, projectId) {
+  const result = await tx.query("select * from mbl.deletion_state($1)", [projectId]);
+  const row = result.rows[0];
+  if (row === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const tage2 = await tx.query("select mbl.deletion_grace_days() as days");
+  return {
+    requestedAt: row.requested_at === null ? null : new Date(row.requested_at).toISOString(),
+    purgeAfter: row.purge_after === null ? null : new Date(row.purge_after).toISOString(),
+    withinWarranty: row.within_warranty,
+    graceDays: tage2.rows[0]?.days ?? 30
+  };
 }
 function istRechteFehler(error) {
   if (typeof error !== "object" || error === null) return false;
