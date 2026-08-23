@@ -35,8 +35,14 @@ const PG_TYPE_INT8 = 20;
 pg.types.setTypeParser(PG_TYPE_INT8, (value: string) => Number(value));
 
 export interface JwtClaims {
-  /** Nutzerkennung aus Supabase Auth. */
-  sub: string;
+  /**
+   * Nutzerkennung aus Supabase Auth.
+   *
+   * Fehlt bei einem Gast: Der hat kein Konto, sondern einen Token im Link
+   * (Abschnitt 2.3). Für die Datenbank ist das dann `auth.uid() is null`, und
+   * die Mitgliedschaft ergibt sich über `mbl_token`.
+   */
+  sub?: string;
   role?: string;
   email?: string;
   [key: string]: unknown;

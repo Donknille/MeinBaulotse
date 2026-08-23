@@ -14,6 +14,10 @@ import type {
   OnboardingRequest,
   ProjectSchedule,
   DiaryChainResult,
+  GuestSession,
+  GuestTaskView,
+  GuestTokenCreated,
+  GuestTokenCreateRequest,
   DiaryCreateRequest,
   DiaryEntryDto,
   DiaryUpdateRequest,
@@ -138,6 +142,47 @@ export interface Identity {
   memberships: number;
 }
 
+/**
+ * Der Gast-Zugang.
+ *
+ * Bewusst getrennt vom übrigen Client: Er benutzt keine Sitzung, sondern den
+ * Token aus dem Link — und er darf keine Anmeldung auslösen, wenn etwas
+ * schiefgeht. Wer über einen Link kommt, hat kein Konto, auf das man ihn
+ * schicken könnte.
+ */
+async function guestRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`/api/guest${path}`, {
+    ...init,
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+      ...init.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(
+      response.status,
+      body?.error ?? `Der Server hat mit ${response.status} geantwortet.`,
+    );
+  }
+  return (await response.json()) as T;
+}
+
+export const guestApi = {
+  session: (token: string) => guestRequest<GuestSession>(token, '/session'),
+  answer: (
+    token: string,
+    taskId: string,
+    body: { agree: true } | { agree: false; start: string; end?: string; note?: string },
+  ) =>
+    guestRequest<GuestTaskView>(token, `/tasks/${taskId}/answer`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+};
+
 export const api = {
   listProjects: () => request<{ projects: ProjectSummary[] }>('/me/projects'),
   me: () => request<Identity>('/me'),
@@ -189,6 +234,12 @@ export const api = {
 
   photoPrompts: async (projectId: string) =>
     (await request<{ fulfilled: string[] }>(`/projects/${projectId}/photo-prompts`)).fulfilled,
+
+  createGuestLink: (projectId: string, body: GuestTokenCreateRequest) =>
+    request<GuestTokenCreated>(`/projects/${projectId}/guest-links`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   weeklyReport: (projectId: string) =>
     request<WeeklyReport>(`/projects/${projectId}/weekly-report`),

@@ -100,6 +100,20 @@ values (
 )
 on conflict do nothing;
 
+-- Der Fliesenleger: eingetragen, aber ohne Konto. Für ihn ist der
+-- Abstimmungslink aus Abschnitt 2.3 gedacht — und er sieht über die
+-- Zeilenschärfe nur seine eigenen Vorgänge.
+
+insert into public.project_member (
+  id, project_id, role, display_name, company, email, trade_id
+)
+values (
+  'bbbbbbbb-0000-4000-8000-000000000005', 'aaaaaaaa-0000-4000-8000-000000000001', 'trade'::mbl.member_role,
+  'Kraft Fliesen', 'Kraft Fliesen GmbH', 'fliesen@demo.meinbaulotse.de',
+  (select id from public.trade where code = 'fliesen' and project_id is null)
+)
+on conflict do nothing;
+
 -- Die Vorgänge, fertig gerechnet. Termine und Puffer kommen aus
 -- packages/schedule — hier steht nur das Ergebnis. Der Trigger
 -- task_log_change schreibt zu jeder Zeile einen Eintrag in schedule_change.
@@ -279,6 +293,20 @@ values (
   'bbbbbbbb-0000-4000-8000-000000000004', 'aaaaaaaa-0000-4000-8000-000000000002', '22222222-2222-4222-8222-222222222222',
   'contractor'::mbl.member_role, 'Jörg Baumeister', 'Baumeister Bau GmbH',
   'gu@demo.meinbaulotse.de', now()
+)
+on conflict do nothing;
+
+-- Der Fliesenleger: eingetragen, aber ohne Konto. Für ihn ist der
+-- Abstimmungslink aus Abschnitt 2.3 gedacht — und er sieht über die
+-- Zeilenschärfe nur seine eigenen Vorgänge.
+
+insert into public.project_member (
+  id, project_id, role, display_name, company, email, trade_id
+)
+values (
+  'bbbbbbbb-0000-4000-8000-000000000006', 'aaaaaaaa-0000-4000-8000-000000000002', 'trade'::mbl.member_role,
+  'Kraft Fliesen', 'Kraft Fliesen GmbH', 'fliesen@demo.meinbaulotse.de',
+  (select id from public.trade where code = 'fliesen' and project_id is null)
 )
 on conflict do nothing;
 

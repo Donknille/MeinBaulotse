@@ -40,6 +40,10 @@ const EXPECTED: readonly Expectation[] = [
   // Planansicht im Fehler, nicht nur die Entscheidungsliste.
   { migration: '0007_decisions.sql', table: 'decision', column: 'due_date' },
   { migration: '0009_tagebuch.sql', table: 'diary_entry', column: 'content_hash' },
+  // Der Gast-Zugang ist der einzige Weg ins Produkt ohne Konto. Fehlt die
+  // Tabelle, endet jeder Abstimmungslink im Fehler statt in der Frage — und
+  // die Links sind schon verschickt, wenn das auffällt.
+  { migration: '0011_gastzugang.sql', table: 'guest_token', column: 'token_hash' },
 ];
 
 export interface SchemaState {

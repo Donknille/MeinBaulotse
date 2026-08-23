@@ -17,16 +17,19 @@ import {
   ChevronDown,
   Camera,
   GanttChartSquare,
+  Link2,
   Mail,
+  Users,
 } from 'lucide-react';
 import type {
   DecisionDto,
+  GuestTokenCreated,
   ProjectSchedule,
   ScheduledTaskDto,
   SchedulePreview,
   TaskUpdateRequest,
 } from '@meinbaulotse/shared';
-import { Card, Pill, SectionPill } from './ui';
+import { Button, Card, Pill, SectionPill } from './ui';
 import { TaskRow } from './schedule';
 import { Cockpit } from './Cockpit';
 import { Timeline } from './Timeline';
@@ -43,6 +46,7 @@ export function PlanView({
   weeklyReportHref,
   diaryHref,
   onPreviewTask,
+  onCreateGuestLink,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
@@ -63,6 +67,8 @@ export function PlanView({
   diaryHref?: string;
   /** Rechnet vor, was eine Verschiebung nach sich zöge. */
   onPreviewTask?: (taskId: string, change: TaskUpdateRequest) => Promise<SchedulePreview>;
+  /** Legt einen Abstimmungslink an und gibt ihn genau einmal zurück. */
+  onCreateGuestLink?: (memberId: string) => Promise<GuestTokenCreated>;
 }) {
   const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -209,6 +215,29 @@ export function PlanView({
           })}
         </div>
       </details>
+      {/* Die Beteiligten und ihre Abstimmungslinks. Steht hinter dem Ablauf,
+          weil es Verwaltung ist und keine Auskunft über den Bau. */}
+      {schedule.permissions.includes('member.invite') && schedule.members.length > 0 ? (
+        <details className="group flex flex-col gap-8">
+          <summary className="cursor-pointer list-none">
+            <SectionPill tone="neutral" icon={<Users size={18} />}>
+              Wer mitmacht · {schedule.members.length}
+              <ChevronDown
+                size={16}
+                className="ml-1 transition-transform duration-[var(--motion-micro)] group-open:rotate-180"
+                aria-hidden
+              />
+            </SectionPill>
+          </summary>
+          <div className="mt-6">
+            <Beteiligte
+              schedule={schedule}
+              {...(onCreateGuestLink === undefined ? {} : { onCreateGuestLink })}
+            />
+          </div>
+        </details>
+      ) : null}
+
       {/* Die Rechte stehen weiterhin da, nur nicht mehr als Erstes: dreizehn
           Zeilen „was du darfst" beantworten keine der Fragen, mit denen jemand
           die Anwendung öffnet. Wer wissen will, was seine Rolle bedeutet,
@@ -251,6 +280,93 @@ export function PlanView({
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Die Beteiligten und ihre Abstimmungslinks.
+ *
+ * Der Link erscheint genau einmal — danach liegt in der Datenbank nur noch
+ * sein Hash. Deshalb steht er hier so lange sichtbar, bis jemand die Ansicht
+ * verlässt, mit einem Knopf zum Kopieren daneben.
+ */
+function Beteiligte({
+  schedule,
+  onCreateGuestLink,
+}: {
+  schedule: ProjectSchedule;
+  onCreateGuestLink?: (memberId: string) => Promise<GuestTokenCreated>;
+}) {
+  const [links, setLinks] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+
+  return (
+    <Card className="py-0">
+      <ul>
+        {schedule.members.map((member) => (
+          <li key={member.id} className="flex flex-col gap-2 border-b border-ash py-3 last:border-b-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-body-lg font-medium text-charcoal">
+                  {member.displayName ?? 'Ohne Namen'}
+                </span>
+                <span className="text-caption text-steel">
+                  {ROLE_LABEL[member.role]}
+                  {member.tradeName === null ? '' : ` · ${member.tradeName}`}
+                  {member.company === null ? '' : ` · ${member.company}`}
+                </span>
+              </span>
+              {member.hasAccount ? (
+                <Pill tone="blue">Mit Konto</Pill>
+              ) : onCreateGuestLink === undefined ? (
+                <Pill tone="neutral">{member.hasGuestLink ? 'Link vorhanden' : 'Ohne Zugang'}</Pill>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy === member.id}
+                  onClick={() => {
+                    setBusy(member.id);
+                    void onCreateGuestLink(member.id)
+                      .then((created) =>
+                        setLinks((vorher) => ({
+                          ...vorher,
+                          [member.id]: `${window.location.origin}/abstimmen/${created.token}`,
+                        })),
+                      )
+                      .finally(() => setBusy(null));
+                  }}
+                >
+                  <Link2 size={16} aria-hidden />
+                  {member.hasGuestLink ? 'Neuen Link' : 'Abstimmungslink'}
+                </Button>
+              )}
+            </div>
+
+            {links[member.id] === undefined ? null : (
+              <div className="flex flex-col gap-1 rounded-[var(--radius-large)] bg-paper-mist p-3">
+                <p className="text-caption text-steel">
+                  Dieser Link erscheint nur jetzt. Schick ihn per Nachricht — wer ihn hat, kommt
+                  ohne Konto hinein und kann Termine bestätigen.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto text-caption break-all text-charcoal">
+                    {links[member.id]}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void navigator.clipboard?.writeText(links[member.id]!)}
+                  >
+                    Kopieren
+                  </Button>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

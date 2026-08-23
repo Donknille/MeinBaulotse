@@ -29,6 +29,22 @@ if (files.length === 0) {
 
 const rule = '-- '.padEnd(2) + '='.repeat(75);
 
+/**
+ * Wie viele Tabellen die Migrationen anlegen.
+ *
+ * Steht hier abgezählt und nicht als Zahl im Kopftext, weil eine Zahl im
+ * Kopftext genau so lange stimmt, bis jemand eine Migration schreibt. Sie ist
+ * dann still falsch — und ausgerechnet die Gegenprobe nach der Einrichtung
+ * hängt daran.
+ */
+const tabellen = files.flatMap((name) =>
+  [
+    ...readFileSync(join(migrationDir, name), 'utf8').matchAll(
+      /^\s*create table (?:if not exists )?([a-z_]+)/gim,
+    ),
+  ].map((treffer) => treffer[1]!),
+).length;
+
 const header = `-- ${'='.repeat(75)}
 --
 --  MeinBaulotse — vollständige Einrichtung der Datenbank
@@ -67,7 +83,7 @@ const header = `-- ${'='.repeat(75)}
 --
 --    select count(*) filter (where rowsecurity) as mit_rls,
 --           count(*)                            as tabellen
---    from pg_tables where schemaname = 'public';                -- 21 von 21
+--    from pg_tables where schemaname = 'public';                -- ${tabellen} von ${tabellen}
 --
 --  Die zweite Abfrage ist die wichtigere: Die Zählung oben stimmt auch
 --  dann, wenn die Rechte nur zur Hälfte angekommen sind.

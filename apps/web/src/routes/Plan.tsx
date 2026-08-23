@@ -139,6 +139,11 @@ export function Plan() {
           weeklyReportHref={`/projekt/${projectId ?? ''}/wochenbericht`}
           diaryHref={`/projekt/${projectId ?? ''}/tagebuch`}
           onPreviewTask={(taskId, body) => api.previewTask(projectId!, taskId, body)}
+          onCreateGuestLink={async (memberId) => {
+            const created = await api.createGuestLink(projectId!, { memberId });
+            void queryClient.invalidateQueries({ queryKey: ['schedule', projectId] });
+            return created;
+          }}
         />
       )}
 

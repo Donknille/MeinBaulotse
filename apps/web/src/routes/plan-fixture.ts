@@ -15,6 +15,28 @@ export const PLAN_FIXTURE: ProjectSchedule = {
     "role": "owner",
     "catholicMunicipality": false
   },
+  "members": [
+    {
+      "id": "00000000-0000-4000-8000-000000000801",
+      "role": "owner",
+      "displayName": "Familie Muster",
+      "company": null,
+      "email": "bauherr@example.test",
+      "tradeName": null,
+      "hasAccount": true,
+      "hasGuestLink": false
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000802",
+      "role": "contractor",
+      "displayName": "Jörg Baumeister",
+      "company": "Baumeister Bau",
+      "email": "gu@example.test",
+      "tradeName": null,
+      "hasAccount": false,
+      "hasGuestLink": true
+    }
+  ],
   "permissions": [
     "project.read",
     "project.delete",

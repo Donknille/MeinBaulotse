@@ -19,6 +19,8 @@ import {
 import {
   checklistUpdateRequest,
   decisionUpdateRequest,
+  guestAnswerRequest,
+  guestTokenCreateRequest,
   diaryCreateRequest,
   diaryUpdateRequest,
   mediaCreateRequest,
@@ -27,6 +29,7 @@ import {
   taskUpdateRequest,
   type PhaseProgress,
   type ProjectSchedule,
+  type ProjectMemberDto,
   type ProjectSummary,
   type ScheduledTaskDto,
 } from '@meinbaulotse/shared';
@@ -48,6 +51,14 @@ import {
   verifyDiaryChain,
 } from './diary.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
+import {
+  answerTask,
+  claimsFor,
+  createGuestToken,
+  guestView,
+  resolveGuestToken,
+  revokeGuestToken,
+} from './guests.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { previewChange, recomputeProject } from './scheduling.js';
 import { checkSchema } from './schema-check.js';
@@ -182,6 +193,45 @@ export function createApp(): Hono<App> {
     console.info('Testzugang aktiv: POST /api/demo/session');
     app.route('/demo', demoRoutes(demoKey));
   }
+
+  // -- Der Gast-Zugang -------------------------------------------------------
+  //
+  // Ohne Anmeldung, und das ist der Punkt (Leitsatz 1.6.2): Ein Bauleiter,
+  // der ein Konto anlegen soll, um einen Termin zu bestätigen, bestätigt
+  // keinen Termin. Der Token im Link ist der ganze Ausweis; die Datenbank
+  // prüft ihn bei jedem Zugriff erneut.
+  const gast = new Hono<App>();
+
+  gast.get('/session', async (c) => {
+    const kontext = await resolveGuestToken(tokenAus(c.req.header('authorization')));
+    const view = await withUserTx(claimsFor(kontext), (tx) => guestView(tx, kontext));
+    return c.json(view);
+  });
+
+  gast.post('/tasks/:taskId/answer', async (c) => {
+    const kontext = await resolveGuestToken(tokenAus(c.req.header('authorization')));
+    if (!kontext.scopes.includes('confirm:task')) {
+      throw new HTTPException(403, {
+        message: 'Dieser Link ist zum Mitlesen gedacht, nicht zum Bestätigen.',
+      });
+    }
+
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = guestAnswerRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Für einen anderen Termin brauchen wir ein Datum.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const task = await withUserTx(claimsFor(kontext), (tx) =>
+      answerTask(tx, kontext, taskId, parsed.data),
+    );
+    return c.json(task);
+  });
+
+  app.route('/guest', gast);
 
   const v1 = new Hono<App>();
   v1.use('*', requireAuth);
@@ -362,6 +412,57 @@ export function createApp(): Hono<App> {
     const projectId = parseId(c.req.param('id'));
     const schedule = await withUserTx(c.get('claims'), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+
+  // -- Gast-Links verwalten ---------------------------------------------------
+
+  // Der Token steht genau einmal in dieser Antwort. Danach liegt in der
+  // Datenbank nur noch sein Hash — wer ihn verliert, bekommt einen neuen.
+  v1.post('/projects/:id/guest-links', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = guestTokenCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Für einen Link brauchen wir, an wen er gehen soll.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const created = await withUserTx(c.get('claims'), (tx) =>
+      createGuestToken(tx, projectId, parsed.data.memberId, {
+        ...(parsed.data.locale === undefined ? {} : { locale: parsed.data.locale }),
+        ...(parsed.data.sentTo === undefined ? {} : { sentTo: parsed.data.sentTo }),
+        ...(parsed.data.expiresInDays === undefined
+          ? {}
+          : { expiresInDays: parsed.data.expiresInDays }),
+      }),
+    );
+    return c.json(created, 201);
+  });
+
+  v1.get('/projects/:id/guest-links', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const links = await withUserTx(c.get('claims'), async (tx) => {
+      const result = await tx.query(
+        `select g.id, g.member_id as "memberId", m.display_name as "displayName",
+                m.role::text as role, g.scopes, g.locale, g.sent_to as "sentTo",
+                g.expires_at as "expiresAt", g.last_used_at as "lastUsedAt",
+                g.use_count as "useCount", g.revoked_at as "revokedAt"
+           from guest_token g join project_member m on m.id = g.member_id
+          where g.project_id = $1
+          order by g.created_at desc`,
+        [projectId],
+      );
+      return result.rows;
+    });
+    return c.json({ links });
+  });
+
+  v1.delete('/projects/:id/guest-links/:linkId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const linkId = parseId(c.req.param('linkId'));
+    await withUserTx(c.get('claims'), (tx) => revokeGuestToken(tx, projectId, linkId));
+    return c.json({ ok: true });
   });
 
   // -- Tagebuch und Fotos ----------------------------------------------------
@@ -603,6 +704,18 @@ function toProjectSummary(row: ProjectRow): ProjectSummary {
   };
 }
 
+/** Der Gast-Token aus dem Kopf `Authorization: Bearer …`. */
+function tokenAus(header: string | undefined): string {
+  const token = header?.replace(/^Bearer\s+/i, '').trim() ?? '';
+  if (token === '') {
+    throw new HTTPException(401, {
+      message: 'Dieser Link ist unvollständig.',
+      cause: { hint: 'Öffne ihn noch einmal aus der Nachricht, die du bekommen hast.' },
+    });
+  }
+  return token;
+}
+
 function parseId(raw: string | undefined): string {
   const parsed = uuid.safeParse(raw);
   if (!parsed.success) {
@@ -651,6 +764,48 @@ async function loadPermissions(tx: Tx, projectId: string): Promise<string[]> {
     [projectId],
   );
   return result.rows.map((row) => row.permission);
+}
+
+/**
+ * Wer beteiligt ist.
+ *
+ * `hasGuestLink` sagt nur, **ob** es einen gültigen Link gibt — nie welchen.
+ * Der Token steht genau einmal in einer Antwort, nämlich beim Anlegen.
+ */
+async function loadMembers(tx: Tx, projectId: string): Promise<ProjectMemberDto[]> {
+  const result = await tx.query<{
+    id: string;
+    role: ProjectMemberDto['role'];
+    display_name: string | null;
+    company: string | null;
+    email: string | null;
+    trade_name: string | null;
+    has_account: boolean;
+    has_guest_link: boolean;
+  }>(
+    `select m.id, m.role, m.display_name, m.company, m.email, tr.name as trade_name,
+            (m.user_id is not null) as has_account,
+            exists (
+              select 1 from guest_token g
+               where g.member_id = m.id and g.revoked_at is null and g.expires_at > now()
+            ) as has_guest_link
+       from project_member m
+       left join trade tr on tr.id = m.trade_id
+      where m.project_id = $1 and m.revoked_at is null
+      order by m.role, m.display_name`,
+    [projectId],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    role: row.role,
+    displayName: row.display_name,
+    company: row.company,
+    email: row.email,
+    tradeName: row.trade_name,
+    hasAccount: row.has_account,
+    hasGuestLink: row.has_guest_link,
+  }));
 }
 
 async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]> {
@@ -735,6 +890,7 @@ async function loadSchedule(tx: Tx, projectId: string): Promise<ProjectSchedule>
   const tasks = await loadTasks(tx, projectId);
   const phases = await loadPhases(tx, projectId);
   const decisions = await loadDecisions(tx, projectId);
+  const members = await loadMembers(tx, projectId);
 
   const ends = tasks.map((task) => task.currentEnd).filter((end): end is string => end !== null);
   const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => (a > b ? a : b));
@@ -755,6 +911,7 @@ async function loadSchedule(tx: Tx, projectId: string): Promise<ProjectSchedule>
   return {
     project,
     permissions,
+    members,
     phases,
     tasks,
     decisions,

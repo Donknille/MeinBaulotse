@@ -50,6 +50,11 @@ psql "$DATABASE_URL" -f docs/demo-seed.sql
 |---|---|---|---|
 | Bauherr | Familie Sonnenweg | `owner` | alles: einladen, Geld freigeben, Vertrag pflegen |
 | Generalunternehmer | Jörg Baumeister | `contractor` | Vorgänge und Termine — **nicht** einladen, **nicht** freigeben |
+| *(kein Link)* | Kraft Fliesen | `trade` | nur den eigenen Vorgang, und den nur über einen Abstimmungslink |
+
+Die dritte Zeile hat mit Absicht keine Anmeldung: Ein Einzelgewerk hat in
+diesem Produkt kein Konto und soll auch keines brauchen. Wie es trotzdem
+hineinkommt, steht unter *Termine abstimmen*.
 
 Angelegt hat beide Projekte der **Bauherr**, nicht der GU. Das ist keine
 Bequemlichkeit, sondern Abschnitt 2.1 der Spezifikation: Das Projekt gehört dem
@@ -208,10 +213,48 @@ Drei Dinge laufen darunter mit, ohne dass man sie bedienen müsste:
 Fotos brauchen die Ablage des Supabase-Projekts (siehe `docs/SETUP.md`).
 Lokal ohne Supabase sagt die Erfassung das offen und nimmt Notizen entgegen.
 
+## Termine abstimmen
+
+Im Plan steht unter dem Ablauf der Abschnitt **Beteiligte**. Neben jedem
+Mitglied ohne Konto — im Demostand *Kraft Fliesen* — steht *Abstimmungslink*.
+Ein Klick erzeugt ihn, und er steht genau einmal da: Danach liegt in der
+Datenbank nur noch sein Hash.
+
+Der Link führt auf eine Seite ohne Kopf, ohne Navigation und ohne Anmeldung:
+
+```
+Baustelle Stadthaus Ahornweg
+
+Eingetragen ist  12.–21.05.2027
+Passt das?
+
+[ Passt ]   [ Anderer Termin ]
+```
+
+Am besten in einem privaten Fenster öffnen — dann ist zu sehen, dass die Seite
+wirklich ohne jede Anmeldung auskommt.
+
+- **Passt** hebt den Bestätigungsgrad auf *Abgestimmt* (grün). Im Plan des
+  Bauherrn steht das sofort.
+- **Anderer Termin** verschiebt **nichts**. Es erzeugt *Zwei Angaben*
+  (Tangerine) und einen Eintrag in der Historie mit Kanal `guest_link`. Der
+  Plan gehört dem Bauherrn; wer widerspricht, wird gehört, nicht ausgeführt.
+
+Die Seite spricht fünf Sprachen — Deutsch, Englisch, Polnisch, Rumänisch,
+Türkisch. Welche, entscheidet der Bauherr beim Anlegen des Links, nicht der
+Browser des Empfängers.
+
+Ein Einzelgewerk sieht dabei nur seinen eigenen Vorgang. Das ist keine
+Höflichkeit der Oberfläche, sondern dieselbe RLS, die auch die App bindet: Für
+die Datenbank ist ein Gast ein Mitglied wie jedes andere, nur eines, das sich
+mit einem Token ausweist statt mit einem Konto.
+
+Links laufen nach 180 Tagen ab und lassen sich jederzeit sperren. Wer einen
+Link zu oft in der Minute aufruft, wird für eine Minute gebremst — der Link
+bleibt gültig.
+
 ## Was noch fehlt
 
-- **Termine abstimmen.** Die vier Bestätigungsgrade werden angezeigt, aber
-  niemand kann sie setzen — grau bleibt grau.
 - **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
   (`member.invite`) steht, die Route dazu fehlt noch.
 - **Lotsenkarten für die übrigen Vorgänge.** Zwölf Karten decken die Phasen ab,
@@ -242,13 +285,13 @@ Dann im Dashboard: **SQL Editor → New query**, den Inhalt von
 [`docs/demo-seed.sql`](demo-seed.sql) einfügen, **Run**.
 
 Das Skript legt die beiden Demo-Nutzer an und dazu **beide Bauvorhaben** mit
-je zwei Mitgliedschaften — 38 und 34 Vorgänge. Am Ende zeigt es eine
+je drei Mitgliedschaften — 38 und 34 Vorgänge. Am Ende zeigt es eine
 Gegenprobe:
 
 ```
 bauvorhaben          | beteiligte | vorgaenge | abhaengigkeiten | errechnetes_ende | geschuldet
-Stadthaus Ahornweg   |          2 |        34 |              39 | …                | …
-Musterhaus Sonnenweg |          2 |        38 |              43 | …                | …
+Stadthaus Ahornweg   |          3 |        34 |              39 | …                | …
+Musterhaus Sonnenweg |          3 |        38 |              43 | …                | …
 ```
 
 Ein zweiter Lauf ändert nichts und bricht nicht ab: Jedes `insert` endet auf

@@ -184,6 +184,30 @@ const fixture: ProjectSchedule = {
     role: 'owner',
     catholicMunicipality: false,
   },
+  // Zwei Beteiligte: der Bauherr mit Konto, der GU nur über einen Link. Genau
+  // dieser Unterschied ist der Punkt von Abschnitt 2.3.
+  members: [
+    {
+      id: '00000000-0000-4000-8000-000000000801',
+      role: 'owner' as const,
+      displayName: 'Familie Muster',
+      company: null,
+      email: 'bauherr@example.test',
+      tradeName: null,
+      hasAccount: true,
+      hasGuestLink: false,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000802',
+      role: 'contractor' as const,
+      displayName: 'Jörg Baumeister',
+      company: 'Baumeister Bau',
+      email: 'gu@example.test',
+      tradeName: null,
+      hasAccount: false,
+      hasGuestLink: true,
+    },
+  ],
   // Aus derselben Quelle, aus der die Seed-Migration `role_permission` befüllt.
   // Eine zweite Liste im Code wäre genau die Doppelpflege, die Regel 5 verbietet.
   permissions: [...permissionsOf('owner')],

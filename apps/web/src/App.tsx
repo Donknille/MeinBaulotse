@@ -10,6 +10,7 @@ import { Onboarding } from './routes/Onboarding';
 import { Plan } from './routes/Plan';
 import { WeeklyReport } from './routes/WeeklyReport';
 import { Diary } from './routes/Diary';
+import { GuestConfirm } from './routes/GuestConfirm';
 import { Projects } from './routes/Projects';
 import { Styleguide } from './routes/Styleguide';
 
@@ -72,6 +73,11 @@ export function App() {
           {/* Der Testzugang muss auch dann erreichbar sein, wenn niemand
               angemeldet ist — er ist ja der Weg hinein. */}
           <Route path="/demo" element={<DemoLogin />} />
+          {/* Die Abstimmungsseite steht ausdrücklich vor jeder Anmeldung: Ein
+              Bauleiter, der sich anmelden soll, um einen Termin zu bestätigen,
+              bestätigt keinen Termin (Leitsatz 1.6.2). */}
+          <Route path="/abstimmen/:token" element={<GuestConfirm />} />
+          <Route path="/abstimmen" element={<GuestConfirm />} />
           <Route path="/auth/callback" element={<Navigate to="/" replace />} />
           {!ready ? (
             <Route

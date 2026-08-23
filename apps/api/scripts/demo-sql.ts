@@ -51,7 +51,16 @@ interface ProjectDefinition {
   readonly catholicMunicipality: boolean;
   readonly contractType: 'verbraucherbauvertrag' | 'einzelgewerke';
   readonly hasBasement: boolean;
-  readonly memberId: { readonly bauherr: string; readonly gu: string };
+  readonly memberId: {
+    readonly bauherr: string;
+    readonly gu: string;
+    /**
+     * Ein Einzelgewerk **ohne Konto**. Es zeigt zwei Dinge, die sonst
+     * unsichtbar blieben: die Zeilenschärfe aus Abschnitt 2.2 und den
+     * Gast-Zugang aus 2.3 — für so jemanden ist der Abstimmungslink gedacht.
+     */
+    readonly gewerk: string;
+  };
   /** Baustart in Kalendertagen ab heute, dann vor auf den nächsten Montag. */
   readonly startsInDays: number;
   /** Der geschuldete Termin, sobald der Plan gerechnet ist. */
@@ -84,6 +93,7 @@ const PROJECTS: readonly ProjectDefinition[] = [
     memberId: {
       bauherr: 'bbbbbbbb-0000-4000-8000-000000000001',
       gu: 'bbbbbbbb-0000-4000-8000-000000000002',
+      gewerk: 'bbbbbbbb-0000-4000-8000-000000000005',
     },
     startsInDays: 28,
     // Ein halbes Jahr ab Baustart, rund gegriffen wie im Vertrag. Der
@@ -105,6 +115,7 @@ const PROJECTS: readonly ProjectDefinition[] = [
     memberId: {
       bauherr: 'bbbbbbbb-0000-4000-8000-000000000003',
       gu: 'bbbbbbbb-0000-4000-8000-000000000004',
+      gewerk: 'bbbbbbbb-0000-4000-8000-000000000006',
     },
     startsInDays: -56,
     // Zwanzig Werktage hinter dem errechneten Ende: Dann steht oben „20
@@ -340,6 +351,20 @@ values (
   ${lit(project.memberId.gu)}, ${lit(project.id)}, ${lit(gu.userId)},
   'contractor'::mbl.member_role, ${lit(gu.displayName)}, ${lit(gu.company)},
   ${lit(gu.email)}, now()
+)
+on conflict do nothing;
+
+-- Der Fliesenleger: eingetragen, aber ohne Konto. Für ihn ist der
+-- Abstimmungslink aus Abschnitt 2.3 gedacht — und er sieht über die
+-- Zeilenschärfe nur seine eigenen Vorgänge.
+
+insert into public.project_member (
+  id, project_id, role, display_name, company, email, trade_id
+)
+values (
+  ${lit(project.memberId.gewerk)}, ${lit(project.id)}, 'trade'::mbl.member_role,
+  'Kraft Fliesen', 'Kraft Fliesen GmbH', 'fliesen@demo.meinbaulotse.de',
+  (select id from public.trade where code = 'fliesen' and project_id is null)
 )
 on conflict do nothing;
 

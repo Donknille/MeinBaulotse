@@ -311,6 +311,29 @@ hieße eine Lücke zu hinterlassen, die niemand mehr erklären kann.
 > Die Schnellerfassung sagt in dem Fall offen, dass Fotos fehlen — Notizen
 > lassen sich trotzdem erfassen.
 
+## 4b. Abstimmungslinks
+
+Einzurichten ist nichts. Die Links entstehen in der Anwendung, tragen ihren
+Token im Pfad und laufen nach 180 Tagen ab; ihr Hash steht in `guest_token`,
+angelegt von Migration `0011_gastzugang.sql`.
+
+Zwei Dinge, die im Betrieb auffallen können:
+
+**Die Adresse im Link ist die Adresse, unter der er entstanden ist.** Sie kommt
+aus dem Browser des Bauherrn, nicht aus einer Einstellung. Wer einen Link auf
+einer Preview-Auslieferung erzeugt, verschickt eine Preview-Adresse — und wenn
+dort **Deployment Protection** aktiv ist, steht der Bauleiter vor der
+Vercel-Anmeldung statt vor der Frage. Für echte Links die Produktionsadresse
+benutzen.
+
+**Der Weg ohne Konto ist die Ausnahme, die die Regel bestätigt.**
+`/api/guest/session` und `/api/guest/tasks/:id/answer` sind die einzigen
+Routen ohne Anmeldeprüfung. Sie arbeiten trotzdem nicht privilegiert: Der
+Token wird von `mbl.use_guest_token` eingelöst — einer `security definer`-
+Funktion, die nur zu einem gültigen Hash etwas herausgibt —, und danach
+arbeitet der Gast unter denselben Policies wie jedes andere Mitglied. Es gibt
+keinen Pfad, auf dem `service_role` einen Gast bedient.
+
 ## 5. Wenn du Stammdaten änderst
 
 Diese Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:

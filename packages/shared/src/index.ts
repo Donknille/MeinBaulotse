@@ -34,6 +34,7 @@ export const confirmationLevel = z.enum([
   'mutual',
   'disputed',
 ]);
+export type ConfirmationLevel = z.infer<typeof confirmationLevel>;
 
 /**
  * Die fünf Onboarding-Fragen aus der Abnahme von AP 1.
@@ -248,8 +249,24 @@ export function decisionIsSettled(status: DecisionStatus): boolean {
   return status === 'entschieden' || status === 'beauftragt' || status === 'hinfaellig';
 }
 
+export const projectMember = z.object({
+  id: z.string().uuid(),
+  role: memberRole,
+  displayName: z.string().nullable(),
+  company: z.string().nullable(),
+  email: z.string().nullable(),
+  tradeName: z.string().nullable(),
+  /** Ob dieses Mitglied ein Konto hat oder nur über einen Link hereinkommt. */
+  hasAccount: z.boolean(),
+  /** Ob für dieses Mitglied ein gültiger Abstimmungslink besteht. */
+  hasGuestLink: z.boolean(),
+});
+export type ProjectMemberDto = z.infer<typeof projectMember>;
+
 export const projectSchedule = z.object({
   project: projectSummary,
+  /** Wer an diesem Bauvorhaben beteiligt ist. */
+  members: z.array(projectMember),
   /**
    * Was der Fragende in diesem Projekt darf. Kommt aus `role_permission` in
    * der Datenbank, nicht aus einer Konstante im Code — die Oberfläche zeigt
@@ -527,6 +544,75 @@ export const diaryChainResult = z.object({
   entries: z.array(diaryChainEntry),
 });
 export type DiaryChainResult = z.infer<typeof diaryChainResult>;
+
+// ---------------------------------------------------------------------------
+// Gast-Zugang (Abschnitt 2.3 und 5.5)
+// ---------------------------------------------------------------------------
+
+export const guestScope = z.enum(['confirm:task', 'report:progress', 'view:trade', 'view:project']);
+export const guestLocale = z.enum(['de', 'en', 'pl', 'ro', 'tr']);
+export type GuestLocale = z.infer<typeof guestLocale>;
+
+export const guestTaskView = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  tradeName: z.string().nullable(),
+  start: isoDate.nullable(),
+  end: isoDate.nullable(),
+  confirmation: confirmationLevel,
+  isWait: z.boolean(),
+  /** Was dieser Gast zuletzt geantwortet hat. */
+  myAnswer: z.enum(['bestaetigt', 'gegenvorschlag']).nullable(),
+});
+export type GuestTaskView = z.infer<typeof guestTaskView>;
+
+export const guestSession = z.object({
+  projectName: z.string(),
+  displayName: z.string().nullable(),
+  role: memberRole,
+  scopes: z.array(z.string()),
+  locale: guestLocale,
+  tasks: z.array(guestTaskView),
+});
+export type GuestSession = z.infer<typeof guestSession>;
+
+/**
+ * Die Antwort auf „Passt das?".
+ *
+ * Ein Gegenvorschlag nennt einen Termin. Ohne Termin wäre es kein Vorschlag,
+ * sondern nur ein Nein — und damit könnte der Bauherr nichts anfangen.
+ */
+export const guestAnswerRequest = z.discriminatedUnion('agree', [
+  z.object({ agree: z.literal(true) }),
+  z.object({
+    agree: z.literal(false),
+    start: isoDate,
+    end: isoDate.optional(),
+    note: z.string().trim().max(500).optional(),
+  }),
+]);
+export type GuestAnswerRequest = z.infer<typeof guestAnswerRequest>;
+
+/** Der Token steht genau einmal in einer Antwort — danach nur noch sein Hash. */
+export const guestTokenCreated = z.object({
+  /** Die Kennung des Links — damit sperren lässt, wer ihn angelegt hat. */
+  id: z.string().uuid(),
+  token: z.string(),
+  memberId: z.string().uuid(),
+  displayName: z.string().nullable(),
+  role: memberRole,
+  scopes: z.array(z.string()),
+  expiresAt: z.string(),
+});
+export type GuestTokenCreated = z.infer<typeof guestTokenCreated>;
+
+export const guestTokenCreateRequest = z.object({
+  memberId: z.string().uuid(),
+  locale: guestLocale.optional(),
+  sentTo: z.string().trim().max(200).optional(),
+  expiresInDays: z.number().int().min(1).max(365).optional(),
+});
+export type GuestTokenCreateRequest = z.infer<typeof guestTokenCreateRequest>;
 
 export const apiError = z.object({
   error: z.string(),

@@ -1192,7 +1192,7 @@ var require_utils2 = __commonJS({
     var nodeCrypto = require("crypto");
     module2.exports = {
       postgresMd5PasswordHash,
-      randomBytes,
+      randomBytes: randomBytes2,
       deriveKey,
       sha256: sha2562,
       hashByName,
@@ -1202,7 +1202,7 @@ var require_utils2 = __commonJS({
     var webCrypto = nodeCrypto.webcrypto || globalThis.crypto;
     var subtleCrypto = webCrypto.subtle;
     var textEncoder = new TextEncoder();
-    function randomBytes(length) {
+    function randomBytes2(length) {
       return webCrypto.getRandomValues(Buffer.alloc(length));
     }
     async function md5(string) {
@@ -13172,8 +13172,22 @@ var decisionUpdateRequest = external_exports.object({
   decidedNote: external_exports.string().trim().max(1e3).nullable().optional(),
   estimatedCostCents: external_exports.number().int().min(0).nullable().optional()
 }).refine((value) => value.status !== void 0 || value.decidedNote !== void 0 || value.estimatedCostCents !== void 0, { message: "Es gibt nichts zu \xE4ndern." });
+var projectMember = external_exports.object({
+  id: external_exports.string().uuid(),
+  role: memberRole,
+  displayName: external_exports.string().nullable(),
+  company: external_exports.string().nullable(),
+  email: external_exports.string().nullable(),
+  tradeName: external_exports.string().nullable(),
+  /** Ob dieses Mitglied ein Konto hat oder nur über einen Link hereinkommt. */
+  hasAccount: external_exports.boolean(),
+  /** Ob für dieses Mitglied ein gültiger Abstimmungslink besteht. */
+  hasGuestLink: external_exports.boolean()
+});
 var projectSchedule = external_exports.object({
   project: projectSummary,
+  /** Wer an diesem Bauvorhaben beteiligt ist. */
+  members: external_exports.array(projectMember),
   /**
    * Was der Fragende in diesem Projekt darf. Kommt aus `role_permission` in
    * der Datenbank, nicht aus einer Konstante im Code — die Oberfläche zeigt
@@ -13378,6 +13392,52 @@ var diaryChainResult = external_exports.object({
   sealedCount: external_exports.number().int(),
   intact: external_exports.boolean(),
   entries: external_exports.array(diaryChainEntry)
+});
+var guestScope = external_exports.enum(["confirm:task", "report:progress", "view:trade", "view:project"]);
+var guestLocale = external_exports.enum(["de", "en", "pl", "ro", "tr"]);
+var guestTaskView = external_exports.object({
+  id: external_exports.string().uuid(),
+  name: external_exports.string(),
+  tradeName: external_exports.string().nullable(),
+  start: isoDate.nullable(),
+  end: isoDate.nullable(),
+  confirmation: confirmationLevel,
+  isWait: external_exports.boolean(),
+  /** Was dieser Gast zuletzt geantwortet hat. */
+  myAnswer: external_exports.enum(["bestaetigt", "gegenvorschlag"]).nullable()
+});
+var guestSession = external_exports.object({
+  projectName: external_exports.string(),
+  displayName: external_exports.string().nullable(),
+  role: memberRole,
+  scopes: external_exports.array(external_exports.string()),
+  locale: guestLocale,
+  tasks: external_exports.array(guestTaskView)
+});
+var guestAnswerRequest = external_exports.discriminatedUnion("agree", [
+  external_exports.object({ agree: external_exports.literal(true) }),
+  external_exports.object({
+    agree: external_exports.literal(false),
+    start: isoDate,
+    end: isoDate.optional(),
+    note: external_exports.string().trim().max(500).optional()
+  })
+]);
+var guestTokenCreated = external_exports.object({
+  /** Die Kennung des Links — damit sperren lässt, wer ihn angelegt hat. */
+  id: external_exports.string().uuid(),
+  token: external_exports.string(),
+  memberId: external_exports.string().uuid(),
+  displayName: external_exports.string().nullable(),
+  role: memberRole,
+  scopes: external_exports.array(external_exports.string()),
+  expiresAt: external_exports.string()
+});
+var guestTokenCreateRequest = external_exports.object({
+  memberId: external_exports.string().uuid(),
+  locale: guestLocale.optional(),
+  sentTo: external_exports.string().trim().max(200).optional(),
+  expiresInDays: external_exports.number().int().min(1).max(365).optional()
 });
 var apiError = external_exports.object({
   error: external_exports.string(),
@@ -15481,6 +15541,211 @@ function demoRoutes(expectedKey) {
   return demo;
 }
 
+// src/guests.ts
+var import_node_crypto7 = require("node:crypto");
+var PREFIX = "mblg_";
+var LIMIT_PRO_MINUTE = 30;
+var hashOf = (token) => (0, import_node_crypto7.createHash)("sha256").update(token).digest("hex");
+async function resolveGuestToken(token) {
+  const hash = hashOf(token);
+  const kontext = await withUserTx({}, async (tx) => {
+    const result = await tx.query("select * from mbl.use_guest_token($1, $2)", [hash, LIMIT_PRO_MINUTE]);
+    return result.rows[0] ?? null;
+  });
+  if (kontext === null) {
+    throw new HTTPException(401, {
+      message: "Dieser Link gilt nicht mehr.",
+      cause: {
+        hint: "Bitte den Bauherrn um einen neuen Link. Links laufen nach 180 Tagen ab."
+      }
+    });
+  }
+  if (kontext.zu_oft) {
+    throw new HTTPException(429, {
+      message: "Das waren gerade sehr viele Aufrufe. Versuch es in einer Minute noch einmal."
+    });
+  }
+  return {
+    tokenId: kontext.token_id,
+    projectId: kontext.project_id,
+    memberId: kontext.member_id,
+    role: kontext.role,
+    displayName: kontext.display_name,
+    scopes: kontext.scopes,
+    locale: kontext.locale
+  };
+}
+function claimsFor(kontext) {
+  return { mbl_token: kontext.tokenId };
+}
+async function createGuestToken(tx, projectId, memberId, options) {
+  const mitglied = await tx.query(
+    `select role::text as role, display_name from project_member
+      where id = $1 and project_id = $2 and revoked_at is null`,
+    [memberId, projectId]
+  );
+  const person = mitglied.rows[0];
+  if (person === void 0) {
+    throw new HTTPException(404, { message: "Dieses Mitglied gibt es in dem Bauvorhaben nicht." });
+  }
+  const scopes = options.scopes ?? (person.role === "trade" ? ["confirm:task", "report:progress", "view:trade"] : person.role === "contractor" ? ["confirm:task", "report:progress", "view:project"] : ["view:project"]);
+  const token = `${PREFIX}${(0, import_node_crypto7.randomBytes)(32).toString("base64url")}`;
+  const inserted = await tx.query(
+    `insert into guest_token
+       (project_id, member_id, token_hash, scopes, locale, sent_to, expires_at, created_by)
+     values ($1, $2, $3, $4, $5, $6, now() + make_interval(days => $7), mbl.current_member_id($1))
+     returning id, expires_at`,
+    [
+      projectId,
+      memberId,
+      hashOf(token),
+      scopes,
+      options.locale ?? "de",
+      options.sentTo ?? null,
+      options.expiresInDays ?? 180
+    ]
+  );
+  await tx.query(
+    `insert into audit_log (project_id, actor_member_id, actor_channel, action, entity_type, entity_id, meta)
+     values ($1, mbl.current_member_id($1), 'app', 'guest_token.created', 'project_member', $2, $3)`,
+    [projectId, memberId, JSON.stringify({ scopes, locale: options.locale ?? "de" })]
+  );
+  return {
+    id: inserted.rows[0].id,
+    token,
+    memberId,
+    displayName: person.display_name,
+    role: person.role,
+    scopes,
+    expiresAt: new Date(inserted.rows[0].expires_at).toISOString()
+  };
+}
+async function revokeGuestToken(tx, projectId, tokenId) {
+  const result = await tx.query(
+    "update guest_token set revoked_at = now() where id = $1 and project_id = $2 and revoked_at is null",
+    [tokenId, projectId]
+  );
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Diesen Link gibt es nicht oder er ist schon gesperrt." });
+  }
+}
+async function guestView(tx, kontext) {
+  const projekt = await tx.query(
+    "select name, address from project where id = $1",
+    [kontext.projectId]
+  );
+  const kopf = projekt.rows[0];
+  if (kopf === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const tasks = await tx.query(
+    `select t.id, t.name, tr.name as trade_name, t.current_start, t.current_end,
+            t.confirmation, t.status::text as status, t.is_wait,
+            (select c.action::text from task_confirmation c
+              where c.task_id = t.id and c.member_id = $2
+              order by c.created_at desc limit 1) as meine_rueckmeldung
+       from task t
+       left join trade tr on tr.id = t.trade_id
+      where t.project_id = $1
+        and t.status not in ('entfallen','abgenommen')
+        and t.current_end >= current_date - 30
+      order by t.current_start, t.sort_order
+      limit 40`,
+    [kontext.projectId, kontext.memberId]
+  );
+  return {
+    projectName: kopf.name,
+    displayName: kontext.displayName,
+    role: kontext.role,
+    scopes: kontext.scopes,
+    locale: kontext.locale,
+    tasks: tasks.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      tradeName: row.trade_name,
+      start: row.current_start,
+      end: row.current_end,
+      confirmation: row.confirmation,
+      isWait: row.is_wait,
+      myAnswer: row.meine_rueckmeldung === null ? null : row.meine_rueckmeldung
+    }))
+  };
+}
+async function answerTask(tx, kontext, taskId, antwort) {
+  const vorgang = await tx.query(
+    `select t.id, t.name, tr.name as trade_name, t.current_start, t.current_end, t.is_wait
+       from task t left join trade tr on tr.id = t.trade_id
+      where t.id = $1 and t.project_id = $2`,
+    [taskId, kontext.projectId]
+  );
+  const head = vorgang.rows[0];
+  if (head === void 0) {
+    throw new HTTPException(404, { message: "Diesen Vorgang gibt es hier nicht." });
+  }
+  const naechsterGrad = antwort.agree ? "mutual" : "disputed";
+  await tx.query(
+    `insert into task_confirmation
+       (project_id, task_id, member_id, action, stated_start, stated_end,
+        proposed_start, proposed_end, note, actor_channel)
+     values ($1,$2,$3,$4::mbl.confirmation_action,$5,$6,$7,$8,$9,'guest_link')`,
+    [
+      kontext.projectId,
+      taskId,
+      kontext.memberId,
+      antwort.agree ? "bestaetigt" : "gegenvorschlag",
+      head.current_start,
+      head.current_end,
+      antwort.agree ? null : antwort.start,
+      antwort.agree ? null : antwort.end ?? null,
+      antwort.agree ? null : antwort.note ?? null
+    ]
+  );
+  await tx.query(
+    `update task set confirmation = $2::mbl.confirmation,
+                     confirmed_by = $3, confirmed_at = now()
+      where id = $1`,
+    [taskId, naechsterGrad, kontext.memberId]
+  );
+  if (!antwort.agree) {
+    await tx.query(
+      `insert into schedule_change
+         (project_id, task_id, field, old_value, new_value, actor_member_id,
+          actor_role, actor_channel, reason_code, reason_text)
+       values ($1, $2, 'proposed_start', to_jsonb($3::text), to_jsonb($4::text), $5,
+               $6::mbl.member_role, 'guest_link', 'kapazitaet', $7)`,
+      [
+        kontext.projectId,
+        taskId,
+        head.current_start,
+        antwort.start,
+        kontext.memberId,
+        kontext.role,
+        antwort.note ?? "Gegenvorschlag \xFCber den Abstimmungslink."
+      ]
+    );
+  }
+  await tx.query(
+    `insert into audit_log (project_id, actor_member_id, actor_channel, action, entity_type, entity_id)
+     values ($1, $2, 'guest_link', $3, 'task', $4)`,
+    [
+      kontext.projectId,
+      kontext.memberId,
+      antwort.agree ? "task.confirmed" : "task.disputed",
+      taskId
+    ]
+  );
+  return {
+    id: head.id,
+    name: head.name,
+    tradeName: head.trade_name,
+    start: head.current_start,
+    end: head.current_end,
+    confirmation: naechsterGrad,
+    isWait: head.is_wait,
+    myAnswer: antwort.agree ? "bestaetigt" : "gegenvorschlag"
+  };
+}
+
 // src/onboarding.ts
 var DEFAULT_TEMPLATE_KEY = "efh_massiv_unterkellert";
 async function loadTemplate(tx, key) {
@@ -15858,7 +16123,11 @@ var EXPECTED = [
   // Der Plan liefert die Entscheidungen mit aus; ohne die Tabelle endet jede
   // Planansicht im Fehler, nicht nur die Entscheidungsliste.
   { migration: "0007_decisions.sql", table: "decision", column: "due_date" },
-  { migration: "0009_tagebuch.sql", table: "diary_entry", column: "content_hash" }
+  { migration: "0009_tagebuch.sql", table: "diary_entry", column: "content_hash" },
+  // Der Gast-Zugang ist der einzige Weg ins Produkt ohne Konto. Fehlt die
+  // Tabelle, endet jeder Abstimmungslink im Fehler statt in der Frage — und
+  // die Links sind schon verschickt, wenn das auffällt.
+  { migration: "0011_gastzugang.sql", table: "guest_token", column: "token_hash" }
 ];
 async function checkSchema(tx) {
   if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
@@ -15947,6 +16216,34 @@ function createApp() {
     console.info("Testzugang aktiv: POST /api/demo/session");
     app.route("/demo", demoRoutes(demoKey));
   }
+  const gast = new Hono2();
+  gast.get("/session", async (c) => {
+    const kontext = await resolveGuestToken(tokenAus(c.req.header("authorization")));
+    const view = await withUserTx(claimsFor(kontext), (tx) => guestView(tx, kontext));
+    return c.json(view);
+  });
+  gast.post("/tasks/:taskId/answer", async (c) => {
+    const kontext = await resolveGuestToken(tokenAus(c.req.header("authorization")));
+    if (!kontext.scopes.includes("confirm:task")) {
+      throw new HTTPException(403, {
+        message: "Dieser Link ist zum Mitlesen gedacht, nicht zum Best\xE4tigen."
+      });
+    }
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = guestAnswerRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "F\xFCr einen anderen Termin brauchen wir ein Datum.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const task = await withUserTx(
+      claimsFor(kontext),
+      (tx) => answerTask(tx, kontext, taskId, parsed.data)
+    );
+    return c.json(task);
+  });
+  app.route("/guest", gast);
   const v1 = new Hono2();
   v1.use("*", requireAuth);
   v1.get("/me", async (c) => {
@@ -16072,6 +16369,48 @@ function createApp() {
     const projectId = parseId(c.req.param("id"));
     const schedule = await withUserTx(c.get("claims"), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+  v1.post("/projects/:id/guest-links", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = guestTokenCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "F\xFCr einen Link brauchen wir, an wen er gehen soll.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const created = await withUserTx(
+      c.get("claims"),
+      (tx) => createGuestToken(tx, projectId, parsed.data.memberId, {
+        ...parsed.data.locale === void 0 ? {} : { locale: parsed.data.locale },
+        ...parsed.data.sentTo === void 0 ? {} : { sentTo: parsed.data.sentTo },
+        ...parsed.data.expiresInDays === void 0 ? {} : { expiresInDays: parsed.data.expiresInDays }
+      })
+    );
+    return c.json(created, 201);
+  });
+  v1.get("/projects/:id/guest-links", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const links = await withUserTx(c.get("claims"), async (tx) => {
+      const result = await tx.query(
+        `select g.id, g.member_id as "memberId", m.display_name as "displayName",
+                m.role::text as role, g.scopes, g.locale, g.sent_to as "sentTo",
+                g.expires_at as "expiresAt", g.last_used_at as "lastUsedAt",
+                g.use_count as "useCount", g.revoked_at as "revokedAt"
+           from guest_token g join project_member m on m.id = g.member_id
+          where g.project_id = $1
+          order by g.created_at desc`,
+        [projectId]
+      );
+      return result.rows;
+    });
+    return c.json({ links });
+  });
+  v1.delete("/projects/:id/guest-links/:linkId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const linkId = parseId(c.req.param("linkId"));
+    await withUserTx(c.get("claims"), (tx) => revokeGuestToken(tx, projectId, linkId));
+    return c.json({ ok: true });
   });
   v1.get("/projects/:id/diary", async (c) => {
     const projectId = parseId(c.req.param("id"));
@@ -16249,6 +16588,16 @@ function toProjectSummary(row) {
     catholicMunicipality: row.catholic_municipality
   };
 }
+function tokenAus(header) {
+  const token = header?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  if (token === "") {
+    throw new HTTPException(401, {
+      message: "Dieser Link ist unvollst\xE4ndig.",
+      cause: { hint: "\xD6ffne ihn noch einmal aus der Nachricht, die du bekommen hast." }
+    });
+  }
+  return token;
+}
 function parseId(raw2) {
   const parsed = uuid.safeParse(raw2);
   if (!parsed.success) {
@@ -16285,6 +16634,31 @@ async function loadPermissions(tx, projectId) {
     [projectId]
   );
   return result.rows.map((row) => row.permission);
+}
+async function loadMembers(tx, projectId) {
+  const result = await tx.query(
+    `select m.id, m.role, m.display_name, m.company, m.email, tr.name as trade_name,
+            (m.user_id is not null) as has_account,
+            exists (
+              select 1 from guest_token g
+               where g.member_id = m.id and g.revoked_at is null and g.expires_at > now()
+            ) as has_guest_link
+       from project_member m
+       left join trade tr on tr.id = m.trade_id
+      where m.project_id = $1 and m.revoked_at is null
+      order by m.role, m.display_name`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    role: row.role,
+    displayName: row.display_name,
+    company: row.company,
+    email: row.email,
+    tradeName: row.trade_name,
+    hasAccount: row.has_account,
+    hasGuestLink: row.has_guest_link
+  }));
 }
 async function loadTasks(tx, projectId) {
   const result = await tx.query(
@@ -16333,6 +16707,7 @@ async function loadSchedule(tx, projectId) {
   const tasks = await loadTasks(tx, projectId);
   const phases = await loadPhases(tx, projectId);
   const decisions = await loadDecisions(tx, projectId);
+  const members = await loadMembers(tx, projectId);
   const ends = tasks.map((task) => task.currentEnd).filter((end) => end !== null);
   const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => a > b ? a : b);
   let deviationWorkdays = null;
@@ -16347,6 +16722,7 @@ async function loadSchedule(tx, projectId) {
   return {
     project,
     permissions,
+    members,
     phases,
     tasks,
     decisions,
