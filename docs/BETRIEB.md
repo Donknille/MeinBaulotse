@@ -258,6 +258,13 @@ mit `content-disposition: attachment`. Die Liste der Tabellen steht in
 `EXPORT_TABELLEN`; wer eine Tabelle ergänzt, ergänzt sie dort — sonst fehlt
 sie still im Export, und das fällt erst auf, wenn jemand sie braucht.
 
+## Datenschutz
+
+Welche Daten anfallen und an wen sie gehen, steht in `docs/DATENSCHUTZ.md` —
+samt der Frage, was „Frag den Lotsen" zu sehen bekommt. Wer das Produkt
+betreibt, braucht die Datei als Grundlage seiner Datenschutzerklärung und
+seiner Verträge nach Art. 28 DSGVO.
+
 ## Löschung (Abschnitt 6.5)
 
 Zwei Schritte, und die Trennung ist Absicht.

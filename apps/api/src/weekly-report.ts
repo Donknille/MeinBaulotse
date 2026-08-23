@@ -307,6 +307,28 @@ export async function buildWeeklyReport(
           releasable: naechste.hindernisse === null || naechste.hindernisse.length === 0,
         };
 
+  // Die Aufbewahrungserinnerung aus Abschnitt 6.5.
+  //
+  // Fünf Jahre nach der Abnahme läuft die Gewährleistung ab. Das Produkt
+  // löscht dann nichts — es sagt Bescheid. Wer nach fünf Jahren feststellt,
+  // dass seine Akte weg ist, hat sie genau dann verloren, als er sie
+  // vielleicht gebraucht hätte.
+  const abnahme = await tx.query<{ actual_end: string }>(
+    `select t.actual_end from task t
+      where t.project_id = $1 and t.template_task_code = 't37' and t.actual_end is not null`,
+    [projectId],
+  );
+
+  const abgenommen = abnahme.rows[0]?.actual_end ?? null;
+  const jahre =
+    abgenommen === null
+      ? 0
+      : Math.floor(
+          (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${abgenommen}T00:00:00Z`))
+            / (365.25 * 86_400_000),
+        );
+  const retention = abgenommen !== null && jahre >= 5 ? { acceptedOn: abgenommen, years: jahre } : null;
+
   return {
     project: { id: head.id, name: head.name },
     weekStart: today,
@@ -321,5 +343,6 @@ export async function buildWeeklyReport(
     forecast: { computedEnd, contractualEnd, deviationWorkdays },
     photos: fotos,
     money: geld,
+    retention,
   };
 }

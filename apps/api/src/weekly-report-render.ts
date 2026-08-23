@@ -159,6 +159,19 @@ export function alsText(report: WeeklyReport): string {
     zeilen.push('');
   }
 
+  // Die Aufbewahrungserinnerung aus 6.5 steht ganz unten und nicht oben: Sie
+  // ist keine Aufgabe der Woche, sondern eine Sache, die einmal im Leben des
+  // Bauvorhabens zu entscheiden ist.
+  if (report.retention !== null) {
+    zeilen.push('DEINE BAUAKTE');
+    zeilen.push(
+      `  Die Abnahme war am ${report.retention.acceptedOn}, also vor ${report.retention.years} Jahren.`,
+    );
+    zeilen.push('  Die Gewährleistung ist damit abgelaufen. Gelöscht wird trotzdem nichts —');
+    zeilen.push('  das entscheidest du. Die Akte liegt weiter für dich bereit.');
+    zeilen.push('');
+  }
+
   zeilen.push('—');
   zeilen.push('MeinBaulotse. Du bleibst der Bauherr, wir sagen dir, was als Nächstes kommt.');
 
@@ -269,6 +282,19 @@ export function alsHtml(report: WeeklyReport): string {
           ),
         );
 
+  const aufbewahrungBlock =
+    report.retention === null
+      ? ''
+      : block(
+          'Deine Bauakte',
+          zeile(
+            `Die Abnahme war am ${escape(report.retention.acceptedOn)}, also vor `
+            + `${report.retention.years} Jahren — die Gewährleistung ist abgelaufen.`,
+            'Gelöscht wird trotzdem nichts. Das entscheidest du; die Akte liegt weiter '
+            + 'für dich bereit.',
+          ),
+        );
+
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><title>${escape(betreff(report))}</title></head>
 <body style="margin:0;padding:24px;background:#f5f5f5;">
@@ -289,6 +315,7 @@ export function alsHtml(report: WeeklyReport): string {
       ${block('Prognose', zeile(escape(prognoseSatz(report))))}
       ${fotoBlock}
       ${geldBlock}
+    ${aufbewahrungBlock}
     </table>
     <div style="padding-top:24px;font:400 13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#737373;">
       MeinBaulotse. Du bleibst der Bauherr, wir sagen dir, was als Nächstes kommt.

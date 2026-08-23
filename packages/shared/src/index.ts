@@ -498,6 +498,22 @@ export const weeklyReport = z.object({
       releasable: z.boolean(),
     })
     .nullable(),
+  /**
+   * Die Aufbewahrungserinnerung aus Abschnitt 6.5.
+   *
+   * „Aufbewahrung bis 5 Jahre nach Abnahme wegen Gewährleistung, danach
+   * Erinnerung statt stiller Löschung." Das Entscheidende ist das letzte
+   * Wort: Wer nach fünf Jahren feststellt, dass seine Akte weg ist, hat sie
+   * genau dann verloren, als er sie vielleicht gebraucht hätte. Also erinnern
+   * und den Bauherrn entscheiden lassen.
+   */
+  retention: z
+    .object({
+      acceptedOn: isoDate,
+      /** Wie viele Jahre seit der Abnahme vergangen sind. */
+      years: z.number().int(),
+    })
+    .nullable(),
 });
 export type WeeklyReport = z.infer<typeof weeklyReport>;
 

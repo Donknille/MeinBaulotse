@@ -13343,6 +13343,20 @@ var weeklyReport = external_exports.object({
     dueDate: isoDate.nullable(),
     requirement: external_exports.string(),
     releasable: external_exports.boolean()
+  }).nullable(),
+  /**
+   * Die Aufbewahrungserinnerung aus Abschnitt 6.5.
+   *
+   * „Aufbewahrung bis 5 Jahre nach Abnahme wegen Gewährleistung, danach
+   * Erinnerung statt stiller Löschung." Das Entscheidende ist das letzte
+   * Wort: Wer nach fünf Jahren feststellt, dass seine Akte weg ist, hat sie
+   * genau dann verloren, als er sie vielleicht gebraucht hätte. Also erinnern
+   * und den Bauherrn entscheiden lassen.
+   */
+  retention: external_exports.object({
+    acceptedOn: isoDate,
+    /** Wie viele Jahre seit der Abnahme vergangen sind. */
+    years: external_exports.number().int()
   }).nullable()
 });
 var mediaItem = external_exports.object({
@@ -15537,6 +15551,16 @@ async function buildWeeklyReport(tx, projectId, today) {
     requirement: naechste.hindernisse === null || naechste.hindernisse.length === 0 ? "Alles erf\xFCllt. Du kannst freigeben." : `Offen: ${naechste.hindernisse.join(", ")}.`,
     releasable: naechste.hindernisse === null || naechste.hindernisse.length === 0
   };
+  const abnahme = await tx.query(
+    `select t.actual_end from task t
+      where t.project_id = $1 and t.template_task_code = 't37' and t.actual_end is not null`,
+    [projectId]
+  );
+  const abgenommen = abnahme.rows[0]?.actual_end ?? null;
+  const jahre = abgenommen === null ? 0 : Math.floor(
+    (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${abgenommen}T00:00:00Z`)) / (365.25 * 864e5)
+  );
+  const retention = abgenommen !== null && jahre >= 5 ? { acceptedOn: abgenommen, years: jahre } : null;
   return {
     project: { id: head.id, name: head.name },
     weekStart: today,
@@ -15547,7 +15571,8 @@ async function buildWeeklyReport(tx, projectId, today) {
     changes: verschiebungen,
     forecast: { computedEnd, contractualEnd, deviationWorkdays },
     photos: fotos,
-    money: geld
+    money: geld,
+    retention
   };
 }
 

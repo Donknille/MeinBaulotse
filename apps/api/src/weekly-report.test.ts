@@ -215,6 +215,55 @@ describe('Die sechs Blöcke aus 3.11', () => {
     expect(mit.money?.requirement).toContain(vorgang.name);
   });
 
+  /**
+   * Abschnitt 6.5: „Aufbewahrung bis 5 Jahre nach Abnahme wegen
+   * Gewährleistung, danach **Erinnerung statt stiller Löschung**."
+   *
+   * Das letzte Wort ist das entscheidende. Wer nach fünf Jahren feststellt,
+   * dass seine Akte weg ist, hat sie genau dann verloren, als er sie
+   * vielleicht gebraucht hätte.
+   */
+  describe('Die Aufbewahrungserinnerung', () => {
+    it('schweigt, solange die Gewährleistung läuft', async () => {
+      const abnahme = await withAdminTx(async (tx) =>
+        (
+          await tx.query<{ id: string }>(
+            "select id from task where project_id = $1 and template_task_code = 't37'",
+            [projektId],
+          )
+        ).rows[0]!.id,
+      );
+
+      await withAdminTx(async (tx) =>
+        tx.query('update task set actual_end = $2 where id = $1', [abnahme, '2024-06-01']),
+      );
+      expect((await hole()).retention).toBeNull();
+    });
+
+    it('erinnert nach fünf Jahren — und sagt, dass nichts gelöscht wird', async () => {
+      const abnahme = await withAdminTx(async (tx) =>
+        (
+          await tx.query<{ id: string }>(
+            "select id from task where project_id = $1 and template_task_code = 't37'",
+            [projektId],
+          )
+        ).rows[0]!.id,
+      );
+      await withAdminTx(async (tx) =>
+        tx.query('update task set actual_end = $2 where id = $1', [abnahme, '2019-06-01']),
+      );
+
+      const bericht = await hole();
+      expect(bericht.retention).not.toBeNull();
+      expect(bericht.retention!.acceptedOn).toBe('2019-06-01');
+      expect(bericht.retention!.years).toBeGreaterThanOrEqual(5);
+
+      // Und der Text sagt das Entscheidende: Es wird nichts gelöscht.
+      expect(alsText(bericht)).toContain('Gelöscht wird trotzdem nichts');
+      expect(alsHtml(bericht)).toContain('Gelöscht wird trotzdem nichts');
+    });
+  });
+
   it('sagt, wo das Bauvorhaben gerade steht', () => {
     expect(bericht.phase).not.toBeNull();
     expect(bericht.phase!.ordinal).toBeGreaterThan(0);

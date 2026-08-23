@@ -15,14 +15,15 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BadgeEuro, Landmark, Lock, Scale, ScrollText } from 'lucide-react';
+import { BadgeEuro, Landmark, Lock, Plus, Scale, ScrollText } from 'lucide-react';
 import {
   LEGAL_DISCLAIMER,
+  type ChangeOrderCreateRequest,
   type ContractMirror,
   type MoneyView,
   type PaymentMilestoneDto,
 } from '@meinbaulotse/shared';
-import { Button, Card, Field, Pill } from '../components/ui';
+import { Button, Card, Field, FieldGroup, Pill } from '../components/ui';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
 import { formatDate } from '../lib/format';
@@ -69,6 +70,19 @@ export function Money() {
       setFehler(error instanceof ApiError ? error.message : 'Das hat nicht geklappt.'),
   });
 
+  const nachtrag = useMutation({
+    mutationFn: (body: ChangeOrderCreateRequest) => api.createChangeOrder(projectId!, body),
+    onSuccess: () => {
+      setFehler(null);
+      void queryClient.invalidateQueries({ queryKey: ['money', projectId] });
+      // Ein vereinbarter Nachtrag verändert die Prüfung aus 3.9 — er zählt zur
+      // Vergütung, gegen die § 650m Abs. 2 S. 2 BGB die Sicherheit bemisst.
+      void queryClient.invalidateQueries({ queryKey: ['contract', projectId] });
+    },
+    onError: (error) =>
+      setFehler(error instanceof ApiError ? error.message : 'Das hat nicht geklappt.'),
+  });
+
   const freigeben = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof api.releasePayment>[2] }) =>
       api.releasePayment(projectId!, id, body),
@@ -109,9 +123,11 @@ export function Money() {
             onRelease={(id, body) => freigeben.mutate({ id, body })}
           />
           {money.data.loan === null ? null : <Darlehen loan={money.data.loan} />}
-          {money.data.changeOrders.length === 0 ? null : (
-            <Nachtraege orders={money.data.changeOrders} />
-          )}
+          <Nachtraege
+            orders={money.data.changeOrders}
+            busy={nachtrag.isPending}
+            onCreate={(body) => nachtrag.mutate(body)}
+          />
         </>
       )}
 
@@ -321,25 +337,168 @@ function Darlehen({ loan }: { loan: NonNullable<MoneyView['loan']> }) {
   );
 }
 
-function Nachtraege({ orders }: { orders: MoneyView['changeOrders'] }) {
+const CHANGE_ORDER_LABEL: Record<string, string> = {
+  angefragt: 'angefragt',
+  vereinbart: 'vereinbart',
+  abgelehnt: 'abgelehnt',
+  zurueckgezogen: 'zurückgezogen',
+};
+
+/**
+ * Nachträge (Abschnitt 3.10).
+ *
+ * Der Abschnitt steht auch dann da, wenn keiner erfasst ist — mit einem Satz,
+ * warum er wichtig ist. Nachträge sind der häufigste Weg, auf dem ein Bau
+ * teurer wird als vereinbart, und sie fallen einzeln kaum auf. Erst die Summe
+ * fällt auf, und dann ist sie schon da.
+ */
+function Nachtraege({
+  orders,
+  busy,
+  onCreate,
+}: {
+  orders: MoneyView['changeOrders'];
+  busy: boolean;
+  onCreate: (body: ChangeOrderCreateRequest) => void;
+}) {
+  const [offen, setOffen] = useState(false);
+  const [titel, setTitel] = useState('');
+  const [grund, setGrund] = useState('');
+  const [betrag, setBetrag] = useState('');
+  const [tage, setTage] = useState('');
+  const [stand, setStand] = useState<ChangeOrderCreateRequest['status']>('angefragt');
+
+  const summe = orders
+    .filter((eintrag) => eintrag.status === 'vereinbart')
+    .reduce((wert, eintrag) => wert + (eintrag.amountCents ?? 0), 0);
+
   return (
     <section className="flex flex-col gap-3">
       <h2 className="flex items-center gap-2 text-body font-medium text-charcoal">
         <ScrollText size={18} aria-hidden />
         Nachträge
       </h2>
-      <Card className="flex flex-col gap-2 py-3">
-        {orders.map((nachtrag) => (
-          <div key={nachtrag.id} className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-body text-charcoal">{nachtrag.title}</span>
-            <span className="text-body text-steel">
-              {euro(nachtrag.amountCents)}
-              {nachtrag.daysImpact === null ? '' : ` · ${nachtrag.daysImpact} Tage`}
-              {' · '}
-              {nachtrag.status}
-            </span>
+      <Card className="flex flex-col gap-3">
+        {orders.length === 0 ? (
+          <p className="text-body text-steel">
+            Noch keiner erfasst. Nachträge sind der häufigste Weg, auf dem ein Bau teurer wird
+            als vereinbart — einzeln fallen sie kaum auf, die Summe schon.
+          </p>
+        ) : (
+          <>
+            <ul className="flex flex-col gap-2">
+              {orders.map((eintrag) => (
+                <li
+                  key={eintrag.id}
+                  className="flex flex-wrap items-baseline justify-between gap-2"
+                >
+                  <span className="text-body text-charcoal">
+                    {eintrag.title}
+                    {eintrag.bgbBasis === null ? '' : ` · ${eintrag.bgbBasis}`}
+                  </span>
+                  <span className="text-body text-steel">
+                    {euro(eintrag.amountCents)}
+                    {eintrag.daysImpact === null || eintrag.daysImpact === 0
+                      ? ''
+                      : ` · ${eintrag.daysImpact > 0 ? '+' : ''}${eintrag.daysImpact} Tage`}
+                    {' · '}
+                    {CHANGE_ORDER_LABEL[eintrag.status] ?? eintrag.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {summe > 0 ? (
+              <p className="text-body text-charcoal">
+                Vereinbart insgesamt: <span className="font-medium">{euro(summe)}</span>
+              </p>
+            ) : null}
+          </>
+        )}
+
+        {!offen ? (
+          <Button className="w-fit" onClick={() => setOffen(true)}>
+            <Plus size={16} aria-hidden />
+            Nachtrag erfassen
+          </Button>
+        ) : (
+          <div className="flex flex-col gap-3 border-t border-ash pt-3">
+            <Field label="Worum geht es?">
+              <input
+                value={titel}
+                onChange={(event) => setTitel(event.target.value)}
+                placeholder="Bodenplatte 10 cm stärker wegen Baugrund"
+                className="h-12 w-full rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+              />
+            </Field>
+            <Field
+              label="Warum kam es dazu?"
+              hint="Wichtig für die Frage, wer ihn zu tragen hat."
+            >
+              <input
+                value={grund}
+                onChange={(event) => setGrund(event.target.value)}
+                className="h-12 w-full rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+              />
+            </Field>
+            <div className="flex flex-wrap gap-3">
+              <Field label="Betrag in Euro">
+                <input
+                  type="number"
+                  value={betrag}
+                  onChange={(event) => setBetrag(event.target.value)}
+                  className="h-12 w-40 rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+                />
+              </Field>
+              <Field label="Bauzeit in Tagen" hint="Negativ heißt: schneller.">
+                <input
+                  type="number"
+                  value={tage}
+                  onChange={(event) => setTage(event.target.value)}
+                  className="h-12 w-40 rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+                />
+              </Field>
+            </div>
+            <FieldGroup label="Stand">
+              <div className="flex flex-wrap gap-2">
+                {(['angefragt', 'vereinbart', 'abgelehnt'] as const).map((wert) => (
+                  <Button
+                    key={wert}
+                    variant={stand === wert ? 'primary' : 'outline'}
+                    size="sm"
+                    onClick={() => setStand(wert)}
+                  >
+                    {CHANGE_ORDER_LABEL[wert]}
+                  </Button>
+                ))}
+              </div>
+            </FieldGroup>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="primary"
+                disabled={busy || titel.trim().length < 3}
+                onClick={() => {
+                  onCreate({
+                    title: titel.trim(),
+                    status: stand,
+                    ...(grund.trim() === '' ? {} : { triggerText: grund.trim() }),
+                    ...(betrag === '' ? {} : { amountCents: Math.round(Number(betrag) * 100) }),
+                    ...(tage === '' ? {} : { daysImpact: Number(tage) }),
+                  });
+                  setOffen(false);
+                  setTitel('');
+                  setGrund('');
+                  setBetrag('');
+                  setTage('');
+                }}
+              >
+                Erfassen
+              </Button>
+              <Button variant="ghost" onClick={() => setOffen(false)}>
+                Abbrechen
+              </Button>
+            </div>
           </div>
-        ))}
+        )}
       </Card>
     </section>
   );

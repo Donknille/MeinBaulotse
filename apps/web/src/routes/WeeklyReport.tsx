@@ -12,7 +12,15 @@
 
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CalendarClock, Camera, CircleDot, Coins, TrendingUp } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarClock,
+  Camera,
+  CircleDot,
+  Coins,
+  FolderOpen,
+  TrendingUp,
+} from 'lucide-react';
 import type { WeeklyReport as WeeklyReportDto } from '@meinbaulotse/shared';
 import { Button, Card, SectionPill } from '../components/ui';
 import { TopBar } from '../components/TopBar';
@@ -203,6 +211,25 @@ function Bericht({ report }: { report: WeeklyReportDto }) {
               : ` · ${Math.round(report.money.amountCents / 100).toLocaleString('de-DE')} €`}
           </p>
           <p className="text-body text-steel">{report.money.requirement}</p>
+        </Abschnitt>
+      ) : null}
+
+      {/* Die Aufbewahrungserinnerung aus Abschnitt 6.5. Ganz unten, weil sie
+          keine Aufgabe der Woche ist, sondern eine Sache, die einmal im Leben
+          des Bauvorhabens zu entscheiden ist. */}
+      {report.retention !== null ? (
+        <Abschnitt
+          titel="Deine Bauakte"
+          icon={<FolderOpen size={18} className="text-electric-blue" />}
+        >
+          <p className="text-body text-charcoal">
+            Die Abnahme war am {formatDate(report.retention.acceptedOn)}, also vor{' '}
+            {report.retention.years} Jahren — die Gewährleistung ist abgelaufen.
+          </p>
+          <p className="text-body text-steel">
+            Gelöscht wird trotzdem nichts. Das entscheidest du; die Akte liegt weiter für dich
+            bereit.
+          </p>
         </Abschnitt>
       ) : null}
     </>

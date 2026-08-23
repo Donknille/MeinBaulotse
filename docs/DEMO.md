@@ -403,6 +403,16 @@ zu „es fehlt 1 von 11 Punkten" und nennt den fehlenden beim Namen. Das ist der
 Unterschied, um den es geht: „Die Baubeschreibung ist unvollständig" ist keine
 Hilfe, „es fehlt die verbindliche Angabe zur Bauzeit" ist eine.
 
+Darunter stehen die **Nachträge**. Der Abschnitt ist auch dann da, wenn keiner
+erfasst ist — mit einem Satz, warum er wichtig ist: Nachträge sind der
+häufigste Weg, auf dem ein Bau teurer wird als vereinbart, und einzeln fallen
+sie kaum auf.
+
+Zum Ausprobieren: am *Musterhaus Sonnenweg* einen vereinbarten Nachtrag über
+48.000 Euro erfassen. Das sind mehr als zehn Prozent der Vergütung, und der
+Vertragsspiegel meldet daraufhin sofort § 650m Abs. 2 S. 2 BGB — die weitere
+Sicherheit von fünf Prozent des zusätzlichen Vergütungsanspruchs.
+
 Darunter steht das **Darlehen** mit den Bereitstellungszinsen — die Zahl, die
 sonst erst auf einer Abrechnung auftaucht und bei einem verzögerten Bau
 schnell vierstellig wird.
@@ -475,8 +485,6 @@ Bauherrn.
   in denen am meisten schiefgeht; die anderen 22 Vorgänge sagen ehrlich, dass es
   zu ihnen noch keine gibt. Und die fachliche Prüfung durch einen
   Sachverständigen steht aus, siehe `docs/REDAKTION.md`.
-- **Nachträge anlegen.** Die Tabelle steht, die Route auch; eine Maske dafür
-  gibt es noch nicht. In der Demolage sind deshalb keine erfasst.
 
 ## Nach `pnpm db:test`
 
