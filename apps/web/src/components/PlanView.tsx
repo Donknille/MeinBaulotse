@@ -11,7 +11,9 @@
 
 import { useState } from 'react';
 import {
+  BadgeEuro,
   CalendarClock,
+  CircleAlert,
   CalendarDays,
   Check,
   ChevronDown,
@@ -47,6 +49,8 @@ export function PlanView({
   weeklyReportHref,
   diaryHref,
   lotseHref,
+  defectsHref,
+  moneyHref,
   onPreviewTask,
   onCreateGuestLink,
 }: {
@@ -68,6 +72,8 @@ export function PlanView({
   /** Adresse des Bautagebuchs. */
   diaryHref?: string;
   lotseHref?: string;
+  defectsHref?: string;
+  moneyHref?: string;
   /** Rechnet vor, was eine Verschiebung nach sich zöge. */
   onPreviewTask?: (taskId: string, change: TaskUpdateRequest) => Promise<SchedulePreview>;
   /** Legt einen Abstimmungslink an und gibt ihn genau einmal zurück. */
@@ -125,6 +131,24 @@ export function PlanView({
               >
                 <MessageCircleQuestion size={16} aria-hidden />
                 Frag den Lotsen
+              </a>
+            )}
+            {defectsHref === undefined ? null : (
+              <a
+                href={defectsHref}
+                className="inline-flex w-fit items-center gap-2 text-body text-electric-blue underline-offset-4 hover:underline"
+              >
+                <CircleAlert size={16} aria-hidden />
+                Mängel
+              </a>
+            )}
+            {moneyHref === undefined ? null : (
+              <a
+                href={moneyHref}
+                className="inline-flex w-fit items-center gap-2 text-body text-electric-blue underline-offset-4 hover:underline"
+              >
+                <BadgeEuro size={16} aria-hidden />
+                Geld
               </a>
             )}
           </div>

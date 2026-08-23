@@ -48,6 +48,9 @@ const EXPECTED: readonly Expectation[] = [
   // den Lotsen beim Speichern der Antwort — also nachdem das Modell schon
   // bezahlt wurde.
   { migration: '0012_lotse.sql', table: 'assistant_message', column: 'hints' },
+  // Ohne die Tabelle endet die Geldansicht im Fehler — und mit ihr die
+  // Freigabesperre, die dort erklärt wird.
+  { migration: '0013_maengel_geld.sql', table: 'payment_milestone', column: 'requires_task_ids' },
 ];
 
 export interface SchemaState {

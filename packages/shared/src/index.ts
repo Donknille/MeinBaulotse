@@ -808,3 +808,250 @@ export const lotseAnswer = z.object({
   message: lotseMessage,
 });
 export type LotseAnswer = z.infer<typeof lotseAnswer>;
+
+// -- Mängel, Geld, Vertragsspiegel (Abschnitt 3.9 und 3.10) ------------------
+
+export const defectSeverity = z.enum(['geringfuegig', 'wesentlich']);
+export type DefectSeverity = z.infer<typeof defectSeverity>;
+
+/**
+ * `strittig` hält fest, dass zwei Seiten es unterschiedlich sehen, ohne zu
+ * entscheiden, wer recht hat — dieselbe Haltung wie „zwei Angaben" bei den
+ * Terminen (CI 11.2).
+ */
+export const defectStatus = z.enum([
+  'offen',
+  'anerkannt',
+  'behoben_gemeldet',
+  'behoben',
+  'strittig',
+  'zurueckgestellt',
+]);
+export type DefectStatus = z.infer<typeof defectStatus>;
+
+/**
+ * Eine Stufe der Mängelleiter — mit dem, was jetzt dran ist.
+ *
+ * Der Grund, warum das im Vertrag steht und nicht nur in der Oberfläche: Der
+ * nächste Schritt ist der eigentliche Inhalt. Ein Bauherr weiß nicht, dass
+ * ohne Fristsetzung aus einem Mangel kein Recht wird.
+ */
+export const defectStep = z.object({
+  level: z.number().int(),
+  title: z.string(),
+  next: z.string(),
+  detail: z.string(),
+  reference: z.string().nullable(),
+});
+export type DefectStep = z.infer<typeof defectStep>;
+
+export const defectDto = z.object({
+  id: z.string().uuid(),
+  taskId: z.string().uuid().nullable(),
+  taskName: z.string().nullable(),
+  tradeId: z.string().uuid().nullable(),
+  tradeName: z.string().nullable(),
+  title: z.string(),
+  description: z.string().nullable(),
+  locationText: z.string().nullable(),
+  severity: defectSeverity,
+  reportedAt: z.string(),
+  deadline: isoDate.nullable(),
+  status: defectStatus,
+  escalationLevel: z.number().int(),
+  resolvedAt: z.string().nullable(),
+  acceptedAt: z.string().nullable(),
+  reservedAtHandover: z.boolean(),
+  reportedByName: z.string().nullable(),
+  photoCount: z.number().int(),
+  step: defectStep,
+});
+export type DefectDto = z.infer<typeof defectDto>;
+
+export const defectCreateRequest = z.object({
+  title: z.string().trim().min(3).max(200),
+  description: z.string().trim().max(4000).optional(),
+  locationText: z.string().trim().max(200).optional(),
+  severity: defectSeverity.optional(),
+  taskId: z.string().uuid().optional(),
+  tradeId: z.string().uuid().optional(),
+  deadline: isoDate.optional(),
+});
+export type DefectCreateRequest = z.infer<typeof defectCreateRequest>;
+
+export const defectUpdateRequest = z.object({
+  title: z.string().trim().min(3).max(200).optional(),
+  description: z.string().trim().max(4000).optional(),
+  locationText: z.string().trim().max(200).optional(),
+  severity: defectSeverity.optional(),
+  status: defectStatus.optional(),
+  deadline: isoDate.nullable().optional(),
+  escalationLevel: z.number().int().min(0).max(4).optional(),
+  /** Setzt die Stufe auf „angezeigt", ohne dass jemand eine Zahl wählen muss. */
+  reportedToContractor: z.boolean().optional(),
+  reservedAtHandover: z.boolean().optional(),
+  note: z.string().trim().max(2000).optional(),
+});
+export type DefectUpdateRequest = z.infer<typeof defectUpdateRequest>;
+
+export const paymentStatus = z.enum([
+  'geplant',
+  'faellig',
+  'freigegeben',
+  'teilfreigabe',
+  'bezahlt',
+]);
+export type PaymentStatus = z.infer<typeof paymentStatus>;
+
+/**
+ * Was einer Freigabe im Weg steht — als Liste, nicht als Wahrheitswert.
+ *
+ * Abschnitt 3.10: „Sonst zeigt die Oberfläche, was fehlt." Eine Sperre ohne
+ * Begründung ist für den Bauherrn dasselbe wie ein Fehler.
+ */
+export const paymentBlocker = z.object({ kind: z.string(), label: z.string() });
+export type PaymentBlocker = z.infer<typeof paymentBlocker>;
+
+export const paymentMilestoneDto = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  pct: z.number().nullable(),
+  amountCents: z.number().nullable(),
+  requiresTaskIds: z.array(z.string().uuid()),
+  invoiceNumber: z.string().nullable(),
+  invoiceDate: isoDate.nullable(),
+  dueDate: isoDate.nullable(),
+  status: paymentStatus,
+  releasedAt: z.string().nullable(),
+  paidAt: z.string().nullable(),
+  withheldCents: z.number().nullable(),
+  withheldReason: z.string().nullable(),
+  blockers: z.array(paymentBlocker),
+});
+export type PaymentMilestoneDto = z.infer<typeof paymentMilestoneDto>;
+
+export const paymentCreateRequest = z.object({
+  name: z.string().trim().min(2).max(120),
+  pct: z.number().min(0).max(100).optional(),
+  amountCents: z.number().int().min(0).optional(),
+  requiresTaskIds: z.array(z.string().uuid()).optional(),
+  dueDate: isoDate.optional(),
+  sortOrder: z.number().int().optional(),
+});
+export type PaymentCreateRequest = z.infer<typeof paymentCreateRequest>;
+
+export const paymentReleaseRequest = z.object({
+  withheldCents: z.number().int().min(0).optional(),
+  withheldReason: z.string().trim().min(3).max(500).optional(),
+});
+export type PaymentReleaseRequest = z.infer<typeof paymentReleaseRequest>;
+
+export const changeOrderStatus = z.enum([
+  'angefragt',
+  'vereinbart',
+  'abgelehnt',
+  'zurueckgezogen',
+]);
+export type ChangeOrderStatus = z.infer<typeof changeOrderStatus>;
+
+export const changeOrderDto = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  triggerText: z.string().nullable(),
+  bgbBasis: z.string().nullable(),
+  amountCents: z.number().nullable(),
+  daysImpact: z.number().int().nullable(),
+  status: changeOrderStatus,
+  requestedAt: z.string(),
+  agreedAt: z.string().nullable(),
+});
+export type ChangeOrderDto = z.infer<typeof changeOrderDto>;
+
+export const changeOrderCreateRequest = z.object({
+  title: z.string().trim().min(3).max(200),
+  triggerText: z.string().trim().max(2000).optional(),
+  bgbBasis: z.string().trim().max(200).optional(),
+  amountCents: z.number().int().optional(),
+  daysImpact: z.number().int().optional(),
+  status: changeOrderStatus.optional(),
+});
+export type ChangeOrderCreateRequest = z.infer<typeof changeOrderCreateRequest>;
+
+export const loanDrawdownDto = z.object({
+  id: z.string().uuid(),
+  label: z.string().nullable(),
+  amountCents: z.number(),
+  requestedAt: isoDate,
+  paidAt: isoDate.nullable(),
+});
+export type LoanDrawdownDto = z.infer<typeof loanDrawdownDto>;
+
+export const moneyView = z.object({
+  contractSumCents: z.number().nullable(),
+  releasedCents: z.number(),
+  payments: z.array(paymentMilestoneDto),
+  changeOrders: z.array(changeOrderDto),
+  drawdowns: z.array(loanDrawdownDto),
+  loan: z
+    .object({
+      totalCents: z.number(),
+      drawnCents: z.number(),
+      interestPct: z.number().nullable(),
+      freeMonths: z.number().int().nullable(),
+      commitmentInterestCents: z.number().nullable(),
+      commitmentDays: z.number().int().nullable(),
+    })
+    .nullable(),
+});
+export type MoneyView = z.infer<typeof moneyView>;
+
+/**
+ * Der feste Zusatz an jedem Hinweis des Vertragsspiegels (CI 11.3).
+ *
+ * Er steht hier und nicht in den einzelnen Texten, damit er nicht bei einem
+ * vergessen werden kann. Verkürzt, ausgeblendet oder hinter einen Aufklapper
+ * gelegt wird er nie.
+ */
+export const LEGAL_DISCLAIMER = 'Hinweis auf eine Gesetzesstelle, keine Rechtsberatung.';
+
+export const contractFindingDto = z.object({
+  id: z.string().uuid(),
+  ruleKey: z.string(),
+  severity: z.string(),
+  message: z.string(),
+  legalReference: z.string().nullable(),
+  dismissedAt: z.string().nullable(),
+  dismissedReason: z.string().nullable(),
+});
+export type ContractFindingDto = z.infer<typeof contractFindingDto>;
+
+export const contractMirror = z.object({
+  contractType: z.string(),
+  contractSumCents: z.number().nullable(),
+  contractualCompletion: isoDate.nullable(),
+  securityPct: z.number().nullable(),
+  findings: z.array(contractFindingDto),
+  descriptionItems: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      present: z.boolean(),
+      note: z.string().nullable(),
+      reviewed: z.boolean(),
+    }),
+  ),
+});
+export type ContractMirror = z.infer<typeof contractMirror>;
+
+export const contractUpdateRequest = z.object({
+  contractSumCents: z.number().int().min(0).nullable().optional(),
+  contractualCompletion: isoDate.nullable().optional(),
+  securityPct: z.number().min(0).max(100).nullable().optional(),
+  loanTotalCents: z.number().int().min(0).nullable().optional(),
+  commitmentInterestPct: z.number().min(0).max(20).nullable().optional(),
+  commitmentFreeMonths: z.number().int().min(0).max(60).nullable().optional(),
+  descriptionItems: z
+    .array(z.object({ key: z.string(), present: z.boolean(), note: z.string().max(500).optional() }))
+    .optional(),
+});
+export type ContractUpdateRequest = z.infer<typeof contractUpdateRequest>;

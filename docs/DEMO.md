@@ -286,6 +286,77 @@ Demostand beide angelegt hat, kann das prüfen — im Gespräch am *Stadthaus
 Ahornweg* kommt das *Musterhaus Sonnenweg* nicht vor, obwohl derselbe Bauherr
 beide besitzt.
 
+## Mängel
+
+Im Plan steht der Verweis **Mängel**. Am *Stadthaus Ahornweg* liegen drei
+davon, und sie zeigen die drei Zustände, auf die es ankommt:
+
+| Mangel | Stufe | Was oben steht |
+|---|---|---|
+| Feuchter Fleck an der Kellerwand (*wesentlich*) | Frist läuft | „Warte die Frist ab. Was in der Zeit passiert, gehört ins Bautagebuch." |
+| Fensterbank sitzt schief | Frist abgelaufen | „Jetzt hast du die Wahl" — mit §§ 637, 638, 641 Abs. 3 BGB und dem Hinweis, dass sich hier ein Fachanwalt rechnet |
+| Kratzer in der Haustür | erledigt | steht unter *Erledigt* |
+
+Der nächste Schritt steht immer da, ohne Aufklappen. Er ist der eigentliche
+Inhalt: Ein Bauherr weiß nicht, dass aus einem Mangel erst dann ein Recht
+wird, wenn er ihn schriftlich angezeigt und eine **Frist** gesetzt hat. Ohne
+Frist ändert auch zwei Jahre Ärger nichts.
+
+Was die Seite nicht sagt: ob es ein Mangel *ist*. Das entscheidet ein
+Sachverständiger — und wo es darauf ankommt, steht das auch da.
+
+Zum Ausprobieren: einen Mangel aufklappen, eine Frist eintragen, den Verlauf
+ansehen. Jeder Schritt steht darin, und keiner lässt sich nachträglich
+ändern — auch nicht mit den Rechten des Eigentümers.
+
+## Geld und Vertragsspiegel
+
+Der Verweis **Geld** führt auf den Zahlungsplan. Die beiden Bauvorhaben zeigen
+die zwei Seiten der Sache:
+
+**Am *Stadthaus Ahornweg*** ist der Vertrag in Ordnung — 90 %, Sicherheit
+vereinbart, Termin erfasst. Dafür ist eine Zahlung gesperrt, und darunter
+steht, warum:
+
+```
+Nach Gebäude dicht                          114.000 € · 30 %
+
+  Dafür fehlt noch:
+    Gebäude dicht
+    Mangel: Feuchter Fleck an der Innenseite der Kellerwand
+
+  [ Teil unter Vorbehalt freigeben ]
+```
+
+Nicht „gesperrt", sondern was fehlt. Und daneben der Weg, den Abschnitt 3.10
+ausdrücklich verlangt: Teilfreigabe mit Einbehalt. Der Einbehalt braucht einen
+Grund — ein Einbehalt ohne Grund ist im Streit wertlos.
+
+Die Sperre sitzt in der Datenbank, nicht in der Ansicht. Das lässt sich prüfen:
+
+```sql
+update payment_milestone set status = 'freigegeben' where name like 'Nach Gebäude%';
+-- ERROR: Diese Zahlung ist noch nicht freizugeben: Gebäude dicht, Feuchter Fleck …
+```
+
+**Am *Musterhaus Sonnenweg*** ist es umgekehrt: Der Bau hat noch nicht
+begonnen, dafür stimmt am Vertrag etwas nicht. Der Vertragsspiegel nennt drei
+Befunde — Zahlungsplan bei 95 % (§ 650m Abs. 1 BGB), fehlende Sicherheit
+(§ 650m Abs. 2 BGB), Baubeschreibung noch nicht durchgesehen (Art. 249 EGBGB).
+
+Unter jedem steht unverändert und sichtbar: *Hinweis auf eine Gesetzesstelle,
+keine Rechtsberatung.* Nie verkürzt, nie eingeklappt (CI 11.3).
+
+Zum Ausprobieren: *Baubeschreibung durchgehen* aufklappen, zehn der elf Punkte
+abhaken, **Übernehmen**. Der Befund ändert sich von „noch nicht durchgesehen"
+zu „es fehlt 1 von 11 Punkten" und nennt den fehlenden beim Namen. Das ist der
+Unterschied, um den es geht: „Die Baubeschreibung ist unvollständig" ist keine
+Hilfe, „es fehlt die verbindliche Angabe zur Bauzeit" ist eine.
+
+Darunter steht das **Darlehen** mit den Bereitstellungszinsen — die Zahl, die
+sonst erst auf einer Abrechnung auftaucht und bei einem verzögerten Bau
+schnell vierstellig wird.
+
 ## Was noch fehlt
 
 - **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
@@ -294,6 +365,10 @@ beide besitzt.
   in denen am meisten schiefgeht; die anderen 22 Vorgänge sagen ehrlich, dass es
   zu ihnen noch keine gibt. Und die fachliche Prüfung durch einen
   Sachverständigen steht aus, siehe `docs/REDAKTION.md`.
+- **Die Bauakte.** Der Export als PDF mit Chronologie, Fotoanhang und Prüfsumme
+  der Tagebuchkette kommt mit AP 9.
+- **Nachträge anlegen.** Die Tabelle steht, die Route auch; eine Maske dafür
+  gibt es noch nicht. In der Demolage sind deshalb keine erfasst.
 
 ## Nach `pnpm db:test`
 

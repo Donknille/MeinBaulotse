@@ -57,7 +57,7 @@ async function hole(today = HEUTE): Promise<WeeklyReport> {
 beforeAll(async () => {
   await withAdminTx(async (tx) => {
     await tx.query(
-      `truncate schedule_change, audit_log, dependency, task, project_member, project,
+      `truncate payment_milestone, schedule_change, audit_log, dependency, task, project_member, project,
                 expert_org_member, expert_org restart identity cascade`,
     );
     await tx.query('delete from auth.users');
@@ -183,8 +183,36 @@ describe('Die sechs Blöcke aus 3.11', () => {
 
   it('6. lässt den Geldblock weg, solange es keinen Zahlungsplan gibt', () => {
     // Ein leerer Kasten mit Überschrift wäre ein Versprechen, das der Bericht
-    // nicht hält. Der Block kommt mit AP 8.
+    // nicht hält.
     expect(bericht.money).toBeNull();
+  });
+
+  it('6. nennt die nächste Zahlung und wovon sie abhängt', async () => {
+    const vorgang = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ id: string; name: string }>(
+          `select id, name from task where project_id = $1 and status <> 'fertig'
+            order by current_start limit 1`,
+          [projektId],
+        )
+      ).rows[0]!,
+    );
+
+    await withAdminTx(async (tx) =>
+      tx.query(
+        `insert into payment_milestone (project_id, name, amount_cents, requires_task_ids, due_date)
+         values ($1, 'Nach dem Rohbau', 9000000, array[$2::uuid], '2026-12-01')`,
+        [projektId, vorgang.id],
+      ),
+    );
+
+    const mit = await hole();
+
+    expect(mit.money?.name).toBe('Nach dem Rohbau');
+    expect(mit.money?.releasable).toBe(false);
+    // „Offen: …" statt „gesperrt": Der Bericht sagt, was fehlt, nicht, was
+    // nicht geht.
+    expect(mit.money?.requirement).toContain(vorgang.name);
   });
 
   it('sagt, wo das Bauvorhaben gerade steht', () => {

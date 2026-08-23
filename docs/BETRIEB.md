@@ -169,3 +169,57 @@ select m.created_at, m.role, left(m.text, 120) as anfang,
  where m.project_id = '<projekt>'
  order by m.created_at;
 ```
+
+## Mängel, Zahlungen, Vertragsspiegel
+
+### Die Freigabesperre sitzt in der Datenbank
+
+`mbl.guard_payment_release` ist ein Trigger auf `payment_milestone`. Er lässt
+den Wechsel auf `freigegeben` nicht zu, solange `mbl.payment_blockers` etwas
+zurückgibt — ein Vorgang, der nicht `fertig` oder `abgenommen` ist, oder ein
+offener Mangel mit Schwere `wesentlich` an einem dieser Vorgänge.
+
+Das gilt auch für den Datenbankeigentümer. Wer eine Zahlung von Hand
+freischalten muss, hebt zuerst den Grund auf:
+
+```sql
+-- Was steht im Weg?
+select * from mbl.payment_blockers('<zahlung>');
+```
+
+Eine Zahlung, die trotz offener Punkte fließen soll, ist eine **Teilfreigabe**
+mit Einbehalt und Grund — dafür ist `teilfreigabe` da, und der Constraint
+`payment_withheld_reason` erzwingt die Begründung. Ein Einbehalt ohne Grund
+ist im Streit wertlos.
+
+### Der Vertragsspiegel rechnet bei jedem Aufruf neu
+
+`GET /api/v1/projects/:id/contract` wendet die Regeln aus
+`apps/api/src/contract-rules.ts` an und schreibt die Befunde in
+`contract_check` fort. Was nicht mehr zutrifft, verschwindet; was jemand mit
+Begründung beiseitegelegt hat, bleibt beiseitegelegt.
+
+Die Regeln sind reine Rechnung — kein Datenbankzugriff, keine Uhrzeit — und in
+`contract-rules.test.ts` bis in jeden Zweig geprüft. Wer eine Regel ergänzt,
+ergänzt sie dort und nicht in einer Abfrage.
+
+### Der Verlauf eines Mangels
+
+`defect_event` ist append-only, geschrieben von einem Trigger auf `defect`.
+Bei Streit ist nicht der heutige Stand die Frage, sondern wann angezeigt
+wurde, welche Frist lief und was die Gegenseite gesagt hat:
+
+```sql
+select e.created_at, e.action, e.old_status, e.new_status, e.note
+  from defect_event e
+ where e.defect_id = '<mangel>'
+ order by e.created_at;
+```
+
+### Bereitstellungszinsen
+
+Gerechnet wird nach der deutschen Bankmethode 30/360 — nicht die genaueste
+Methode, aber die, nach der die Bank abrechnet. Die Zahl soll zur Abrechnung
+passen und nicht zum Kalender. Grundlage sind `project.loan_total_cents`,
+`commitment_interest_pct`, `commitment_free_months` und die Abrufe in
+`loan_drawdown`.

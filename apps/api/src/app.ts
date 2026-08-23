@@ -24,8 +24,14 @@ import {
   diaryCreateRequest,
   diaryUpdateRequest,
   mediaCreateRequest,
+  changeOrderCreateRequest,
+  contractUpdateRequest,
+  defectCreateRequest,
+  defectUpdateRequest,
   guideFeedbackRequest,
   lotseAskRequest,
+  paymentCreateRequest,
+  paymentReleaseRequest,
   onboardingRequest,
   taskUpdateRequest,
   type PhaseProgress,
@@ -65,6 +71,14 @@ import { previewChange, recomputeProject } from './scheduling.js';
 import { checkSchema } from './schema-check.js';
 import { frage, loadConversation, loadConversations } from './lotse.js';
 import { modelAusUmgebung, type LotseModel } from './lotse-model.js';
+import { createDefect, loadDefectEvents, loadDefects, updateDefect } from './defects.js';
+import {
+  loadChangeOrders,
+  loadContractMirror,
+  loadMoneyView,
+  refreshContractChecks,
+  releasePayment,
+} from './money.js';
 
 type App = { Variables: AuthedVariables };
 
@@ -99,6 +113,24 @@ function missingColumnHint(error: unknown): string | null {
  */
 export function withoutSecrets(text: string): string {
   return text.replace(/:\/\/[^@\s]*@/g, '://***@');
+}
+
+/**
+ * Der heutige Tag, als `YYYY-MM-DD`.
+ *
+ * `?today=` verschiebt ihn — für den Wochenbericht, die Mängelfristen und die
+ * Geldansicht. Es ist ausdrücklich **keine** Zeitreise: Gezeigt wird, wie die
+ * Anwendung an diesem Tag rechnete, nicht, was an diesem Tag in der Datenbank
+ * stand.
+ *
+ * Beim Lotsen gibt es diesen Griff nicht — dort wäre er der erste am Kontext,
+ * und der gehört nach 6.4 nicht dem Client.
+ */
+function heute(c: { req: { query: (name: string) => string | undefined } }): string {
+  const angefragt = c.req.query('today');
+  return angefragt !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(angefragt)
+    ? angefragt
+    : new Date().toISOString().slice(0, 10);
 }
 
 export interface AppOptions {
@@ -480,6 +512,246 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     return c.json({ ok: true });
   });
 
+  // -- Mängel ----------------------------------------------------------------
+
+  v1.get('/projects/:id/defects', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const defects = await withUserTx(c.get('claims'), (tx) => loadDefects(tx, projectId));
+    return c.json({ defects });
+  });
+
+  v1.post('/projects/:id/defects', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = defectCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Beschreib den Mangel bitte in einem Satz — drei Zeichen sind zu wenig.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const defect = await withUserTx(c.get('claims'), (tx) =>
+      createDefect(tx, projectId, parsed.data),
+    );
+    return c.json(defect, 201);
+  });
+
+  v1.patch('/projects/:id/defects/:defectId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const defectId = parseId(c.req.param('defectId'));
+    const parsed = defectUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const defect = await withUserTx(c.get('claims'), (tx) =>
+      updateDefect(tx, projectId, defectId, parsed.data, heute(c)),
+    );
+    return c.json(defect);
+  });
+
+  v1.get('/projects/:id/defects/:defectId/events', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const defectId = parseId(c.req.param('defectId'));
+    const events = await withUserTx(c.get('claims'), (tx) =>
+      loadDefectEvents(tx, projectId, defectId),
+    );
+    return c.json({ events });
+  });
+
+  // -- Geld ------------------------------------------------------------------
+
+  v1.get('/projects/:id/money', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const money = await withUserTx(c.get('claims'), (tx) =>
+      loadMoneyView(tx, projectId, heute(c)),
+    );
+    return c.json(money);
+  });
+
+  v1.post('/projects/:id/payments', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = paymentCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Eine Zahlung braucht mindestens einen Namen.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const money = await withUserTx(c.get('claims'), async (tx) => {
+      const angelegt = await tx.query(
+        `insert into payment_milestone (project_id, name, pct, amount_cents, requires_task_ids,
+                                        due_date, sort_order)
+         values ($1, $2, $3, $4, coalesce($5::uuid[], '{}'), $6, coalesce($7, 0))`,
+        [
+          projectId,
+          parsed.data.name,
+          parsed.data.pct ?? null,
+          parsed.data.amountCents ?? null,
+          parsed.data.requiresTaskIds ?? null,
+          parsed.data.dueDate ?? null,
+          parsed.data.sortOrder ?? null,
+        ],
+      );
+      if (angelegt.rowCount === 0) {
+        throw new HTTPException(403, { message: 'Zahlungen pflegt der Bauherr.' });
+      }
+      // Der Zahlungsplan ist die Grundlage der Prüfung aus 3.9 — wer ihn
+      // ändert, ändert das Ergebnis. Deshalb gleich mit.
+      await refreshContractChecks(tx, projectId);
+      return loadMoneyView(tx, projectId, heute(c));
+    });
+    return c.json(money, 201);
+  });
+
+  v1.post('/projects/:id/payments/:paymentId/release', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const paymentId = parseId(c.req.param('paymentId'));
+    const parsed = paymentReleaseRequest.safeParse(
+      await c.req.json().catch(() => ({})),
+    );
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Ein Einbehalt braucht einen Grund.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    if (
+      parsed.data.withheldCents !== undefined
+      && parsed.data.withheldCents > 0
+      && parsed.data.withheldReason === undefined
+    ) {
+      throw new HTTPException(422, {
+        message: 'Ein Einbehalt ohne Grund ist im Streit wertlos. Schreib kurz, wofür.',
+      });
+    }
+    const payment = await withUserTx(c.get('claims'), (tx) =>
+      releasePayment(tx, projectId, paymentId, parsed.data),
+    );
+    return c.json(payment);
+  });
+
+  v1.post('/projects/:id/change-orders', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = changeOrderCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Ein Nachtrag braucht einen Titel.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const orders = await withUserTx(c.get('claims'), async (tx) => {
+      const angelegt = await tx.query(
+        `insert into change_order (project_id, title, trigger_text, bgb_basis, amount_cents,
+                                   days_impact, status, agreed_at)
+         values ($1, $2, $3, $4, $5, $6, coalesce($7::mbl.change_order_status, 'angefragt'),
+                 case when $7 = 'vereinbart' then now() end)`,
+        [
+          projectId,
+          parsed.data.title,
+          parsed.data.triggerText ?? null,
+          parsed.data.bgbBasis ?? null,
+          parsed.data.amountCents ?? null,
+          parsed.data.daysImpact ?? null,
+          parsed.data.status ?? null,
+        ],
+      );
+      if (angelegt.rowCount === 0) {
+        throw new HTTPException(403, { message: 'Nachträge pflegt, wer den Vertrag pflegt.' });
+      }
+      await refreshContractChecks(tx, projectId);
+      return loadChangeOrders(tx, projectId);
+    });
+    return c.json({ changeOrders: orders }, 201);
+  });
+
+  // -- Vertragsspiegel -------------------------------------------------------
+
+  v1.get('/projects/:id/contract', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    // Beim Ansehen wird neu geprüft: Ein Spiegel, der einen alten Stand
+    // zeigt, ist schlimmer als keiner.
+    const mirror = await withUserTx(c.get('claims'), (tx) =>
+      refreshContractChecks(tx, projectId),
+    );
+    return c.json(mirror);
+  });
+
+  v1.patch('/projects/:id/contract', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = contractUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const mirror = await withUserTx(c.get('claims'), async (tx) => {
+      const daten = parsed.data;
+      const geaendert = await tx.query(
+        `update project
+            set contract_sum_cents = case when $2::boolean then $3 else contract_sum_cents end,
+                contractual_completion = case when $4::boolean then $5 else contractual_completion end,
+                security_pct = case when $6::boolean then $7 else security_pct end,
+                loan_total_cents = case when $8::boolean then $9 else loan_total_cents end,
+                commitment_interest_pct = case when $10::boolean then $11 else commitment_interest_pct end,
+                commitment_free_months = case when $12::boolean then $13 else commitment_free_months end
+          where id = $1`,
+        [
+          projectId,
+          daten.contractSumCents !== undefined, daten.contractSumCents ?? null,
+          daten.contractualCompletion !== undefined, daten.contractualCompletion ?? null,
+          daten.securityPct !== undefined, daten.securityPct ?? null,
+          daten.loanTotalCents !== undefined, daten.loanTotalCents ?? null,
+          daten.commitmentInterestPct !== undefined, daten.commitmentInterestPct ?? null,
+          daten.commitmentFreeMonths !== undefined, daten.commitmentFreeMonths ?? null,
+        ],
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(403, { message: 'Vertragsdaten pflegt der Bauherr.' });
+      }
+
+      for (const punkt of daten.descriptionItems ?? []) {
+        await tx.query(
+          `insert into contract_description_item (project_id, item_key, present, note)
+           values ($1, $2, $3, $4)
+           on conflict (project_id, item_key) do update
+              set present = excluded.present, note = excluded.note`,
+          [projectId, punkt.key, punkt.present, punkt.note ?? null],
+        );
+      }
+
+      return refreshContractChecks(tx, projectId);
+    });
+    return c.json(mirror);
+  });
+
+  v1.post('/projects/:id/contract/findings/:findingId/dismiss', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const findingId = parseId(c.req.param('findingId'));
+    const body = (await c.req.json().catch(() => ({}))) as { reason?: string };
+    const grund = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (grund.length < 3) {
+      throw new HTTPException(422, {
+        message: 'Schreib kurz, warum der Hinweis für euch erledigt ist.',
+      });
+    }
+    const mirror = await withUserTx(c.get('claims'), async (tx) => {
+      const geaendert = await tx.query(
+        `update contract_check set dismissed_at = now(), dismissed_reason = $3
+          where id = $1 and project_id = $2`,
+        [findingId, projectId, grund],
+      );
+      if (geaendert.rowCount === 0) {
+        throw new HTTPException(404, { message: 'Diesen Hinweis gibt es nicht.' });
+      }
+      return loadContractMirror(tx, projectId);
+    });
+    return c.json(mirror);
+  });
+
   // -- Frag den Lotsen -------------------------------------------------------
 
   /**
@@ -627,14 +899,8 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   // verschoben hat" misst am tatsächlichen Zeitpunkt der Änderung.
   v1.get('/projects/:id/weekly-report', async (c) => {
     const projectId = parseId(c.req.param('id'));
-    const angefragt = c.req.query('today');
-    const today =
-      angefragt !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(angefragt)
-        ? angefragt
-        : new Date().toISOString().slice(0, 10);
-
     const report = await withUserTx(c.get('claims'), (tx) =>
-      buildWeeklyReport(tx, projectId, today),
+      buildWeeklyReport(tx, projectId, heute(c)),
     );
     return c.json(report);
   });
@@ -724,6 +990,28 @@ export function createApp(options: AppOptions = {}): Hono<App> {
         error.status,
       );
     }
+    // Ein Schreibversuch, den die RLS abweist, ist kein Serverfehler.
+    //
+    // Postgres meldet ihn als 42501 — „new row violates row-level security
+    // policy". Ohne diese Zeilen käme er als 500 heraus, mit dem Satz „Das
+    // hat nicht geklappt" und dem Rat, es noch einmal zu versuchen. Beides
+    // wäre falsch: Es hat geklappt, die Antwort lautet nur nein, und ein
+    // zweiter Versuch ändert daran nichts.
+    //
+    // Die Zuordnung steht hier und nicht in jedem Modul, weil sie sonst in
+    // dem einen Modul fehlt, in dem sie zählt.
+    if (istRechteFehler(error)) {
+      return c.json(
+        {
+          error: 'Das darfst du in diesem Bauvorhaben nicht.',
+          details: {
+            hint: 'Was deine Rolle darf, steht im Plan unter deinem Namen.',
+          },
+        },
+        403,
+      );
+    }
+
     console.error('Unerwarteter Fehler:', error);
     // Der Grund gehört in die Antwort, nicht nur ins Protokoll.
     //
@@ -752,6 +1040,19 @@ export function createApp(options: AppOptions = {}): Hono<App> {
 }
 
 // -- Hilfsfunktionen --------------------------------------------------------
+
+/**
+ * Hat die Datenbank den Schreibversuch aus Rechtegründen abgewiesen?
+ *
+ * `42501` ist `insufficient_privilege` und deckt beides ab: eine verweigerte
+ * `with check`-Bedingung und ein fehlendes Tabellenrecht. Beides bedeutet für
+ * den Fragenden dasselbe — er darf es nicht.
+ */
+function istRechteFehler(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === '42501';
+}
 
 interface ProjectRow {
   id: string;

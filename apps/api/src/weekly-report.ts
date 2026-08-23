@@ -272,6 +272,41 @@ export async function buildWeeklyReport(
   );
   const phaseRow = phase.rows[0];
 
+  // 6. Geld -------------------------------------------------------------------
+  //
+  // Die nächste Zahlung, die noch nicht freigegeben ist — und wovon sie
+  // abhängt. Der Block steht bewusst am Ende: Erst was passiert, dann was du
+  // tun musst, dann erst, was es kostet.
+  const zahlung = await tx.query<{
+    name: string;
+    amount_cents: string | null;
+    due_date: string | null;
+    hindernisse: string[] | null;
+  }>(
+    `select p.name, p.amount_cents, p.due_date,
+            (select array_agg(b.label) from mbl.payment_blockers(p.id) b) as hindernisse
+       from payment_milestone p
+      where p.project_id = $1 and p.status in ('geplant', 'faellig')
+      order by p.due_date nulls last, p.sort_order
+      limit 1`,
+    [projectId],
+  );
+
+  const naechste = zahlung.rows[0];
+  const geld =
+    naechste === undefined
+      ? null
+      : {
+          name: naechste.name,
+          amountCents: naechste.amount_cents === null ? null : Number(naechste.amount_cents),
+          dueDate: naechste.due_date,
+          requirement:
+            naechste.hindernisse === null || naechste.hindernisse.length === 0
+              ? 'Alles erfüllt. Du kannst freigeben.'
+              : `Offen: ${naechste.hindernisse.join(', ')}.`,
+          releasable: naechste.hindernisse === null || naechste.hindernisse.length === 0,
+        };
+
   return {
     project: { id: head.id, name: head.name },
     weekStart: today,
@@ -285,7 +320,6 @@ export async function buildWeeklyReport(
     changes: verschiebungen,
     forecast: { computedEnd, contractualEnd, deviationWorkdays },
     photos: fotos,
-    // Block 6 kommt mit den Zahlungsmeilensteinen aus AP 8.
-    money: null,
+    money: geld,
   };
 }

@@ -80,6 +80,31 @@ interface ProjectDefinition {
   readonly idOffset: number;
   /** Ein Satz für den Kopf des Abschnitts. */
   readonly note: string;
+
+  // -- Geld, Mängel und Vertrag (AP 8) -------------------------------------
+
+  readonly contractSumCents: number;
+  /** `null` heißt: nicht erfasst — und erzeugt einen Befund. */
+  readonly securityPct: number | null;
+  readonly loan: { totalCents: number; pct: number; freeMonths: number };
+  readonly payments: readonly {
+    name: string;
+    pct: number;
+    /** Vorlagencodes der Vorgänge, die dafür fertig sein müssen. */
+    requires: readonly string[];
+  }[];
+  readonly defects: readonly {
+    title: string;
+    description: string;
+    location: string;
+    severity: 'geringfuegig' | 'wesentlich';
+    /** An welchem Vorgang der Mangel hängt. */
+    taskCode: string;
+    /** Frist in Kalendertagen ab heute; negativ heißt abgelaufen. */
+    deadlineInDays: number | null;
+    escalation: number;
+    status: 'offen' | 'anerkannt' | 'behoben' | 'strittig';
+  }[];
 }
 
 const PROJECTS: readonly ProjectDefinition[] = [
@@ -104,6 +129,21 @@ const PROJECTS: readonly ProjectDefinition[] = [
     trackProgress: false,
     idOffset: 0,
     note: 'Der Bau beginnt erst. Der Vertragstermin ist knapp, der Plan reißt ihn.',
+    // Vertrag und Geld. Hier ist absichtlich etwas nicht in Ordnung: Der
+    // Zahlungsplan summiert sich auf 95 %, und eine Sicherheit ist nicht
+    // erfasst. Beides erzeugt einen Befund im Vertragsspiegel — sonst wäre
+    // der Abschnitt in der Vorführung leer und niemand sähe, was er kann.
+    contractSumCents: 45_000_000,
+    securityPct: null,
+    loan: { totalCents: 40_000_000, pct: 3, freeMonths: 12 },
+    payments: [
+      { name: 'Nach Fertigstellung der Bodenplatte', pct: 15, requires: ['t06'] },
+      { name: 'Nach Fertigstellung des Rohbaus', pct: 25, requires: ['t15'] },
+      { name: 'Nach Gebäude dicht', pct: 25, requires: ['t19'] },
+      { name: 'Nach Innenputz und Estrich', pct: 20, requires: ['t24', 't26'] },
+      { name: 'Nach Bezugsfertigkeit', pct: 10, requires: ['t36'] },
+    ],
+    defects: [],
   },
   {
     id: 'aaaaaaaa-0000-4000-8000-000000000002',
@@ -126,6 +166,52 @@ const PROJECTS: readonly ProjectDefinition[] = [
     trackProgress: true,
     idOffset: 100,
     note: 'Seit acht Wochen auf der Baustelle. Der Plan liegt vor dem Vertragstermin.',
+    // Hier ist der Vertrag in Ordnung — 90 %, Sicherheit vereinbart. Dafür
+    // gibt es Mängel, und einer davon sperrt eine Zahlung. Das ist die
+    // Abnahme von AP 8, zum Anfassen.
+    contractSumCents: 38_000_000,
+    securityPct: 5,
+    loan: { totalCents: 34_000_000, pct: 2.5, freeMonths: 6 },
+    payments: [
+      { name: 'Nach Fertigstellung der Bodenplatte', pct: 15, requires: ['t06'] },
+      { name: 'Nach Fertigstellung des Rohbaus', pct: 25, requires: ['t15'] },
+      { name: 'Nach Gebäude dicht', pct: 30, requires: ['t19'] },
+      { name: 'Nach Innenputz und Estrich', pct: 20, requires: ['t24', 't26'] },
+    ],
+    defects: [
+      {
+        title: 'Feuchter Fleck an der Innenseite der Kellerwand',
+        description:
+          'Nach dem Regen am Wochenende ist an der Nordwand ein dunkler Fleck aufgetaucht, '
+          + 'etwa einen halben Meter breit. Er wird nicht kleiner.',
+        location: 'Keller, Nordwand hinter dem Treppenlauf',
+        severity: 'wesentlich',
+        taskCode: 't19',
+        deadlineInDays: 10,
+        escalation: 2,
+        status: 'offen',
+      },
+      {
+        title: 'Fensterbank im Bad sitzt schief',
+        description: 'Gefälle nach innen statt nach außen, rund drei Millimeter.',
+        location: 'Obergeschoss, Bad',
+        severity: 'geringfuegig',
+        taskCode: 't18',
+        deadlineInDays: -12,
+        escalation: 3,
+        status: 'offen',
+      },
+      {
+        title: 'Kratzer in der Haustür',
+        description: 'Beim Einbau entstanden, außen unten links.',
+        location: 'Eingang',
+        severity: 'geringfuegig',
+        taskCode: 't18',
+        deadlineInDays: null,
+        escalation: 0,
+        status: 'behoben',
+      },
+    ],
   },
 ];
 
@@ -310,6 +396,51 @@ function render(project: ProjectDefinition, ordinal: number): RenderedProject {
     taskCount: plan.tasks.length,
   });
 
+  // -- Geld und Mängel (AP 8) ------------------------------------------------
+  //
+  // Die Beträge folgen den Prozentsätzen; so bleibt der Zahlungsplan mit der
+  // Vertragssumme konsistent, auch wenn eine der beiden Zahlen sich ändert.
+  const taskByCode = (code: string): string =>
+    `(select id from public.task where project_id = ${lit(project.id)} `
+    + `and template_task_code = ${lit(code)})`;
+
+  const paymentRows = project.payments.map((zahlung, index) => {
+    const id = `ffffffff-0000-4000-8000-${String(project.idOffset + index + 1).padStart(12, '0')}`;
+    const betrag = Math.round((project.contractSumCents * zahlung.pct) / 100);
+    const vorgaenge = zahlung.requires.map(taskByCode).join(', ');
+    return `  (${lit(id)}, ${lit(project.id)}, ${lit(zahlung.name)}, ${zahlung.pct}, `
+      + `${betrag}, array[${vorgaenge}]::uuid[], ${index + 1})`;
+  });
+
+  // Zwei Abrufe, sobald der Bau läuft — sonst steht die Zinsrechnung auf
+  // null und zeigt nichts.
+  const loanRows =
+    project.startsInDays >= 0
+      ? [
+          `  ('99999999-0000-4000-8000-${String(project.idOffset + 1).padStart(12, '0')}', `
+          + `${lit(project.id)}, 'Erster Abruf', ${Math.round(project.loan.totalCents * 0.1)}, `
+          + `${lit(start)})`,
+        ]
+      : [
+          `  ('99999999-0000-4000-8000-${String(project.idOffset + 1).padStart(12, '0')}', `
+          + `${lit(project.id)}, 'Erster Abruf', ${Math.round(project.loan.totalCents * 0.2)}, `
+          + `${lit(plusDays(start, 14))})`,
+          `  ('99999999-0000-4000-8000-${String(project.idOffset + 2).padStart(12, '0')}', `
+          + `${lit(project.id)}, 'Nach dem Rohbau', ${Math.round(project.loan.totalCents * 0.3)}, `
+          + `${lit(plusDays(start, 70))})`,
+        ];
+
+  const defectRows = project.defects.map((mangel, index) => {
+    const id = `77777777-0000-4000-8000-${String(project.idOffset + index + 1).padStart(12, '0')}`;
+    const frist =
+      mangel.deadlineInDays === null ? 'null' : lit(plusDays(TODAY, mangel.deadlineInDays));
+    return `  (${lit(id)}, ${lit(project.id)}, ${taskByCode(mangel.taskCode)}, `
+      + `${lit(mangel.title)}, ${lit(mangel.description)}, ${lit(mangel.location)}, `
+      + `${lit(mangel.severity)}::mbl.defect_severity, ${frist}, `
+      + `${lit(mangel.status)}::mbl.defect_status, ${mangel.escalation}, `
+      + `${lit(project.memberId.bauherr)})`;
+  });
+
   const sql = `-- ===========================================================================
 -- Bauvorhaben ${ordinal} von ${PROJECTS.length}: ${project.name}
 --
@@ -320,14 +451,18 @@ function render(project: ProjectDefinition, ordinal: number): RenderedProject {
 
 insert into public.project (
   id, name, federal_state, catholic_municipality, build_type, contract_type,
-  has_basement, plan_template_key, planned_start, contractual_completion, created_by
+  has_basement, plan_template_key, planned_start, contractual_completion, created_by,
+  contract_sum_cents, security_pct,
+  loan_total_cents, commitment_interest_pct, commitment_free_months
 )
 values (
   ${lit(project.id)}, ${lit(project.name)}, ${lit(project.federalState)}::mbl.federal_state,
   ${lit(project.catholicMunicipality)}, 'efh_massiv'::mbl.build_type,
   ${lit(project.contractType)}::mbl.contract_type, ${lit(project.hasBasement)},
   ${lit(EFH_MASSIV_UNTERKELLERT.key)}, ${lit(start)}, ${lit(contractualEnd)},
-  ${lit(bauherr.userId)}
+  ${lit(bauherr.userId)},
+  ${project.contractSumCents}, ${project.securityPct === null ? 'null' : project.securityPct},
+  ${project.loan.totalCents}, ${project.loan.pct}, ${project.loan.freeMonths}
 )
 on conflict do nothing;
 
@@ -404,6 +539,36 @@ values
 ${decisionRows.join(',\n')}
 on conflict do nothing;
 
+-- Zahlungsplan, Darlehen und Mängel (AP 8).
+--
+-- Die Vorgänge werden über ihren Vorlagencode gesucht statt über eine feste
+-- Kennung: So bleibt das Skript lesbar, und es bricht nicht, wenn sich der
+-- Zuschnitt der Vorlage einmal ändert.
+
+insert into public.payment_milestone (
+  id, project_id, name, pct, amount_cents, requires_task_ids, sort_order
+)
+values
+${paymentRows.join(',\n')}
+on conflict do nothing;
+
+insert into public.loan_drawdown (id, project_id, label, amount_cents, requested_at)
+values
+${loanRows.join(',\n')}
+on conflict do nothing;
+${
+  defectRows.length === 0
+    ? ''
+    : `
+insert into public.defect (
+  id, project_id, task_id, title, description, location_text, severity,
+  deadline, status, escalation_level, reported_by
+)
+values
+${defectRows.join(',\n')}
+on conflict do nothing;
+`
+}
 -- Der Protokolleintrag zum Projektstart, wie ihn das Onboarding schreibt.
 
 insert into public.audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)

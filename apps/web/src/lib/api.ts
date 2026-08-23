@@ -18,8 +18,18 @@ import type {
   GuestTaskView,
   GuestTokenCreated,
   GuestTokenCreateRequest,
+  ChangeOrderCreateRequest,
+  ContractMirror,
+  ContractUpdateRequest,
+  DefectCreateRequest,
+  DefectDto,
+  DefectUpdateRequest,
   LotseAnswer,
   LotseAskRequest,
+  MoneyView,
+  PaymentCreateRequest,
+  PaymentMilestoneDto,
+  PaymentReleaseRequest,
   LotseConversation,
   LotseMessage,
   DiaryCreateRequest,
@@ -291,4 +301,74 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  // -- Maengel, Geld, Vertragsspiegel ---------------------------------------
+
+  defects: async (projectId: string) =>
+    (await request<{ defects: DefectDto[] }>(`/projects/${projectId}/defects`)).defects,
+
+  createDefect: (projectId: string, body: DefectCreateRequest) =>
+    request<DefectDto>(`/projects/${projectId}/defects`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateDefect: (projectId: string, defectId: string, change: DefectUpdateRequest) =>
+    request<DefectDto>(`/projects/${projectId}/defects/${defectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  defectEvents: async (projectId: string, defectId: string) =>
+    (
+      await request<{ events: DefectEventDto[] }>(
+        `/projects/${projectId}/defects/${defectId}/events`,
+      )
+    ).events,
+
+  money: (projectId: string) => request<MoneyView>(`/projects/${projectId}/money`),
+
+  createPayment: (projectId: string, body: PaymentCreateRequest) =>
+    request<MoneyView>(`/projects/${projectId}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  releasePayment: (projectId: string, paymentId: string, body: PaymentReleaseRequest) =>
+    request<PaymentMilestoneDto>(`/projects/${projectId}/payments/${paymentId}/release`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  createChangeOrder: (projectId: string, body: ChangeOrderCreateRequest) =>
+    request<{ changeOrders: unknown[] }>(`/projects/${projectId}/change-orders`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  contract: (projectId: string) => request<ContractMirror>(`/projects/${projectId}/contract`),
+
+  updateContract: (projectId: string, change: ContractUpdateRequest) =>
+    request<ContractMirror>(`/projects/${projectId}/contract`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  dismissFinding: (projectId: string, findingId: string, reason: string) =>
+    request<ContractMirror>(`/projects/${projectId}/contract/findings/${findingId}/dismiss`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
 };
+
+/** Ein Schritt im Verlauf eines Mangels. */
+export interface DefectEventDto {
+  id: string;
+  action: string;
+  note: string | null;
+  oldStatus: string | null;
+  newStatus: string | null;
+  actorName: string | null;
+  actorRole: string | null;
+  createdAt: string;
+}

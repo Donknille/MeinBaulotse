@@ -66,14 +66,18 @@ select set_config('app.actor_channel', 'import', false);
 
 insert into public.project (
   id, name, federal_state, catholic_municipality, build_type, contract_type,
-  has_basement, plan_template_key, planned_start, contractual_completion, created_by
+  has_basement, plan_template_key, planned_start, contractual_completion, created_by,
+  contract_sum_cents, security_pct,
+  loan_total_cents, commitment_interest_pct, commitment_free_months
 )
 values (
   'aaaaaaaa-0000-4000-8000-000000000001', 'Musterhaus Sonnenweg', 'BY'::mbl.federal_state,
   true, 'efh_massiv'::mbl.build_type,
   'verbraucherbauvertrag'::mbl.contract_type, true,
   'efh_massiv_unterkellert', '2026-09-21', '2027-03-20',
-  '11111111-1111-4111-8111-111111111111'
+  '11111111-1111-4111-8111-111111111111',
+  45000000, null,
+  40000000, 3, 12
 )
 on conflict do nothing;
 
@@ -242,6 +246,28 @@ values
   ('eeeeeeee-0000-4000-8000-000000000014', 'aaaaaaaa-0000-4000-8000-000000000001', 'aussenanlagen', 'Außenanlagen: Zufahrt, Terrasse, Zaun', 'Das Letzte am Bau, und regelmäßig das, wofür das Geld nicht mehr reicht.', 'Plan die Außenanlagen früh, auch wenn sie zuletzt gebaut werden: Zufahrt, Stellplätze, Terrasse, Wege und Einfriedung summieren sich zu einem fünfstelligen Betrag, der in vielen Baubeschreibungen gar nicht enthalten ist. Kläre nebenbei zwei Dinge, die Vorlauf brauchen: die Entwässerung des Niederschlagswassers, für die es kommunale Vorgaben gibt, und Leerrohre für Außensteckdosen und Licht, solange der Graben noch offen ist. Was du später bereust: gepflastert zu haben, bevor die letzten schweren Fahrzeuge auf dem Grundstück waren.', 'cccccccc-0000-4000-8000-000000000035', 25, 'werktage'::mbl.duration_unit, '2026-11-05', 'offen'::mbl.decision_status, null)
 on conflict do nothing;
 
+-- Zahlungsplan, Darlehen und Mängel (AP 8).
+--
+-- Die Vorgänge werden über ihren Vorlagencode gesucht statt über eine feste
+-- Kennung: So bleibt das Skript lesbar, und es bricht nicht, wenn sich der
+-- Zuschnitt der Vorlage einmal ändert.
+
+insert into public.payment_milestone (
+  id, project_id, name, pct, amount_cents, requires_task_ids, sort_order
+)
+values
+  ('ffffffff-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-000000000001', 'Nach Fertigstellung der Bodenplatte', 15, 6750000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000001' and template_task_code = 't06')]::uuid[], 1),
+  ('ffffffff-0000-4000-8000-000000000002', 'aaaaaaaa-0000-4000-8000-000000000001', 'Nach Fertigstellung des Rohbaus', 25, 11250000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000001' and template_task_code = 't15')]::uuid[], 2),
+  ('ffffffff-0000-4000-8000-000000000003', 'aaaaaaaa-0000-4000-8000-000000000001', 'Nach Gebäude dicht', 25, 11250000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000001' and template_task_code = 't19')]::uuid[], 3),
+  ('ffffffff-0000-4000-8000-000000000004', 'aaaaaaaa-0000-4000-8000-000000000001', 'Nach Innenputz und Estrich', 20, 9000000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000001' and template_task_code = 't24'), (select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000001' and template_task_code = 't26')]::uuid[], 4),
+  ('ffffffff-0000-4000-8000-000000000005', 'aaaaaaaa-0000-4000-8000-000000000001', 'Nach Bezugsfertigkeit', 10, 4500000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000001' and template_task_code = 't36')]::uuid[], 5)
+on conflict do nothing;
+
+insert into public.loan_drawdown (id, project_id, label, amount_cents, requested_at)
+values
+  ('99999999-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-000000000001', 'Erster Abruf', 4000000, '2026-09-21')
+on conflict do nothing;
+
 -- Der Protokolleintrag zum Projektstart, wie ihn das Onboarding schreibt.
 
 insert into public.audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
@@ -262,14 +288,18 @@ where not exists (
 
 insert into public.project (
   id, name, federal_state, catholic_municipality, build_type, contract_type,
-  has_basement, plan_template_key, planned_start, contractual_completion, created_by
+  has_basement, plan_template_key, planned_start, contractual_completion, created_by,
+  contract_sum_cents, security_pct,
+  loan_total_cents, commitment_interest_pct, commitment_free_months
 )
 values (
   'aaaaaaaa-0000-4000-8000-000000000002', 'Stadthaus Ahornweg', 'NI'::mbl.federal_state,
   false, 'efh_massiv'::mbl.build_type,
   'einzelgewerke'::mbl.contract_type, false,
   'efh_massiv_unterkellert', '2026-06-29', '2027-01-20',
-  '11111111-1111-4111-8111-111111111111'
+  '11111111-1111-4111-8111-111111111111',
+  38000000, 5,
+  34000000, 2.5, 6
 )
 on conflict do nothing;
 
@@ -428,6 +458,38 @@ values
   ('eeeeeeee-0000-4000-8000-000000000112', 'aaaaaaaa-0000-4000-8000-000000000002', 'innentueren', 'Innentüren: Modell, Zargen, Beschläge', 'Lange Lieferzeiten, und die Zargen brauchen das Maß aus dem Rohbau.', 'Türblatt, Zarge und Beschlag werden zusammen bestellt und zusammen geliefert. Die Zargenbreite hängt an der fertigen Wandstärke, also an Putz und Estrichaufbau — deshalb wird nach dem Rohbau aufgemessen. Denk an die Details, die man erst im Alltag merkt: Türen, die in den Raum oder aus ihm heraus aufgehen, Lichtausschnitte in dunklen Fluren, Schwellen bei bodengleichen Übergängen. Was du später bereust: eine Standardhöhe, die nicht zur Deckenhöhe passt, oder fehlende Lüftungsspalte bei kontrollierter Wohnraumlüftung.', 'cccccccc-0000-4000-8000-000000000125', 50, 'werktage'::mbl.duration_unit, '2026-07-22', 'entschieden'::mbl.decision_status, 'Beim Bemusterungstermin festgelegt.'),
   ('eeeeeeee-0000-4000-8000-000000000113', 'aaaaaaaa-0000-4000-8000-000000000002', 'treppe', 'Treppe: Material und Geländer', 'Aufgemessen wird am Rohbau, gefertigt wird danach — beides braucht Zeit.', 'Die Treppe ist ein Möbelstück und wird für deinen Rohbau gebaut. Material und Bauart bestimmen den Preis stärker als die Größe: Beton mit Belag, Holz eingestemmt oder eine freitragende Konstruktion sind drei verschiedene Welten. Beim Geländer gelten Vorschriften zu Höhe und Abstand, die nicht verhandelbar sind. Was du später bereust: eine offene Treppe ohne Setzstufen im Haus mit kleinen Kindern, und eine Wahl, die den Schallschutz nicht berücksichtigt — eine Holztreppe überträgt jeden Schritt.', 'cccccccc-0000-4000-8000-000000000128', 50, 'werktage'::mbl.duration_unit, '2026-09-24', 'offen'::mbl.decision_status, null),
   ('eeeeeeee-0000-4000-8000-000000000114', 'aaaaaaaa-0000-4000-8000-000000000002', 'aussenanlagen', 'Außenanlagen: Zufahrt, Terrasse, Zaun', 'Das Letzte am Bau, und regelmäßig das, wofür das Geld nicht mehr reicht.', 'Plan die Außenanlagen früh, auch wenn sie zuletzt gebaut werden: Zufahrt, Stellplätze, Terrasse, Wege und Einfriedung summieren sich zu einem fünfstelligen Betrag, der in vielen Baubeschreibungen gar nicht enthalten ist. Kläre nebenbei zwei Dinge, die Vorlauf brauchen: die Entwässerung des Niederschlagswassers, für die es kommunale Vorgaben gibt, und Leerrohre für Außensteckdosen und Licht, solange der Graben noch offen ist. Was du später bereust: gepflastert zu haben, bevor die letzten schweren Fahrzeuge auf dem Grundstück waren.', 'cccccccc-0000-4000-8000-000000000131', 25, 'werktage'::mbl.duration_unit, '2026-07-28', 'entschieden'::mbl.decision_status, 'Beim Bemusterungstermin festgelegt.')
+on conflict do nothing;
+
+-- Zahlungsplan, Darlehen und Mängel (AP 8).
+--
+-- Die Vorgänge werden über ihren Vorlagencode gesucht statt über eine feste
+-- Kennung: So bleibt das Skript lesbar, und es bricht nicht, wenn sich der
+-- Zuschnitt der Vorlage einmal ändert.
+
+insert into public.payment_milestone (
+  id, project_id, name, pct, amount_cents, requires_task_ids, sort_order
+)
+values
+  ('ffffffff-0000-4000-8000-000000000101', 'aaaaaaaa-0000-4000-8000-000000000002', 'Nach Fertigstellung der Bodenplatte', 15, 5700000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't06')]::uuid[], 1),
+  ('ffffffff-0000-4000-8000-000000000102', 'aaaaaaaa-0000-4000-8000-000000000002', 'Nach Fertigstellung des Rohbaus', 25, 9500000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't15')]::uuid[], 2),
+  ('ffffffff-0000-4000-8000-000000000103', 'aaaaaaaa-0000-4000-8000-000000000002', 'Nach Gebäude dicht', 30, 11400000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't19')]::uuid[], 3),
+  ('ffffffff-0000-4000-8000-000000000104', 'aaaaaaaa-0000-4000-8000-000000000002', 'Nach Innenputz und Estrich', 20, 7600000, array[(select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't24'), (select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't26')]::uuid[], 4)
+on conflict do nothing;
+
+insert into public.loan_drawdown (id, project_id, label, amount_cents, requested_at)
+values
+  ('99999999-0000-4000-8000-000000000101', 'aaaaaaaa-0000-4000-8000-000000000002', 'Erster Abruf', 6800000, '2026-07-13'),
+  ('99999999-0000-4000-8000-000000000102', 'aaaaaaaa-0000-4000-8000-000000000002', 'Nach dem Rohbau', 10200000, '2026-09-07')
+on conflict do nothing;
+
+insert into public.defect (
+  id, project_id, task_id, title, description, location_text, severity,
+  deadline, status, escalation_level, reported_by
+)
+values
+  ('77777777-0000-4000-8000-000000000101', 'aaaaaaaa-0000-4000-8000-000000000002', (select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't19'), 'Feuchter Fleck an der Innenseite der Kellerwand', 'Nach dem Regen am Wochenende ist an der Nordwand ein dunkler Fleck aufgetaucht, etwa einen halben Meter breit. Er wird nicht kleiner.', 'Keller, Nordwand hinter dem Treppenlauf', 'wesentlich'::mbl.defect_severity, '2026-09-02', 'offen'::mbl.defect_status, 2, 'bbbbbbbb-0000-4000-8000-000000000003'),
+  ('77777777-0000-4000-8000-000000000102', 'aaaaaaaa-0000-4000-8000-000000000002', (select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't18'), 'Fensterbank im Bad sitzt schief', 'Gefälle nach innen statt nach außen, rund drei Millimeter.', 'Obergeschoss, Bad', 'geringfuegig'::mbl.defect_severity, '2026-08-11', 'offen'::mbl.defect_status, 3, 'bbbbbbbb-0000-4000-8000-000000000003'),
+  ('77777777-0000-4000-8000-000000000103', 'aaaaaaaa-0000-4000-8000-000000000002', (select id from public.task where project_id = 'aaaaaaaa-0000-4000-8000-000000000002' and template_task_code = 't18'), 'Kratzer in der Haustür', 'Beim Einbau entstanden, außen unten links.', 'Eingang', 'geringfuegig'::mbl.defect_severity, null, 'behoben'::mbl.defect_status, 0, 'bbbbbbbb-0000-4000-8000-000000000003')
 on conflict do nothing;
 
 -- Der Protokolleintrag zum Projektstart, wie ihn das Onboarding schreibt.
