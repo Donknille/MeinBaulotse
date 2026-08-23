@@ -34,11 +34,17 @@ export function GuideCardSheet({
   onClose,
   onRate,
   onToggle,
+  fulfilledPrompts,
+  onCapture,
 }: {
   view: GuideCardView;
   onClose: () => void;
   onRate: (helpful: boolean | null) => Promise<void>;
   onToggle: (item: ChecklistItemDto, isDone: boolean) => Promise<void>;
+  /** Welche Fotoaufträge dieser Karte schon erfüllt sind. */
+  fulfilledPrompts?: readonly string[];
+  /** Öffnet die Schnellerfassung für einen bestimmten Fotoauftrag. */
+  onCapture?: (promptKey: string) => void;
 }) {
   const titleId = useId();
   const [helpful, setHelpful] = useState<boolean | null>(view.read?.helpful ?? null);
@@ -154,20 +160,48 @@ export function GuideCardSheet({
                 Jetzt fotografieren
               </h3>
               <ul className="flex flex-col">
-                {card.photoPrompts.map((prompt, index) => (
-                  <li key={index} className="border-b border-ash py-2.5 last:border-b-0">
-                    <p className="text-body-lg text-charcoal">{prompt.what}</p>
-                    <p className="text-body text-steel">{prompt.why}</p>
-                  </li>
-                ))}
+                {card.photoPrompts.map((prompt, index) => {
+                  // Der Schlüssel hängt an der Karte, nicht am Vorgang: So
+                  // bleibt ein Auftrag erfüllt, auch wenn der Vorgang später
+                  // umbenannt oder neu angelegt wird.
+                  const key = `${card.key}#${index}`;
+                  const erfuellt = fulfilledPrompts?.includes(key) === true;
+                  return (
+                    <li
+                      key={index}
+                      className="flex items-start justify-between gap-3 border-b border-ash py-2.5 last:border-b-0"
+                    >
+                      <div className="flex flex-1 flex-col gap-0.5">
+                        <p
+                          className={`text-body-lg ${erfuellt ? 'text-steel line-through' : 'text-charcoal'}`}
+                        >
+                          {prompt.what}
+                        </p>
+                        <p className="text-body text-steel">{prompt.why}</p>
+                      </div>
+                      {erfuellt ? (
+                        <span className="flex shrink-0 items-center gap-1 text-caption text-vivid-green">
+                          <Check size={14} aria-hidden />
+                          Erfasst
+                        </span>
+                      ) : onCapture === undefined ? null : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 text-lavender"
+                          onClick={() => onCapture(key)}
+                        >
+                          <Camera size={16} aria-hidden />
+                          <span className="hidden sm:inline">Erfassen</span>
+                          <span className="sr-only sm:hidden">
+                            Foto erfassen: {prompt.what}
+                          </span>
+                        </Button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
-              {/* Kein Knopf, der nichts tut: Die Kamera kommt mit AP 5. Ein
-                  „Kamera öffnen", das nichts öffnet, wäre ein gebrochenes
-                  Versprechen. */}
-              <p className="text-caption text-steel">
-                Bis die Kamera in der App ist, tut es die des Telefons. Wichtig ist der Zeitpunkt,
-                nicht das Werkzeug.
-              </p>
             </section>
           ) : null}
 

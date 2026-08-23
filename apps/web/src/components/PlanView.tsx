@@ -15,6 +15,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  Camera,
   GanttChartSquare,
   Mail,
 } from 'lucide-react';
@@ -40,6 +41,7 @@ export function PlanView({
   onOpenGuide,
   onOpenDecision,
   weeklyReportHref,
+  diaryHref,
   onPreviewTask,
 }: {
   schedule: ProjectSchedule;
@@ -57,6 +59,8 @@ export function PlanView({
   onOpenDecision?: (decision: DecisionDto) => void;
   /** Adresse des Wochenberichts. Fehlt sie, wird er nicht verlinkt. */
   weeklyReportHref?: string;
+  /** Adresse des Bautagebuchs. */
+  diaryHref?: string;
   /** Rechnet vor, was eine Verschiebung nach sich zöge. */
   onPreviewTask?: (taskId: string, change: TaskUpdateRequest) => Promise<SchedulePreview>;
 }) {
@@ -88,13 +92,24 @@ export function PlanView({
             kommt. Der Verweis steht hier, weil eine Mail eine Einbahnstraße
             ist: Wer sie sucht, findet sie nicht mehr. */}
         {weeklyReportHref === undefined ? null : (
-          <a
-            href={weeklyReportHref}
-            className="inline-flex w-fit items-center gap-2 text-body text-electric-blue underline-offset-4 hover:underline"
-          >
-            <Mail size={16} aria-hidden />
-            Die Woche im Überblick
-          </a>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            <a
+              href={weeklyReportHref}
+              className="inline-flex w-fit items-center gap-2 text-body text-electric-blue underline-offset-4 hover:underline"
+            >
+              <Mail size={16} aria-hidden />
+              Die Woche im Überblick
+            </a>
+            {diaryHref === undefined ? null : (
+              <a
+                href={diaryHref}
+                className="inline-flex w-fit items-center gap-2 text-body text-electric-blue underline-offset-4 hover:underline"
+              >
+                <Camera size={16} aria-hidden />
+                Bautagebuch
+              </a>
+            )}
+          </div>
         )}
 
         {/* Das Cockpit steht vor allem anderen. Reihenfolge nach CI 10.2:

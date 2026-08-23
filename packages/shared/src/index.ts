@@ -412,6 +412,122 @@ export const weeklyReport = z.object({
 });
 export type WeeklyReport = z.infer<typeof weeklyReport>;
 
+// ---------------------------------------------------------------------------
+// Tagebuch und Fotos (Abschnitt 3.8)
+// ---------------------------------------------------------------------------
+
+export const mediaItem = z.object({
+  id: z.string().uuid(),
+  storagePath: z.string(),
+  mime: z.string(),
+  bytes: z.number().int(),
+  sha256: z.string(),
+  /** Was die Kamera sagt. */
+  exifTakenAt: z.string().nullable(),
+  exifLat: z.number().nullable(),
+  exifLon: z.number().nullable(),
+  /** Was der Mensch sagt. Weicht es ab, wird das gezeigt, nicht versteckt. */
+  statedDate: isoDate.nullable(),
+  caption: z.string().nullable(),
+  photoPromptKey: z.string().nullable(),
+  taskId: z.string().uuid().nullable(),
+  createdAt: z.string(),
+});
+export type MediaItemDto = z.infer<typeof mediaItem>;
+
+export const diaryEntry = z.object({
+  id: z.string().uuid(),
+  entryDate: isoDate,
+  body: z.string(),
+  authorName: z.string().nullable(),
+  authorRole: memberRole.nullable(),
+  weather: z.record(z.string(), z.unknown()).nullable(),
+  weatherSource: z.enum(['dwd', 'manuell', 'keine']),
+  taskIds: z.array(z.string().uuid()),
+  /** Gesetzt heißt: versiegelt, unveränderlich, Teil der Kette. */
+  lockedAt: z.string().nullable(),
+  contentHash: z.string().nullable(),
+  retractedAt: z.string().nullable(),
+  retractionReason: z.string().nullable(),
+  /** Ob der Fragende diesen Eintrag noch ändern darf. */
+  editable: z.boolean(),
+  media: z.array(mediaItem),
+  createdAt: z.string(),
+});
+export type DiaryEntryDto = z.infer<typeof diaryEntry>;
+
+export const diaryCreateRequest = z.object({
+  entryDate: isoDate,
+  body: z.string().trim().min(1).max(5000),
+  taskIds: z.array(z.string().uuid()).max(20).optional(),
+  /** Frei erfasst; die amtliche Quelle steht in `weatherSource`. */
+  weather: z
+    .object({
+      temperatureC: z.number().min(-60).max(60).optional(),
+      condition: z.string().trim().max(80).optional(),
+      note: z.string().trim().max(200).optional(),
+    })
+    .optional(),
+});
+export type DiaryCreateRequest = z.infer<typeof diaryCreateRequest>;
+
+export const diaryUpdateRequest = z
+  .object({
+    body: z.string().trim().min(1).max(5000).optional(),
+    taskIds: z.array(z.string().uuid()).max(20).optional(),
+    /** Zurückziehen. Der Eintrag bleibt sichtbar und trägt den Grund. */
+    retractionReason: z.string().trim().min(3).max(500).optional(),
+  })
+  .refine(
+    (value) =>
+      value.body !== undefined ||
+      value.taskIds !== undefined ||
+      value.retractionReason !== undefined,
+    { message: 'Es gibt nichts zu ändern.' },
+  );
+export type DiaryUpdateRequest = z.infer<typeof diaryUpdateRequest>;
+
+/**
+ * Ein hochgeladenes Foto anmelden.
+ *
+ * Die Datei selbst geht nie durch den Anwendungsserver (Abschnitt 6.1): Sie
+ * liegt schon im Ablagedienst, wenn diese Anfrage kommt. Hier werden nur die
+ * Angaben dazu festgehalten — darunter die Prüfsumme, die der Browser aus dem
+ * Original gerechnet hat.
+ */
+export const mediaCreateRequest = z.object({
+  storagePath: z.string().trim().min(1).max(500),
+  mime: z.string().trim().min(3).max(100),
+  bytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/, 'Prüfsumme als 64 Hexzeichen erwartet'),
+  exifTakenAt: z.string().datetime().nullable().optional(),
+  exifLat: z.number().min(-90).max(90).nullable().optional(),
+  exifLon: z.number().min(-180).max(180).nullable().optional(),
+  statedDate: isoDate.optional(),
+  caption: z.string().trim().max(300).optional(),
+  photoPromptKey: z.string().trim().max(120).optional(),
+  taskId: z.string().uuid().optional(),
+  diaryEntryId: z.string().uuid().optional(),
+});
+export type MediaCreateRequest = z.infer<typeof mediaCreateRequest>;
+
+export const diaryChainEntry = z.object({
+  entryId: z.string().uuid(),
+  entryDate: isoDate,
+  lockedAt: z.string(),
+  ok: z.boolean(),
+  reason: z.string().nullable(),
+});
+
+export const diaryChainResult = z.object({
+  /** Die Prüfsumme des letzten versiegelten Eintrags — der Kopf der Kette. */
+  headHash: z.string().nullable(),
+  sealedCount: z.number().int(),
+  intact: z.boolean(),
+  entries: z.array(diaryChainEntry),
+});
+export type DiaryChainResult = z.infer<typeof diaryChainResult>;
+
 export const apiError = z.object({
   error: z.string(),
   /** Was der Nutzer als Nächstes tun kann — nie eine Fehlermeldung ohne Ausweg. */

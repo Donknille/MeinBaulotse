@@ -9,6 +9,7 @@ import { SignIn } from './routes/SignIn';
 import { Onboarding } from './routes/Onboarding';
 import { Plan } from './routes/Plan';
 import { WeeklyReport } from './routes/WeeklyReport';
+import { Diary } from './routes/Diary';
 import { Projects } from './routes/Projects';
 import { Styleguide } from './routes/Styleguide';
 
@@ -85,6 +86,7 @@ export function App() {
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/projekt/:projectId" element={<Plan />} />
               <Route path="/projekt/:projectId/wochenbericht" element={<WeeklyReport />} />
+              <Route path="/projekt/:projectId/tagebuch" element={<Diary />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}

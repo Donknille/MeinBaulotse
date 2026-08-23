@@ -284,6 +284,33 @@ Ohne diesen Schritt greift die im CI vorgesehene Ersatzwahl: Inter in Gewicht
 
 ---
 
+## 4a. Fotos: die Ablage
+
+Die Bauakte braucht einen Ort für Bilder. Genommen wird die Ablage desselben
+Supabase-Projekts — der Eimer `bauakte` samt Rechten entsteht mit Migration
+`0010_ablage.sql`, es ist also nichts von Hand einzurichten.
+
+Zwei Dinge, die den Aufbau erklären:
+
+**Der Pfad ist die Rechteprüfung.** Jede Datei liegt unter
+`<projektkennung>/<prüfsumme>.jpg`. Aus dem ersten Abschnitt ergibt sich das
+Bauvorhaben, und `mbl.is_member` sagt, ob der Fragende dazugehört — dieselbe
+Funktion, die auch die Tabellen absichert.
+
+**Fotos gehen nie durch den Anwendungsserver** (Abschnitt 6.1 der
+Spezifikation). Der Browser lädt mit der Sitzung des Nutzers direkt in die
+Ablage; die API erfährt danach nur, dass es die Datei gibt, wie groß sie ist
+und welche Prüfsumme sie hat. Ein Server, durch den jedes Baustellenfoto
+läuft, wäre teuer und hätte Daten, die er nicht braucht.
+
+Es gibt bewusst **keine Löschregel**. Ein Foto aus der Bauakte zu entfernen,
+hieße eine Lücke zu hinterlassen, die niemand mehr erklären kann.
+
+> **Lokal gibt es keine Ablage.** Das nackte Postgres kennt kein Schema
+> `storage`; die Migration überspringt den Abschnitt dann mit einem Hinweis.
+> Die Schnellerfassung sagt in dem Fall offen, dass Fotos fehlen — Notizen
+> lassen sich trotzdem erfassen.
+
 ## 5. Wenn du Stammdaten änderst
 
 Diese Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:

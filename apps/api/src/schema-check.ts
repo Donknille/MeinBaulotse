@@ -39,6 +39,7 @@ const EXPECTED: readonly Expectation[] = [
   // Der Plan liefert die Entscheidungen mit aus; ohne die Tabelle endet jede
   // Planansicht im Fehler, nicht nur die Entscheidungsliste.
   { migration: '0007_decisions.sql', table: 'decision', column: 'due_date' },
+  { migration: '0009_tagebuch.sql', table: 'diary_entry', column: 'content_hash' },
 ];
 
 export interface SchemaState {

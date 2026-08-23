@@ -67,7 +67,7 @@ const header = `-- ${'='.repeat(75)}
 --
 --    select count(*) filter (where rowsecurity) as mit_rls,
 --           count(*)                            as tabellen
---    from pg_tables where schemaname = 'public';                -- 19 von 19
+--    from pg_tables where schemaname = 'public';                -- 21 von 21
 --
 --  Die zweite Abfrage ist die wichtigere: Die Zählung oben stimmt auch
 --  dann, wenn die Rechte nur zur Hälfte angekommen sind.

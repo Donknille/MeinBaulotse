@@ -188,6 +188,26 @@ verschoben hat, die Prognose und die Fotos, die jetzt fällig sind.
 Im Terminal zeigt `pnpm report:weekly`, wie die Mail aussähe — ohne etwas zu
 verschicken. Einzelheiten in `docs/BETRIEB.md`.
 
+## Das Bautagebuch
+
+Unter dem Projektnamen steht **Bautagebuch**. Dort hältst du fest, was auf der
+Baustelle passiert ist — mit Foto, Datum und Verfasser.
+
+Drei Dinge laufen darunter mit, ohne dass man sie bedienen müsste:
+
+- **Nach 24 Stunden wird versiegelt.** Wer am Abend etwas nachträgt,
+  korrigiert sich; wer nach drei Wochen etwas ändert, schriebe Geschichte um.
+  Die Grenze zieht die Datenbank, nicht die Oberfläche.
+- **Die Einträge sind verkettet.** Jeder versiegelte Eintrag trägt die
+  Prüfsumme des vorherigen. Wird einer nachträglich verändert, meldet die
+  Ansicht genau ihn.
+- **Erfasst wird zuerst im Gerät.** Ohne Netz — Keller, Rohbau, Funkloch —
+  bleibt die Erfassung liegen und geht von selbst hinaus, sobald wieder
+  Verbindung da ist. Der Zeitpunkt kommt aus dem Foto, nicht aus dem Upload.
+
+Fotos brauchen die Ablage des Supabase-Projekts (siehe `docs/SETUP.md`).
+Lokal ohne Supabase sagt die Erfassung das offen und nimmt Notizen entgegen.
+
 ## Was noch fehlt
 
 - **Termine abstimmen.** Die vier Bestätigungsgrade werden angezeigt, aber

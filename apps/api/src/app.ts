@@ -19,6 +19,9 @@ import {
 import {
   checklistUpdateRequest,
   decisionUpdateRequest,
+  diaryCreateRequest,
+  diaryUpdateRequest,
+  mediaCreateRequest,
   guideFeedbackRequest,
   onboardingRequest,
   taskUpdateRequest,
@@ -36,6 +39,14 @@ import {
 } from './guide-cards.js';
 import { loadDecisions, updateDecision } from './decisions.js';
 import { buildWeeklyReport } from './weekly-report.js';
+import {
+  createDiaryEntry,
+  fulfilledPhotoPrompts,
+  loadDiary,
+  registerMedia,
+  updateDiaryEntry,
+  verifyDiaryChain,
+} from './diary.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { previewChange, recomputeProject } from './scheduling.js';
@@ -351,6 +362,79 @@ export function createApp(): Hono<App> {
     const projectId = parseId(c.req.param('id'));
     const schedule = await withUserTx(c.get('claims'), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+
+  // -- Tagebuch und Fotos ----------------------------------------------------
+
+  v1.get('/projects/:id/diary', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const entries = await withUserTx(c.get('claims'), (tx) => loadDiary(tx, projectId));
+    return c.json({ entries });
+  });
+
+  v1.post('/projects/:id/diary', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = diaryCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const entry = await withUserTx(c.get('claims'), (tx) =>
+      createDiaryEntry(tx, projectId, parsed.data),
+    );
+    return c.json(entry, 201);
+  });
+
+  v1.patch('/projects/:id/diary/:entryId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const entryId = parseId(c.req.param('entryId'));
+    const parsed = diaryUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const entry = await withUserTx(c.get('claims'), (tx) =>
+      updateDiaryEntry(tx, projectId, entryId, parsed.data),
+    );
+    return c.json(entry);
+  });
+
+  // Die Datei liegt schon im Ablagedienst, wenn diese Anfrage kommt — Fotos
+  // gehen nie durch diesen Server (Abschnitt 6.1). Hier wird nur festgehalten,
+  // was über sie bekannt ist.
+  v1.post('/projects/:id/media', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = mediaCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Zu diesem Foto fehlen Angaben.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const item = await withUserTx(c.get('claims'), (tx) =>
+      registerMedia(tx, projectId, parsed.data),
+    );
+    return c.json(item, 201);
+  });
+
+  // Die Gegenprobe zur Beweiskette. Der Kopf der Kette gehört auf das
+  // Deckblatt der Bauakte.
+  v1.get('/projects/:id/diary/verify', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const result = await withUserTx(c.get('claims'), (tx) => verifyDiaryChain(tx, projectId));
+    return c.json(result);
+  });
+
+  v1.get('/projects/:id/photo-prompts', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const fulfilled = await withUserTx(c.get('claims'), (tx) =>
+      fulfilledPhotoPrompts(tx, projectId),
+    );
+    return c.json({ fulfilled });
   });
 
   // -- Wochenbericht ---------------------------------------------------------

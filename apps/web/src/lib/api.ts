@@ -13,6 +13,12 @@ import type {
   GuideCardView,
   OnboardingRequest,
   ProjectSchedule,
+  DiaryChainResult,
+  DiaryCreateRequest,
+  DiaryEntryDto,
+  DiaryUpdateRequest,
+  MediaCreateRequest,
+  MediaItemDto,
   ProjectSummary,
   SchedulePreview,
   TaskUpdateRequest,
@@ -156,6 +162,33 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(change),
     }),
+
+  diary: async (projectId: string) =>
+    (await request<{ entries: DiaryEntryDto[] }>(`/projects/${projectId}/diary`)).entries,
+
+  createDiaryEntry: (projectId: string, entry: DiaryCreateRequest) =>
+    request<DiaryEntryDto>(`/projects/${projectId}/diary`, {
+      method: 'POST',
+      body: JSON.stringify(entry),
+    }),
+
+  updateDiaryEntry: (projectId: string, entryId: string, change: DiaryUpdateRequest) =>
+    request<DiaryEntryDto>(`/projects/${projectId}/diary/${entryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  registerMedia: (projectId: string, media: MediaCreateRequest) =>
+    request<MediaItemDto>(`/projects/${projectId}/media`, {
+      method: 'POST',
+      body: JSON.stringify(media),
+    }),
+
+  verifyDiary: (projectId: string) =>
+    request<DiaryChainResult>(`/projects/${projectId}/diary/verify`),
+
+  photoPrompts: async (projectId: string) =>
+    (await request<{ fulfilled: string[] }>(`/projects/${projectId}/photo-prompts`)).fulfilled,
 
   weeklyReport: (projectId: string) =>
     request<WeeklyReport>(`/projects/${projectId}/weekly-report`),

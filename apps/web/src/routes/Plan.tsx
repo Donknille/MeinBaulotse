@@ -5,6 +5,9 @@ import { Button } from '../components/ui';
 import { PlanView } from '../components/PlanView';
 import { GuideCardSheet } from '../components/GuideCardSheet';
 import { DecisionSheet } from '../components/DecisionSheet';
+import { QuickCapture } from '../components/QuickCapture';
+import { enqueue, flushQueue, indexedDbStore } from '../lib/queue';
+import { uploadPhoto } from '../lib/media';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
 import type {
@@ -20,6 +23,7 @@ export function Plan() {
   const queryClient = useQueryClient();
   const [guideTask, setGuideTask] = useState<ScheduledTaskDto | null>(null);
   const [decisionId, setDecisionId] = useState<string | null>(null);
+  const [promptKey, setPromptKey] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ['schedule', projectId],
     queryFn: () => api.schedule(projectId!),
@@ -67,6 +71,14 @@ export function Plan() {
   const bewerten = useMutation({
     mutationFn: (helpful: boolean | null) =>
       api.rateGuideCard(projectId!, guideTask!.id, helpful),
+  });
+
+  // Welche Fotoaufträge schon erfüllt sind. Steht neben der Karte, damit ein
+  // erledigter Auftrag nicht weiter zum Fotografieren auffordert.
+  const prompts = useQuery({
+    queryKey: ['photo-prompts', projectId],
+    queryFn: () => api.photoPrompts(projectId!),
+    enabled: projectId !== undefined,
   });
 
   const abhaken = useMutation({
@@ -125,6 +137,7 @@ export function Plan() {
           onOpenGuide={(task) => setGuideTask(task)}
           onOpenDecision={(decision) => setDecisionId(decision.id)}
           weeklyReportHref={`/projekt/${projectId ?? ''}/wochenbericht`}
+          diaryHref={`/projekt/${projectId ?? ''}/tagebuch`}
           onPreviewTask={(taskId, body) => api.previewTask(projectId!, taskId, body)}
         />
       )}
@@ -161,6 +174,52 @@ export function Plan() {
           }}
           onToggle={async (item, isDone) => {
             await abhaken.mutateAsync({ itemId: item.id, isDone });
+          }}
+          {...(prompts.data === undefined ? {} : { fulfilledPrompts: prompts.data })}
+          onCapture={(key) => {
+            // Erst die Karte schließen, dann erfassen: Zwei Blätter
+            // übereinander sind auf dem Telefon eine Falle.
+            setGuideTask(null);
+            setPromptKey(key);
+          }}
+        />
+      ) : null}
+
+      {promptKey !== null && query.data !== undefined ? (
+        <QuickCapture
+          tasks={query.data.tasks}
+          defaultPromptKey={promptKey}
+          onClose={() => setPromptKey(null)}
+          onSave={async (draft) => {
+            const store = indexedDbStore();
+            await enqueue(store, { projectId: projectId!, ...draft });
+            const ergebnis = await flushQueue(store, {
+              createEntry: (item) =>
+                api.createDiaryEntry(item.projectId, {
+                  entryDate: item.entryDate,
+                  body: item.body,
+                  taskIds: item.taskIds,
+                }),
+              uploadPhoto: (item, photo) => uploadPhoto(item.projectId, photo),
+              registerMedia: async (item, photo, storagePath, diaryEntryId) => {
+                await api.registerMedia(item.projectId, {
+                  storagePath,
+                  mime: photo.mime,
+                  bytes: photo.bytes,
+                  sha256: photo.sha256,
+                  exifTakenAt: photo.takenAt,
+                  exifLat: photo.lat,
+                  exifLon: photo.lon,
+                  statedDate: item.entryDate,
+                  diaryEntryId,
+                  ...(photo.photoPromptKey === undefined
+                    ? {}
+                    : { photoPromptKey: photo.photoPromptKey }),
+                });
+              },
+            });
+            void queryClient.invalidateQueries({ queryKey: ['photo-prompts', projectId] });
+            return { queued: ergebnis.remaining > 0 };
           }}
         />
       ) : null}

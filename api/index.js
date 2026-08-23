@@ -13298,6 +13298,87 @@ var weeklyReport = external_exports.object({
     releasable: external_exports.boolean()
   }).nullable()
 });
+var mediaItem = external_exports.object({
+  id: external_exports.string().uuid(),
+  storagePath: external_exports.string(),
+  mime: external_exports.string(),
+  bytes: external_exports.number().int(),
+  sha256: external_exports.string(),
+  /** Was die Kamera sagt. */
+  exifTakenAt: external_exports.string().nullable(),
+  exifLat: external_exports.number().nullable(),
+  exifLon: external_exports.number().nullable(),
+  /** Was der Mensch sagt. Weicht es ab, wird das gezeigt, nicht versteckt. */
+  statedDate: isoDate.nullable(),
+  caption: external_exports.string().nullable(),
+  photoPromptKey: external_exports.string().nullable(),
+  taskId: external_exports.string().uuid().nullable(),
+  createdAt: external_exports.string()
+});
+var diaryEntry = external_exports.object({
+  id: external_exports.string().uuid(),
+  entryDate: isoDate,
+  body: external_exports.string(),
+  authorName: external_exports.string().nullable(),
+  authorRole: memberRole.nullable(),
+  weather: external_exports.record(external_exports.string(), external_exports.unknown()).nullable(),
+  weatherSource: external_exports.enum(["dwd", "manuell", "keine"]),
+  taskIds: external_exports.array(external_exports.string().uuid()),
+  /** Gesetzt heißt: versiegelt, unveränderlich, Teil der Kette. */
+  lockedAt: external_exports.string().nullable(),
+  contentHash: external_exports.string().nullable(),
+  retractedAt: external_exports.string().nullable(),
+  retractionReason: external_exports.string().nullable(),
+  /** Ob der Fragende diesen Eintrag noch ändern darf. */
+  editable: external_exports.boolean(),
+  media: external_exports.array(mediaItem),
+  createdAt: external_exports.string()
+});
+var diaryCreateRequest = external_exports.object({
+  entryDate: isoDate,
+  body: external_exports.string().trim().min(1).max(5e3),
+  taskIds: external_exports.array(external_exports.string().uuid()).max(20).optional(),
+  /** Frei erfasst; die amtliche Quelle steht in `weatherSource`. */
+  weather: external_exports.object({
+    temperatureC: external_exports.number().min(-60).max(60).optional(),
+    condition: external_exports.string().trim().max(80).optional(),
+    note: external_exports.string().trim().max(200).optional()
+  }).optional()
+});
+var diaryUpdateRequest = external_exports.object({
+  body: external_exports.string().trim().min(1).max(5e3).optional(),
+  taskIds: external_exports.array(external_exports.string().uuid()).max(20).optional(),
+  /** Zurückziehen. Der Eintrag bleibt sichtbar und trägt den Grund. */
+  retractionReason: external_exports.string().trim().min(3).max(500).optional()
+}).refine((value) => value.body !== void 0 || value.taskIds !== void 0 || value.retractionReason !== void 0, { message: "Es gibt nichts zu \xE4ndern." });
+var mediaCreateRequest = external_exports.object({
+  storagePath: external_exports.string().trim().min(1).max(500),
+  mime: external_exports.string().trim().min(3).max(100),
+  bytes: external_exports.number().int().positive(),
+  sha256: external_exports.string().regex(/^[0-9a-f]{64}$/, "Pr\xFCfsumme als 64 Hexzeichen erwartet"),
+  exifTakenAt: external_exports.string().datetime().nullable().optional(),
+  exifLat: external_exports.number().min(-90).max(90).nullable().optional(),
+  exifLon: external_exports.number().min(-180).max(180).nullable().optional(),
+  statedDate: isoDate.optional(),
+  caption: external_exports.string().trim().max(300).optional(),
+  photoPromptKey: external_exports.string().trim().max(120).optional(),
+  taskId: external_exports.string().uuid().optional(),
+  diaryEntryId: external_exports.string().uuid().optional()
+});
+var diaryChainEntry = external_exports.object({
+  entryId: external_exports.string().uuid(),
+  entryDate: isoDate,
+  lockedAt: external_exports.string(),
+  ok: external_exports.boolean(),
+  reason: external_exports.string().nullable()
+});
+var diaryChainResult = external_exports.object({
+  /** Die Prüfsumme des letzten versiegelten Eintrags — der Kopf der Kette. */
+  headHash: external_exports.string().nullable(),
+  sealedCount: external_exports.number().int(),
+  intact: external_exports.boolean(),
+  entries: external_exports.array(diaryChainEntry)
+});
 var apiError = external_exports.object({
   error: external_exports.string(),
   /** Was der Nutzer als Nächstes tun kann — nie eine Fehlermeldung ohne Ausweg. */
@@ -15098,6 +15179,216 @@ async function buildWeeklyReport(tx, projectId, today) {
   };
 }
 
+// src/diary.ts
+var toMedia = (row) => ({
+  id: row.id,
+  storagePath: row.storage_path,
+  mime: row.mime,
+  bytes: Number(row.bytes),
+  sha256: row.sha256,
+  exifTakenAt: row.exif_taken_at === null ? null : new Date(row.exif_taken_at).toISOString(),
+  exifLat: row.exif_lat === null ? null : Number(row.exif_lat),
+  exifLon: row.exif_lon === null ? null : Number(row.exif_lon),
+  statedDate: row.stated_date,
+  caption: row.caption,
+  photoPromptKey: row.photo_prompt_key,
+  taskId: row.task_id,
+  createdAt: new Date(row.created_at).toISOString()
+});
+async function sealDue(tx, projectId) {
+  await tx.query("select mbl.seal_due_diary_entries($1)", [projectId]);
+}
+async function currentMemberId(tx, projectId) {
+  const result = await tx.query(
+    "select mbl.current_member_id($1) as id",
+    [projectId]
+  );
+  const id = result.rows[0]?.id ?? null;
+  if (id === null) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  return id;
+}
+async function loadDiary(tx, projectId) {
+  await sealDue(tx, projectId);
+  const entries = await tx.query(
+    `select e.id, e.entry_date, e.body, m.display_name as author_name, e.author_role,
+            e.weather, e.weather_source, e.task_ids, e.locked_at, e.content_hash,
+            e.retracted_at, e.retraction_reason, e.created_at,
+            (e.author_member_id = mbl.current_member_id(e.project_id)) as is_author
+       from diary_entry e
+       left join project_member m on m.id = e.author_member_id
+      where e.project_id = $1
+      order by e.entry_date desc, e.created_at desc`,
+    [projectId]
+  );
+  const media = await tx.query(
+    `select id, diary_entry_id, storage_path, mime, bytes, sha256, exif_taken_at,
+            exif_lat, exif_lon, stated_date, caption, photo_prompt_key, task_id, created_at
+       from media where project_id = $1 order by created_at`,
+    [projectId]
+  );
+  const byEntry = /* @__PURE__ */ new Map();
+  for (const row of media.rows) {
+    if (row.diary_entry_id === null) continue;
+    const liste = byEntry.get(row.diary_entry_id) ?? [];
+    liste.push(toMedia(row));
+    byEntry.set(row.diary_entry_id, liste);
+  }
+  return entries.rows.map((row) => ({
+    id: row.id,
+    entryDate: row.entry_date,
+    body: row.body,
+    authorName: row.author_name,
+    authorRole: row.author_role,
+    weather: row.weather,
+    weatherSource: row.weather_source,
+    taskIds: row.task_ids,
+    lockedAt: row.locked_at === null ? null : new Date(row.locked_at).toISOString(),
+    contentHash: row.content_hash,
+    retractedAt: row.retracted_at === null ? null : new Date(row.retracted_at).toISOString(),
+    retractionReason: row.retraction_reason,
+    // Änderbar ist nur, was noch nicht versiegelt ist — und nur für den, der
+    // es geschrieben hat. „Fremden Eintrag ändern" steht in der Rechtematrix
+    // bei keiner einzigen Rolle.
+    editable: row.locked_at === null && row.is_author && row.retracted_at === null,
+    media: byEntry.get(row.id) ?? [],
+    createdAt: new Date(row.created_at).toISOString()
+  }));
+}
+async function createDiaryEntry(tx, projectId, request) {
+  await sealDue(tx, projectId);
+  const memberId = await currentMemberId(tx, projectId);
+  const rolle = await tx.query(
+    "select role::text as role from project_member where id = $1",
+    [memberId]
+  );
+  const hatWetter = request.weather !== void 0 && Object.keys(request.weather).length > 0;
+  const inserted = await tx.query(
+    `insert into diary_entry
+       (project_id, entry_date, body, author_member_id, author_role,
+        weather, weather_source, task_ids)
+     values ($1, $2, $3, $4, $5::mbl.member_role, $6, $7::mbl.weather_source, $8)
+     returning id`,
+    [
+      projectId,
+      request.entryDate,
+      request.body,
+      memberId,
+      rolle.rows[0]?.role ?? null,
+      hatWetter ? JSON.stringify(request.weather) : null,
+      hatWetter ? "manuell" : "keine",
+      request.taskIds ?? []
+    ]
+  );
+  await tx.query(
+    `insert into audit_log (project_id, actor_member_id, actor_channel, action, entity_type, entity_id)
+     values ($1, $2, 'app', 'diary.created', 'diary_entry', $3)`,
+    [projectId, memberId, inserted.rows[0].id]
+  );
+  const alle = await loadDiary(tx, projectId);
+  return alle.find((entry) => entry.id === inserted.rows[0].id);
+}
+async function updateDiaryEntry(tx, projectId, entryId, request) {
+  await sealDue(tx, projectId);
+  const felder = [];
+  const werte = [entryId, projectId];
+  const setze = (spalte, wert) => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}`);
+  };
+  if (request.body !== void 0) setze("body", request.body);
+  if (request.taskIds !== void 0) setze("task_ids", request.taskIds);
+  if (request.retractionReason !== void 0) {
+    setze("retraction_reason", request.retractionReason);
+    felder.push("retracted_at = now()");
+  }
+  const updated = await tx.query(
+    `update diary_entry set ${felder.join(", ")} where id = $1 and project_id = $2`,
+    werte
+  );
+  if (updated.rowCount === 0) {
+    throw new HTTPException(404, {
+      message: "Diesen Tagebucheintrag gibt es in deinem Bauvorhaben nicht."
+    });
+  }
+  const alle = await loadDiary(tx, projectId);
+  return alle.find((entry) => entry.id === entryId);
+}
+async function registerMedia(tx, projectId, request) {
+  const memberId = await currentMemberId(tx, projectId);
+  const inserted = await tx.query(
+    `insert into media
+       (project_id, diary_entry_id, task_id, storage_path, mime, bytes, sha256,
+        exif_taken_at, exif_lat, exif_lon, stated_date, caption, photo_prompt_key, uploaded_by)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     on conflict (project_id, sha256) do nothing
+     returning id, diary_entry_id, storage_path, mime, bytes, sha256, exif_taken_at,
+               exif_lat, exif_lon, stated_date, caption, photo_prompt_key, task_id, created_at`,
+    [
+      projectId,
+      request.diaryEntryId ?? null,
+      request.taskId ?? null,
+      request.storagePath,
+      request.mime,
+      request.bytes,
+      request.sha256,
+      request.exifTakenAt ?? null,
+      request.exifLat ?? null,
+      request.exifLon ?? null,
+      request.statedDate ?? null,
+      request.caption ?? null,
+      request.photoPromptKey ?? null,
+      memberId
+    ]
+  );
+  if (inserted.rowCount === 1) return toMedia(inserted.rows[0]);
+  const vorhanden = await tx.query(
+    `select id, diary_entry_id, storage_path, mime, bytes, sha256, exif_taken_at,
+            exif_lat, exif_lon, stated_date, caption, photo_prompt_key, task_id, created_at
+       from media where project_id = $1 and sha256 = $2`,
+    [projectId, request.sha256]
+  );
+  const row = vorhanden.rows[0];
+  if (row === void 0) {
+    throw new HTTPException(403, {
+      message: "Fotos anlegen darf in diesem Bauvorhaben nur, wer die Dokumentation f\xFChrt."
+    });
+  }
+  return toMedia(row);
+}
+async function verifyDiaryChain(tx, projectId) {
+  await sealDue(tx, projectId);
+  const result = await tx.query("select * from mbl.verify_diary_chain($1)", [projectId]);
+  const entries = result.rows.map((row) => ({
+    entryId: row.out_entry_id,
+    entryDate: row.out_entry_date,
+    lockedAt: new Date(row.out_locked_at).toISOString(),
+    ok: row.out_ok,
+    reason: row.out_grund
+  }));
+  const head = await tx.query(
+    `select content_hash from diary_entry
+      where project_id = $1 and locked_at is not null
+      order by locked_at desc, id desc limit 1`,
+    [projectId]
+  );
+  return {
+    headHash: head.rows[0]?.content_hash ?? null,
+    sealedCount: entries.length,
+    intact: entries.every((entry) => entry.ok),
+    entries
+  };
+}
+async function fulfilledPhotoPrompts(tx, projectId) {
+  const result = await tx.query(
+    `select distinct photo_prompt_key from media
+      where project_id = $1 and photo_prompt_key is not null`,
+    [projectId]
+  );
+  return result.rows.map((row) => row.photo_prompt_key);
+}
+
 // src/demo.ts
 var import_node_crypto6 = require("node:crypto");
 var DEMO_IDENTITIES = {
@@ -15566,7 +15857,8 @@ var EXPECTED = [
   { migration: "0005_guide_cards.sql", table: "guide_card", column: "template_task_codes" },
   // Der Plan liefert die Entscheidungen mit aus; ohne die Tabelle endet jede
   // Planansicht im Fehler, nicht nur die Entscheidungsliste.
-  { migration: "0007_decisions.sql", table: "decision", column: "due_date" }
+  { migration: "0007_decisions.sql", table: "decision", column: "due_date" },
+  { migration: "0009_tagebuch.sql", table: "diary_entry", column: "content_hash" }
 ];
 async function checkSchema(tx) {
   if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
@@ -15780,6 +16072,70 @@ function createApp() {
     const projectId = parseId(c.req.param("id"));
     const schedule = await withUserTx(c.get("claims"), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+  v1.get("/projects/:id/diary", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const entries = await withUserTx(c.get("claims"), (tx) => loadDiary(tx, projectId));
+    return c.json({ entries });
+  });
+  v1.post("/projects/:id/diary", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = diaryCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const entry = await withUserTx(
+      c.get("claims"),
+      (tx) => createDiaryEntry(tx, projectId, parsed.data)
+    );
+    return c.json(entry, 201);
+  });
+  v1.patch("/projects/:id/diary/:entryId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const entryId = parseId(c.req.param("entryId"));
+    const parsed = diaryUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const entry = await withUserTx(
+      c.get("claims"),
+      (tx) => updateDiaryEntry(tx, projectId, entryId, parsed.data)
+    );
+    return c.json(entry);
+  });
+  v1.post("/projects/:id/media", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = mediaCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Zu diesem Foto fehlen Angaben.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const item = await withUserTx(
+      c.get("claims"),
+      (tx) => registerMedia(tx, projectId, parsed.data)
+    );
+    return c.json(item, 201);
+  });
+  v1.get("/projects/:id/diary/verify", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const result = await withUserTx(c.get("claims"), (tx) => verifyDiaryChain(tx, projectId));
+    return c.json(result);
+  });
+  v1.get("/projects/:id/photo-prompts", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const fulfilled = await withUserTx(
+      c.get("claims"),
+      (tx) => fulfilledPhotoPrompts(tx, projectId)
+    );
+    return c.json({ fulfilled });
   });
   v1.get("/projects/:id/weekly-report", async (c) => {
     const projectId = parseId(c.req.param("id"));
