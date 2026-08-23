@@ -138,6 +138,7 @@ export function Plan() {
           onOpenDecision={(decision) => setDecisionId(decision.id)}
           weeklyReportHref={`/projekt/${projectId ?? ''}/wochenbericht`}
           diaryHref={`/projekt/${projectId ?? ''}/tagebuch`}
+          lotseHref={`/projekt/${projectId ?? ''}/lotse`}
           onPreviewTask={(taskId, body) => api.previewTask(projectId!, taskId, body)}
           onCreateGuestLink={async (memberId) => {
             const created = await api.createGuestLink(projectId!, { memberId });

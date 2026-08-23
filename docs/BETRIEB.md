@@ -108,3 +108,64 @@ Fragenden gebaut, wie jede andere Abfrage. Der Weg existiert, weil eine Mail
 eine Einbahnstraße ist: Wer sie zwei Wochen später sucht, findet sie nicht
 mehr, und wer nie eine bekommen hat, soll trotzdem sehen können, was darin
 gestanden hätte.
+
+## Frag den Lotsen
+
+Der Assistent aus Abschnitt 3.7 läuft über die Anthropic-API. Er meldet sich
+nur, wenn `ANTHROPIC_API_KEY` gesetzt ist; ohne Schlüssel sagt die Ansicht das
+offen und verweist auf die Lotsenkarten. `ANTHROPIC_MODEL` ist optional.
+
+### Was das kostet, und wer es begrenzt
+
+Zwei Riegel, beide in der Datenbank und nicht im Serverprozess — ein Zähler im
+Prozess zählt nach dem nächsten Kaltstart wieder von vorn, und auf Vercel ist
+der nächste Kaltstart immer gleich:
+
+| Riegel | Wert | Wo |
+|---|---|---|
+| Fragen je Minute und Bauvorhaben | 6 | `mbl.claim_assistant_turn` |
+| Kosten je Bauvorhaben und Monat | 500 Cent | `assistant_budget.spent_cents` |
+
+Der Monatsdeckel füllt sich beim ersten Zug im neuen Monat von selbst wieder
+auf. Wer ihn erreicht, bekommt keine Fehlermeldung, sondern eine Aussage über
+den Monat — mit dem Verweis auf die Lotsenkarten, die weiterhin bereitstehen.
+
+Fortgeschrieben wird der Verbrauch von einem Trigger auf `assistant_message`,
+nicht von einem zweiten Aufruf im Anwendungscode: Ein Aufruf, den der Code
+vergessen kann, ist ein Kostendeckel, den er vergessen kann.
+
+Was gerade verbraucht ist, steht in einer Zeile:
+
+```sql
+select p.name, b.month, b.spent_cents
+  from assistant_budget b join project p on p.id = b.project_id
+ order by b.spent_cents desc;
+```
+
+### Was in den Kontext geht
+
+Ausschließlich Daten des angefragten Bauvorhabens, gelesen unter den Rechten
+des Fragenden — dieselbe Transaktion, dieselben Policies wie jede andere
+Abfrage. Es gibt keinen Pfad, auf dem der Assistent mehr sähe als der Mensch,
+der ihn fragt.
+
+Der Client schickt eine Frage und sonst nichts. Kein Feld sagt, was in den
+Kontext gehört; auch das heutige Datum kommt vom Server. Das ist Abschnitt
+6.4 der Spezifikation, und es ist der Grund, warum die Anfrage so karg ist.
+
+### Wenn eine Antwort schlecht war
+
+Gespräche sind append-only. Ein Beitrag lässt sich nicht ändern und nicht
+löschen — auch nicht der des Assistenten. Was der Lotse einmal geraten hat,
+bleibt nachlesbar, samt der Hinweise, die damals darunterstanden. Genau
+danach wird bei Streit gefragt.
+
+Nachlesen lässt sich das so:
+
+```sql
+select m.created_at, m.role, left(m.text, 120) as anfang,
+       m.guardrails, m.cost_cents
+  from assistant_message m
+ where m.project_id = '<projekt>'
+ order by m.created_at;
+```

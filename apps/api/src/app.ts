@@ -25,6 +25,7 @@ import {
   diaryUpdateRequest,
   mediaCreateRequest,
   guideFeedbackRequest,
+  lotseAskRequest,
   onboardingRequest,
   taskUpdateRequest,
   type PhaseProgress,
@@ -62,6 +63,8 @@ import {
 import { createProjectFromAnswers } from './onboarding.js';
 import { previewChange, recomputeProject } from './scheduling.js';
 import { checkSchema } from './schema-check.js';
+import { frage, loadConversation, loadConversations } from './lotse.js';
+import { modelAusUmgebung, type LotseModel } from './lotse-model.js';
 
 type App = { Variables: AuthedVariables };
 
@@ -98,7 +101,19 @@ export function withoutSecrets(text: string): string {
   return text.replace(/:\/\/[^@\s]*@/g, '://***@');
 }
 
-export function createApp(): Hono<App> {
+export interface AppOptions {
+  /**
+   * Das Modell hinter „Frag den Lotsen".
+   *
+   * Steckbar, damit die Leitplanken prüfbar bleiben: Der Test setzt ein
+   * Modell ein, das absichtlich Rechtsberatung erteilt, und prüft, dass die
+   * Antwort trotzdem richtig herauskommt. Ohne diesen Griff prüfte er ein
+   * Modell statt dieses Produkts.
+   */
+  lotseModel?: LotseModel | null;
+}
+
+export function createApp(options: AppOptions = {}): Hono<App> {
   // Die App haengt unter `/api`, nicht unter der Wurzel.
   //
   // Auf Vercel liegt die Funktion unter `/api`, und der Hono-Adapter reicht die
@@ -463,6 +478,68 @@ export function createApp(): Hono<App> {
     const linkId = parseId(c.req.param('linkId'));
     await withUserTx(c.get('claims'), (tx) => revokeGuestToken(tx, projectId, linkId));
     return c.json({ ok: true });
+  });
+
+  // -- Frag den Lotsen -------------------------------------------------------
+
+  /**
+   * Ohne Schlüssel gibt es den Lotsen nicht — und er sagt das.
+   *
+   * 501 und nicht 500: Der Server ist heil, die Funktion ist nur nicht
+   * eingerichtet. Dieselbe Haltung wie bei den Fotos ohne Ablage.
+   */
+  const lotseModel = options.lotseModel === undefined ? modelAusUmgebung() : options.lotseModel;
+
+  v1.post('/projects/:id/lotse', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    if (lotseModel === null) {
+      throw new HTTPException(501, {
+        message: 'Der Lotse ist auf dieser Umgebung nicht eingerichtet.',
+        cause: {
+          hint: 'Es fehlt ANTHROPIC_API_KEY. Die Lotsenkarten zu jedem Vorgang stehen trotzdem bereit.',
+        },
+      });
+    }
+
+    const parsed = lotseAskRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Stell die Frage bitte in ganzen Worten — drei Zeichen sind zu wenig.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const antwort = await withUserTx(c.get('claims'), (tx) =>
+      frage(tx, projectId, {
+        model: lotseModel,
+        frage: parsed.data.question,
+        ...(parsed.data.conversationId === undefined
+          ? {}
+          : { conversationId: parsed.data.conversationId }),
+        // Das Datum kommt vom Server, nicht aus der Anfrage. Beim
+        // Wochenbericht ist `?today=` eine Bequemlichkeit; hier wäre es der
+        // erste Griff am Kontext, und der gehört laut 6.4 nicht dem Client.
+        today: new Date().toISOString().slice(0, 10),
+      }),
+    );
+    return c.json(antwort, 201);
+  });
+
+  v1.get('/projects/:id/lotse', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const conversations = await withUserTx(c.get('claims'), (tx) =>
+      loadConversations(tx, projectId),
+    );
+    return c.json({ conversations, available: lotseModel !== null });
+  });
+
+  v1.get('/projects/:id/lotse/:conversationId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const conversationId = parseId(c.req.param('conversationId'));
+    const gespraech = await withUserTx(c.get('claims'), (tx) =>
+      loadConversation(tx, projectId, conversationId),
+    );
+    return c.json(gespraech);
   });
 
   // -- Tagebuch und Fotos ----------------------------------------------------

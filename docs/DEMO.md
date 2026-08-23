@@ -253,6 +253,39 @@ Links laufen nach 180 Tagen ab und lassen sich jederzeit sperren. Wer einen
 Link zu oft in der Minute aufruft, wird für eine Minute gebremst — der Link
 bleibt gültig.
 
+## Frag den Lotsen
+
+Im Plan steht neben *Bautagebuch* der Verweis **Frag den Lotsen**. Dahinter
+liegt ein Chat, der dein Bauvorhaben kennt: den Plan, die offenen
+Entscheidungen, die Verschiebungen der letzten Wochen, das Bautagebuch und die
+Lotsenkarten zu den Vorgängen, die gerade im Blick sind.
+
+Lokal ist er nur da, wenn in der `.env` ein `ANTHROPIC_API_KEY` steht. Fehlt
+er, sagt die Seite das offen und verweist auf die Karten — genauso wie im
+Betrieb.
+
+Drei Fragen zeigen, worum es hier eigentlich geht:
+
+| Frage | Was zusätzlich erscheint |
+|---|---|
+| „Wie lange muss der Estrich trocknen?" | nichts — eine Bau-Frage bleibt eine Bau-Frage |
+| „Der GU verlangt 95 % als Abschlag. Muss ich das zahlen?" | *Hinweis auf eine Gesetzesstelle, keine Rechtsberatung* mit § 650m Abs. 1 BGB und dem Verweis auf einen Fachanwalt |
+| „Im Keller sind Risse. Ist das schlimm?" | der Hinweis auf einen Bausachverständigen, mit Kostenrahmen und drei Schritten für bis dahin |
+
+Die Hinweise stehen abgesetzt und stammen **nicht** vom Modell. Sie hängen an
+der Frage, nicht an der Antwort: Ein Systemprompt ist eine Bitte, und eine
+Bitte ist keine Leitplanke. Deshalb stehen sie auch dann da, wenn das Modell
+sich nicht daran hält.
+
+Sie bleiben stehen. Wer das Gespräch morgen wieder öffnet, sieht denselben
+Hinweis unter derselben Antwort — der Zusatz wird nach CI 11.3 nie verkürzt
+und nie ausgeblendet, und „nur bis zum Neuladen" wäre ausgeblendet.
+
+Der Lotse kennt nur **ein** Bauvorhaben: das, aus dem heraus du fragst. Wer im
+Demostand beide angelegt hat, kann das prüfen — im Gespräch am *Stadthaus
+Ahornweg* kommt das *Musterhaus Sonnenweg* nicht vor, obwohl derselbe Bauherr
+beide besitzt.
+
 ## Was noch fehlt
 
 - **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
@@ -318,6 +351,7 @@ die fünfte schaltet den Testzugang frei:
 | `VITE_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | Settings → API Keys |
 | `DEMO_LOGIN_KEY` | dein Schlüssel, mindestens 16 Zeichen |
+| `ANTHROPIC_API_KEY` | nur wenn „Frag den Lotsen" vorgeführt werden soll |
 
 `SUPABASE_JWT_SECRET` ist hier nicht optional: Mit genau diesem Geheimnis
 unterschreibt der Testzugang seine Token, und mit ihm prüft die API sie.

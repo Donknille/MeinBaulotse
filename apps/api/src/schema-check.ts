@@ -44,6 +44,10 @@ const EXPECTED: readonly Expectation[] = [
   // Tabelle, endet jeder Abstimmungslink im Fehler statt in der Frage — und
   // die Links sind schon verschickt, wenn das auffällt.
   { migration: '0011_gastzugang.sql', table: 'guest_token', column: 'token_hash' },
+  // `hints` kam nach der Tabelle. Ohne die Spalte scheitert jede Frage an
+  // den Lotsen beim Speichern der Antwort — also nachdem das Modell schon
+  // bezahlt wurde.
+  { migration: '0012_lotse.sql', table: 'assistant_message', column: 'hints' },
 ];
 
 export interface SchemaState {

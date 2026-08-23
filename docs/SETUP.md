@@ -334,6 +334,30 @@ Funktion, die nur zu einem gültigen Hash etwas herausgibt —, und danach
 arbeitet der Gast unter denselben Policies wie jedes andere Mitglied. Es gibt
 keinen Pfad, auf dem `service_role` einen Gast bedient.
 
+## 4c. Frag den Lotsen
+
+Einzurichten ist eine Variable: `ANTHROPIC_API_KEY`. Ohne sie gibt es die
+Funktion nicht — die Ansicht sagt das offen und verweist auf die
+Lotsenkarten, die zu jedem Vorgang bereitstehen. `ANTHROPIC_MODEL` ist
+optional.
+
+Was der Assistent kosten darf, steht nicht in einer Variablen, sondern in der
+Datenbank: sechs Fragen je Minute und Bauvorhaben, fünf Euro je Bauvorhaben
+und Monat. Beides ist in `docs/BETRIEB.md` beschrieben, samt der Abfrage, mit
+der sich der Verbrauch ansehen lässt.
+
+Zwei Dinge, die zum Aufbau gehören und nicht zur Einrichtung:
+
+**Der Kontext kommt aus der Transaktion des Fragenden.** Es gibt keine
+privilegierte Abfrage, die den Kontext zusammenstellt — also auch keine, die
+versehentlich zu viel hineinlegen könnte. Was der Assistent sieht, sieht der
+Mensch, der ihn fragt.
+
+**Die Leitplanken hängen an der Frage, nicht an der Antwort.** Rechtshinweis,
+Sachverständigenverweis und Kostenvorbehalt werden vom Server angehängt, nicht
+vom Modell formuliert. Der Systemprompt weist zusätzlich an — beides zusammen,
+nicht eines statt des anderen.
+
 ## 5. Wenn du Stammdaten änderst
 
 Diese Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:

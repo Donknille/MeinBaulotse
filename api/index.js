@@ -13493,6 +13493,35 @@ var checklistUpdateRequest = external_exports.object({
 }).refine((value) => value.isDone !== void 0 || value.note !== void 0, {
   message: "Es gibt nichts zu \xE4ndern."
 });
+var lotseAskRequest = external_exports.object({
+  question: external_exports.string().trim().min(3).max(2e3),
+  conversationId: external_exports.string().uuid().optional()
+});
+var lotseGuardrail = external_exports.enum(["recht", "mangel", "kosten"]);
+var lotseConversation = external_exports.object({
+  id: external_exports.string().uuid(),
+  title: external_exports.string(),
+  updatedAt: external_exports.string()
+});
+var lotseHint = external_exports.object({
+  kind: lotseGuardrail,
+  title: external_exports.string(),
+  text: external_exports.string(),
+  reference: external_exports.string().optional()
+});
+var lotseCardRef = external_exports.object({ key: external_exports.string(), title: external_exports.string() });
+var lotseMessage = external_exports.object({
+  id: external_exports.string().uuid(),
+  role: external_exports.enum(["frage", "antwort"]),
+  text: external_exports.string(),
+  cards: external_exports.array(lotseCardRef),
+  hints: external_exports.array(lotseHint),
+  createdAt: external_exports.string()
+});
+var lotseAnswer = external_exports.object({
+  conversationId: external_exports.string().uuid(),
+  message: lotseMessage
+});
 
 // ../../node_modules/hono/dist/helper/factory/index.js
 var createMiddleware = (middleware) => middleware;
@@ -15291,9 +15320,9 @@ async function loadDiary(tx, projectId) {
   const byEntry = /* @__PURE__ */ new Map();
   for (const row of media.rows) {
     if (row.diary_entry_id === null) continue;
-    const liste = byEntry.get(row.diary_entry_id) ?? [];
-    liste.push(toMedia(row));
-    byEntry.set(row.diary_entry_id, liste);
+    const liste2 = byEntry.get(row.diary_entry_id) ?? [];
+    liste2.push(toMedia(row));
+    byEntry.set(row.diary_entry_id, liste2);
   }
   return entries.rows.map((row) => ({
     id: row.id,
@@ -16127,7 +16156,11 @@ var EXPECTED = [
   // Der Gast-Zugang ist der einzige Weg ins Produkt ohne Konto. Fehlt die
   // Tabelle, endet jeder Abstimmungslink im Fehler statt in der Frage — und
   // die Links sind schon verschickt, wenn das auffällt.
-  { migration: "0011_gastzugang.sql", table: "guest_token", column: "token_hash" }
+  { migration: "0011_gastzugang.sql", table: "guest_token", column: "token_hash" },
+  // `hints` kam nach der Tabelle. Ohne die Spalte scheitert jede Frage an
+  // den Lotsen beim Speichern der Antwort — also nachdem das Modell schon
+  // bezahlt wurde.
+  { migration: "0012_lotse.sql", table: "assistant_message", column: "hints" }
 ];
 async function checkSchema(tx) {
   if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
@@ -16151,6 +16184,615 @@ async function checkSchema(tx) {
   return { current: missing.length === 0, missingMigrations: missing };
 }
 
+// src/lotse-context.ts
+var VORSCHAU_TAGE2 = 28;
+var RUECKBLICK_TAGE2 = 42;
+function plusDays2(date, days) {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 864e5).toISOString().slice(0, 10);
+}
+function euro(cents) {
+  if (cents === null) return "nicht erfasst";
+  return `${(cents / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 })} Euro`;
+}
+function liste(zeilen) {
+  return zeilen.length === 0 ? "  (nichts)" : zeilen.map((zeile) => `  - ${zeile}`).join("\n");
+}
+function karteAlsText(row) {
+  const teile = [row.whats_happening.trim()];
+  if (row.watch_for.length > 0) {
+    teile.push(`Worauf zu achten ist: ${row.watch_for.map((p) => p.text).join(" ")}`);
+  }
+  if (row.common_problems.length > 0) {
+    teile.push(`Was oft schiefgeht: ${row.common_problems.map((p) => p.text).join(" ")}`);
+  }
+  if (row.questions_for_contractor.length > 0) {
+    teile.push(`Fragen an den Unternehmer: ${row.questions_for_contractor.map((p) => p.text).join(" ")}`);
+  }
+  if (row.expert_recommended) {
+    teile.push(`Fachpr\xFCfung empfohlen: ${row.expert_reason ?? "siehe Karte"}`);
+  }
+  return { key: row.key, title: row.title, text: teile.join("\n") };
+}
+async function buildLotseContext(tx, projectId, today) {
+  const kopf = await tx.query(
+    `select p.name, p.federal_state::text as federal_state, p.build_type::text as build_type,
+            p.contract_type::text as contract_type, p.has_basement, p.planned_start,
+            p.contractual_completion, p.contract_sum_cents,
+            (select m.role::text from project_member m
+              where m.id = mbl.current_member_id(p.id)) as rolle
+       from project p where p.id = $1`,
+    [projectId]
+  );
+  const p = kopf.rows[0];
+  if (p === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const bis = plusDays2(today, VORSCHAU_TAGE2);
+  const seit = plusDays2(today, -RUECKBLICK_TAGE2);
+  const vorgaenge = await tx.query(
+    `select t.name, t.current_start, t.current_end, t.status::text as status,
+            t.confirmation::text as confirmation, t.phase_key,
+            t.is_wait, guide.key as card_key
+       from task t
+       left join lateral (
+         select gc.key from guide_card gc
+          where gc.published_at is not null
+            and (gc.id = t.guide_card_id
+                 or (t.template_task_code is not null
+                     and t.template_task_code = any (gc.template_task_codes)
+                     and gc.superseded_by is null))
+          order by (gc.id = t.guide_card_id) desc, gc.version desc limit 1
+       ) guide on true
+      where t.project_id = $1
+        and t.current_start is not null
+        and t.current_start <= $2
+        and coalesce(t.current_end, t.current_start) >= $3
+      order by t.current_start`,
+    [projectId, bis, today]
+  );
+  const entscheidungen = await tx.query(
+    `select title, due_date, status::text as status, description
+       from decision
+      where project_id = $1 and status <> 'entschieden'
+      order by due_date nulls last limit 12`,
+    [projectId]
+  );
+  const verschiebungen = await tx.query(
+    `select t.name, c.reason_text, c.reason_code::text as reason_code,
+            c.new_value #>> '{}' as new_value
+       from schedule_change c join task t on t.id = c.task_id
+      where c.project_id = $1 and c.created_at >= $2::date and c.field = 'earliest_start'
+      order by c.created_at desc limit 10`,
+    [projectId, seit]
+  );
+  const tagebuch = await tx.query(
+    `select entry_date, body from diary_entry
+      where project_id = $1 and entry_date >= $2 and retracted_at is null
+      order by entry_date desc limit 12`,
+    [projectId, seit]
+  );
+  const ende = await tx.query(
+    `select max(coalesce(current_end, current_start))::text as letztes_ende
+       from task where project_id = $1`,
+    [projectId]
+  );
+  const kartenKeys = [
+    ...new Set(vorgaenge.rows.map((row) => row.card_key).filter((key) => key !== null))
+  ];
+  const karten2 = kartenKeys.length === 0 ? [] : (await tx.query(
+    `select key, title, whats_happening, watch_for, questions_for_contractor,
+                    common_problems, expert_recommended, expert_reason
+               from guide_card
+              where key = any ($1) and published_at is not null and superseded_by is null
+              order by key`,
+    [kartenKeys]
+  )).rows.map(karteAlsText);
+  const luecken = [];
+  if (p.contractual_completion === null) luecken.push("kein vertraglich geschuldeter Fertigstellungstermin erfasst");
+  if (p.contract_sum_cents === null) luecken.push("keine Gesamtverg\xFCtung erfasst");
+  if (tagebuch.rows.length === 0) luecken.push("keine Tagebucheintr\xE4ge in den letzten sechs Wochen");
+  const laufend = vorgaenge.rows.filter((row) => row.status === "laeuft");
+  const text = [
+    `Bauvorhaben: ${p.name}`,
+    `Heute ist der ${today}.`,
+    `Bundesland: ${p.federal_state}. Bauweise: ${p.build_type}. Vertragsart: ${p.contract_type}.`,
+    `${p.has_basement ? "Mit" : "Ohne"} Keller. Baubeginn geplant: ${p.planned_start}.`,
+    `Geschuldeter Fertigstellungstermin: ${p.contractual_completion ?? "nicht erfasst"}.`,
+    `Errechnetes Bauende nach heutigem Plan: ${ende.rows[0]?.letztes_ende ?? "unbekannt"}.`,
+    `Gesamtverg\xFCtung: ${euro(p.contract_sum_cents === null ? null : Number(p.contract_sum_cents))}.`,
+    `Der Fragende ist im Projekt: ${p.rolle ?? "unbekannt"}.`,
+    "",
+    `Laufende Vorg\xE4nge (${laufend.length}):`,
+    liste(laufend.map((row) => `${row.name} (${row.current_start} bis ${row.current_end})`)),
+    "",
+    `Vorg\xE4nge in den n\xE4chsten ${VORSCHAU_TAGE2} Tagen:`,
+    liste(
+      vorgaenge.rows.filter((row) => row.status !== "laeuft").map(
+        (row) => `${row.name}${row.is_wait ? " (Wartezeit)" : ""}: ${row.current_start} bis ${row.current_end}, Stand ${row.status}, Best\xE4tigungsgrad ${row.confirmation}`
+      )
+    ),
+    "",
+    "Offene Entscheidungen:",
+    liste(
+      entscheidungen.rows.map(
+        (row) => `${row.title} \u2014 Frist ${row.due_date ?? "offen"}, Stand ${row.status}`
+      )
+    ),
+    "",
+    "Termin\xE4nderungen der letzten Wochen:",
+    liste(
+      verschiebungen.rows.map(
+        (row) => `${row.name} auf ${row.new_value ?? "unbekannt"}${row.reason_code === null ? "" : ` \u2014 Grund: ${row.reason_code}`}${row.reason_text === null ? "" : ` (${row.reason_text})`}`
+      )
+    ),
+    "",
+    "Bautagebuch der letzten Wochen:",
+    liste(
+      tagebuch.rows.map(
+        (row) => `${row.entry_date}: ${row.body.replace(/\s+/g, " ").slice(0, 200)}`
+      )
+    ),
+    "",
+    "L\xFCcken in der Datenlage:",
+    liste(luecken),
+    "",
+    "Lotsenkarten zu den Vorg\xE4ngen, die jetzt im Blick sind:",
+    karten2.length === 0 ? "  (zu diesen Vorg\xE4ngen gibt es keine Karte)" : karten2.map((karte) => `
+[[karte:${karte.key}]] ${karte.title}
+${karte.text}`).join("\n")
+  ].join("\n");
+  return {
+    projectId,
+    projectName: p.name,
+    today,
+    text,
+    cardKeys: karten2.map((karte) => karte.key),
+    karten: karten2,
+    luecken
+  };
+}
+
+// src/lotse-guardrails.ts
+var RECHTSTHEMEN = [
+  {
+    schluessel: "abschlag",
+    woerter: ["abschlag", "abschl\xE4ge", "zahlungsplan", "ratenplan", "vorauszahlung", "anzahlung"],
+    stelle: "\xA7 650m Abs. 1 BGB",
+    inhalt: "Beim Verbraucherbauvertrag d\xFCrfen Abschlagszahlungen zusammen 90 % der Gesamtverg\xFCtung einschlie\xDFlich Nachtr\xE4gen nicht \xFCbersteigen."
+  },
+  {
+    schluessel: "sicherheit",
+    woerter: ["sicherheit", "b\xFCrgschaft", "buergschaft", "einbehalt", "sicherheitsleistung"],
+    stelle: "\xA7 650m Abs. 2 BGB",
+    inhalt: "Bei der ersten Abschlagszahlung ist dem Verbraucher eine Sicherheit von 5 % der Gesamtverg\xFCtung f\xFCr die rechtzeitige Herstellung ohne wesentliche M\xE4ngel zu leisten."
+  },
+  {
+    schluessel: "abnahme",
+    woerter: ["abnahme", "abnehmen", "abgenommen", "abnahmeprotokoll"],
+    stelle: "\xA7 640 BGB",
+    inhalt: "Der Besteller ist zur Abnahme verpflichtet, sobald das Werk vertragsgem\xE4\xDF ist; wegen unwesentlicher M\xE4ngel darf er sie nicht verweigern. Nach fruchtlosem Ablauf einer gesetzten Frist gilt das Werk als abgenommen."
+  },
+  {
+    schluessel: "maengelrechte",
+    woerter: [
+      "nacherf\xFCllung",
+      "nacherfuellung",
+      "gew\xE4hrleistung",
+      "gewaehrleistung",
+      "m\xE4ngelrecht",
+      "maengelrecht",
+      "verj\xE4hrung",
+      "verjaehrung",
+      "minderung",
+      "selbstvornahme",
+      "nachbessern"
+    ],
+    stelle: "\xA7 634 BGB, \xA7 634a Abs. 1 Nr. 2 BGB",
+    inhalt: "Bei einem Mangel kann der Besteller Nacherf\xFCllung verlangen, selbst nachbessern lassen, zur\xFCcktreten, mindern oder Schadensersatz verlangen. Bei Bauwerken verj\xE4hren diese Rechte in f\xFCnf Jahren ab Abnahme."
+  },
+  {
+    schluessel: "verzug",
+    woerter: ["verzug", "vertragsstrafe", "versp\xE4tung", "verspaetung", "zu sp\xE4t fertig", "termin \xFCberschritten"],
+    stelle: "\xA7 286 BGB, \xA7 280 Abs. 2 BGB",
+    inhalt: "Verzug tritt nach Mahnung ein, bei einem kalenderm\xE4\xDFig bestimmten Termin auch ohne sie. Der dadurch entstandene Schaden ist zu ersetzen."
+  },
+  {
+    schluessel: "kuendigung",
+    woerter: ["k\xFCndigen", "kuendigen", "k\xFCndigung", "kuendigung", "vertrag beenden", "aussteigen"],
+    stelle: "\xA7 648 BGB, \xA7 648a BGB",
+    inhalt: "Der Besteller kann jederzeit k\xFCndigen; dem Unternehmer steht dann die vereinbarte Verg\xFCtung abz\xFCglich ersparter Aufwendungen zu. Daneben steht beiden Seiten die K\xFCndigung aus wichtigem Grund offen."
+  },
+  {
+    schluessel: "widerruf",
+    woerter: ["widerruf", "widerrufen", "widerrufsrecht"],
+    stelle: "\xA7 650l BGB",
+    inhalt: "Beim Verbraucherbauvertrag steht dem Verbraucher ein Widerrufsrecht zu, sofern der Vertrag nicht notariell beurkundet wurde."
+  },
+  {
+    schluessel: "baubeschreibung",
+    woerter: ["baubeschreibung", "leistungsbeschreibung", "bau-soll", "geschuldet ist", "bauzeit"],
+    stelle: "\xA7 650k BGB, Art. 249 EGBGB",
+    inhalt: "Der Unternehmer muss eine Baubeschreibung mit den in Art. 249 EGBGB genannten Angaben zur Verf\xFCgung stellen; der Vertrag muss verbindliche Angaben zur Fertigstellung oder zur Bauzeitdauer enthalten. Unklarheiten gehen zulasten des Unternehmers."
+  }
+];
+var RECHTLICH_ALLGEMEIN = [
+  "darf der",
+  "darf er",
+  "darf ich",
+  "muss ich zahlen",
+  "muss ich das",
+  "rechtlich",
+  "anspruch",
+  "anspr\xFCche",
+  "anspruechen",
+  "haftung",
+  "haftet",
+  "schadensersatz",
+  "anwalt",
+  "klage",
+  "klagen",
+  "gericht",
+  "vertraglich",
+  "bin ich verpflichtet",
+  "was sagt das gesetz",
+  "gesetzlich"
+];
+var MANGELSYMPTOME = [
+  "riss",
+  "risse",
+  "feucht",
+  "nass",
+  "schimmel",
+  "fleck",
+  "flecken",
+  "verf\xE4rb",
+  "verfaerb",
+  "ausbl\xFCh",
+  "ausblueh",
+  "hohlstelle",
+  "hohl klingt",
+  "abplatz",
+  "abgeplatzt",
+  "uneben",
+  "schief",
+  "wellig",
+  "undicht",
+  "zugluft",
+  "k\xE4ltebr\xFCcke",
+  "kaeltebruecke",
+  "pfusch",
+  "mangel",
+  "m\xE4ngel",
+  "maengel",
+  "schaden am",
+  "sieht komisch aus",
+  "ist das normal"
+];
+var KOSTENWOERTER = [
+  "kostet",
+  "kosten",
+  "preis",
+  "preise",
+  "teuer",
+  "g\xFCnstig",
+  "guenstig",
+  "euro",
+  "\u20AC",
+  "angebot",
+  "budget",
+  "was zahle ich",
+  "wie viel",
+  "wieviel"
+];
+function normalisiert(frage2) {
+  return frage2.toLowerCase();
+}
+function enthaelt(text, woerter) {
+  return woerter.some((wort) => text.includes(wort));
+}
+function rechtsthema(frage2) {
+  const text = normalisiert(frage2);
+  const treffer = RECHTSTHEMEN.find((thema) => enthaelt(text, thema.woerter));
+  if (treffer !== void 0) return treffer;
+  if (!enthaelt(text, RECHTLICH_ALLGEMEIN)) return null;
+  return {
+    schluessel: "werkvertrag",
+    woerter: [],
+    stelle: "\xA7\xA7 631 ff. BGB",
+    inhalt: "Ein Bauvertrag ist ein Werkvertrag: Geschuldet ist der Erfolg, nicht die M\xFChe. Was das im Einzelfall bedeutet, steht in eurem Vertrag und in den \xA7\xA7 631 ff. BGB."
+  };
+}
+function hinweiseFuer(frage2) {
+  const text = normalisiert(frage2);
+  const hinweise = [];
+  const thema = rechtsthema(frage2);
+  if (thema !== null) {
+    hinweise.push({
+      art: "recht",
+      titel: "Hinweis auf eine Gesetzesstelle, keine Rechtsberatung.",
+      stelle: thema.stelle,
+      text: `${thema.stelle} \u2014 ${thema.inhalt}
+
+Das ist der Gesetzestext, nicht seine Anwendung auf euren Vertrag. Die macht ein Fachanwalt f\xFCr Bau- und Architektenrecht. Eine Erstberatung liegt meist zwischen 150 und 250 Euro; wenn es um Fristen oder um f\xFCnfstellige Betr\xE4ge geht, ist das der g\xFCnstigste Teil der Sache.`
+    });
+  }
+  if (enthaelt(text, MANGELSYMPTOME)) {
+    hinweise.push({
+      art: "mangel",
+      titel: "Ob das ein Mangel ist, l\xE4sst sich hier nicht beurteilen.",
+      text: "Aus der Ferne \u2014 und aus einem Foto erst recht \u2014 ist das nicht zu entscheiden. Es h\xE4ngt an Ausf\xFChrung, Norm und Vertrag und oft an dem, was unter der Oberfl\xE4che liegt.\n\nDas beurteilt ein Bausachverst\xE4ndiger. Ein Ortstermin mit Bericht kostet \xFCberschl\xE4gig 400 bis 900 Euro und ist die Grundlage, auf die du dich gegen\xFCber dem Unternehmen berufen kannst.\n\nBis dahin sind drei Dinge sinnvoll: fotografieren mit Ma\xDFstab im Bild, den Fund mit Datum ins Bautagebuch schreiben und ihn dem Unternehmen schriftlich anzeigen. Das kostet nichts und h\xE4lt die Lage fest."
+    });
+  }
+  if (enthaelt(text, KOSTENWOERTER)) {
+    hinweise.push({
+      art: "kosten",
+      titel: "Zahlen sind hier Gr\xF6\xDFenordnungen.",
+      text: "Was etwas tats\xE4chlich kostet, sagt ein Angebot \u2014 abh\xE4ngig von Region, Ausf\xFChrung und Auslastung. Was hier steht, hilft bei der Frage, ob ein Angebot im Rahmen liegt. Es ist kein Preis, auf den du dich berufen kannst."
+    });
+  }
+  return hinweise;
+}
+function karten(antwort, erlaubt) {
+  const gefunden = [];
+  const text = antwort.replace(/\[\[karte:([a-z0-9_-]+)\]\]/gi, (_treffer, key) => {
+    const schluessel = key.toLowerCase();
+    if (!erlaubt.includes(schluessel)) return "";
+    if (!gefunden.includes(schluessel)) gefunden.push(schluessel);
+    return "";
+  });
+  return { text: text.replace(/[ \t]+([.,;:!?])/g, "$1").replace(/[ \t]{2,}/g, " ").trim(), keys: gefunden };
+}
+
+// src/lotse-model.ts
+function kostenInCent(model, antwort) {
+  const zehntelcent = antwort.inputTokens / 1e3 * model.preis.ein + antwort.outputTokens / 1e3 * model.preis.aus;
+  return Math.max(1, Math.ceil(zehntelcent / 10));
+}
+var ENDPUNKT = "https://api.anthropic.com/v1/messages";
+function anthropicModel(options) {
+  const name = options.model ?? "claude-sonnet-5";
+  const holen = options.fetchImpl ?? fetch;
+  return {
+    name,
+    preis: { ein: 30, aus: 150 },
+    async antworte(anfrage) {
+      const antwort = await holen(ENDPUNKT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": options.apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: name,
+          max_tokens: options.maxTokens ?? 1200,
+          system: anfrage.system,
+          messages: anfrage.verlauf
+        })
+      });
+      if (!antwort.ok) {
+        throw new Error(`Das Modell hat mit ${antwort.status} geantwortet.`);
+      }
+      const daten = await antwort.json();
+      return {
+        text: (daten.content ?? []).filter((teil) => teil.type === "text").map((teil) => teil.text ?? "").join("\n").trim(),
+        inputTokens: daten.usage?.input_tokens ?? 0,
+        outputTokens: daten.usage?.output_tokens ?? 0
+      };
+    }
+  };
+}
+function modelAusUmgebung(env = process.env) {
+  const apiKey = env["ANTHROPIC_API_KEY"];
+  if (apiKey === void 0 || apiKey.trim() === "") return null;
+  const model = env["ANTHROPIC_MODEL"];
+  return anthropicModel({
+    apiKey,
+    ...model === void 0 || model.trim() === "" ? {} : { model: model.trim() }
+  });
+}
+
+// src/lotse.ts
+var LIMIT_PRO_MINUTE2 = 6;
+var DECKEL_CENT = 500;
+var VERLAUF_TIEFE = 12;
+function systemprompt(kontext) {
+  return [
+    "Du bist der Lotse in MeinBaulotse. Du hilfst einem privaten Bauherrn, seinen Hausbau zu",
+    "verstehen. Er ist kein Fachmann und steht unter Anspannung.",
+    "",
+    "Ton:",
+    '- Du sagst \u201Edu". Kein \u201ESie", kein unpers\xF6nliches Passiv.',
+    "- Kurze S\xE4tze, ein Gedanke je Satz. Keine Ausrufezeichen.",
+    "- Fachbegriffe erkl\xE4rst du beim ersten Auftreten.",
+    '- Du beschuldigst niemanden. Nicht \u201Eder Unternehmer hat vers\xE4umt", sondern \u201Eder Termin',
+    '  wurde bisher nicht best\xE4tigt".',
+    "- Jede schlechte Nachricht bekommt einen n\xE4chsten Schritt.",
+    "",
+    "Grenzen, die du nicht \xFCberschreitest:",
+    "- Du erteilst keine Rechtsberatung. Bei rechtlichen Fragen nennst du die Gesetzesstelle,",
+    "  sagst, was dort steht, und verweist auf einen Fachanwalt f\xFCr Bau- und Architektenrecht.",
+    "  Du bewertest nicht, wer im Recht ist.",
+    "- Du beurteilst keinen Baumangel aus der Ferne und schon gar nicht aus einem Foto. Du",
+    "  verweist auf einen Bausachverst\xE4ndigen und sagst, was bis dahin sinnvoll ist.",
+    "- Du nennst keine Kosten, die als verbindlich gelesen werden k\xF6nnten. Gr\xF6\xDFenordnungen",
+    "  ja, Preise nein.",
+    "- Du erfindest keine Termine, Betr\xE4ge oder Namen. Was nicht im Kontext steht, wei\xDFt du",
+    "  nicht \u2014 und dann sagst du das und schreibst dazu, was im Bauvorhaben erfasst werden",
+    "  m\xFCsste, damit die Frage beantwortbar wird.",
+    "",
+    // Die Anleitung nennt bewusst keinen Beispielschlüssel: Ein Platzhalter,
+    // der aussieht wie eine echte Markierung, wird gelegentlich wörtlich
+    // abgeschrieben — und stünde dann als Quellenangabe in der Antwort.
+    "Lotsenkarten: Der Kontext enth\xE4lt Karten, deren Titelzeile mit einer Markierung der Form",
+    "doppelte eckige Klammer, karte, Doppelpunkt, Schl\xFCssel, doppelte eckige Klammer beginnt.",
+    "Wenn deine Antwort auf einer Karte beruht, schreibst du genau diese Markierung mit in die",
+    "Antwort. Nur Schl\xFCssel, die im Kontext vorkommen. Erfinde keine.",
+    "",
+    "Antworte in h\xF6chstens sechs Abs\xE4tzen. Fang mit der Antwort an, nicht mit einer",
+    "Wiederholung der Frage.",
+    "",
+    "--- Kontext zu diesem Bauvorhaben ---",
+    kontext
+  ].join("\n");
+}
+async function zugAnfordern(tx, projectId) {
+  const result = await tx.query("select * from mbl.claim_assistant_turn($1, $2, $3)", [
+    projectId,
+    LIMIT_PRO_MINUTE2,
+    DECKEL_CENT
+  ]);
+  const zustand = result.rows[0];
+  if (zustand === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  if (zustand.zu_oft) {
+    throw new HTTPException(429, {
+      message: "Das ging gerade sehr schnell hintereinander. Frag in einer Minute noch einmal."
+    });
+  }
+  if (zustand.deckel_voll) {
+    throw new HTTPException(429, {
+      message: "F\xFCr diesen Monat ist der Lotse ausgesch\xF6pft. Ab dem Ersten geht es weiter; bis dahin stehen die Lotsenkarten zu jedem Vorgang bereit."
+    });
+  }
+}
+async function verlaufLesen(tx, conversationId) {
+  const result = await tx.query(
+    `select m.id, m.role::text as role, m.text, m.guide_card_keys, m.hints, m.created_at,
+            (select coalesce(json_agg(json_build_object('key', gc.key, 'title', gc.title)), '[]')
+               from guide_card gc
+              where gc.key = any (m.guide_card_keys)
+                and gc.published_at is not null and gc.superseded_by is null) as cards
+       from assistant_message m
+      where m.conversation_id = $1 order by m.created_at`,
+    [conversationId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    role: row.role,
+    text: row.text,
+    cards: row.cards ?? [],
+    hints: row.hints,
+    createdAt: new Date(row.created_at).toISOString()
+  }));
+}
+function titelAus(frage2) {
+  const sauber = frage2.replace(/\s+/g, " ").trim();
+  if (sauber.length <= 60) return sauber;
+  const schnitt = sauber.slice(0, 60);
+  const luecke = schnitt.lastIndexOf(" ");
+  return `${luecke > 30 ? schnitt.slice(0, luecke) : schnitt}\u2026`;
+}
+async function loadConversations(tx, projectId) {
+  const result = await tx.query(
+    `select id, title, updated_at from assistant_conversation
+      where project_id = $1 order by updated_at desc limit 30`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    updatedAt: new Date(row.updated_at).toISOString()
+  }));
+}
+async function loadConversation(tx, projectId, conversationId) {
+  const kopf = await tx.query(
+    "select id, title, updated_at from assistant_conversation where id = $1 and project_id = $2",
+    [conversationId, projectId]
+  );
+  const row = kopf.rows[0];
+  if (row === void 0) {
+    throw new HTTPException(404, { message: "Dieses Gespr\xE4ch gibt es nicht." });
+  }
+  return {
+    conversation: {
+      id: row.id,
+      title: row.title,
+      updatedAt: new Date(row.updated_at).toISOString()
+    },
+    messages: await verlaufLesen(tx, conversationId)
+  };
+}
+async function frage(tx, projectId, options) {
+  await zugAnfordern(tx, projectId);
+  const kontext = await buildLotseContext(tx, projectId, options.today);
+  let conversationId = options.conversationId;
+  if (conversationId === void 0) {
+    const angelegt = await tx.query(
+      `insert into assistant_conversation (project_id, member_id, title)
+       values ($1, mbl.current_member_id($1), $2) returning id`,
+      [projectId, titelAus(options.frage)]
+    );
+    conversationId = angelegt.rows[0].id;
+  }
+  const bisher = await verlaufLesen(tx, conversationId);
+  if (options.conversationId !== void 0 && bisher.length === 0) {
+    const gibtEs = await tx.query(
+      "select 1 from assistant_conversation where id = $1 and project_id = $2",
+      [conversationId, projectId]
+    );
+    if (gibtEs.rowCount === 0) {
+      throw new HTTPException(404, { message: "Dieses Gespr\xE4ch gibt es nicht." });
+    }
+  }
+  const antwort = await options.model.antworte({
+    system: systemprompt(kontext.text),
+    verlauf: [
+      ...bisher.slice(-VERLAUF_TIEFE).map((beitrag) => ({
+        role: beitrag.role === "frage" ? "user" : "assistant",
+        content: beitrag.text
+      })),
+      { role: "user", content: options.frage }
+    ]
+  });
+  const geprueft = karten(antwort.text, kontext.cardKeys);
+  const kosten = kostenInCent(options.model, antwort);
+  const hinweise = hinweiseFuer(options.frage).map((hinweis) => ({
+    kind: hinweis.art,
+    title: hinweis.titel,
+    text: hinweis.text,
+    ...hinweis.stelle === void 0 ? {} : { reference: hinweis.stelle }
+  }));
+  await tx.query(
+    `insert into assistant_message (conversation_id, project_id, role, text)
+     values ($1, $2, 'frage', $3)`,
+    [conversationId, projectId, options.frage]
+  );
+  const gespeichert = await tx.query(
+    `insert into assistant_message
+       (conversation_id, project_id, role, text, guide_card_keys, guardrails, hints,
+        input_tokens, output_tokens, cost_cents)
+     values ($1, $2, 'antwort', $3, $4, $5, $6, $7, $8, $9)
+     returning id, created_at`,
+    [
+      conversationId,
+      projectId,
+      geprueft.text,
+      geprueft.keys,
+      hinweise.map((hinweis) => hinweis.kind),
+      JSON.stringify(hinweise),
+      antwort.inputTokens,
+      antwort.outputTokens,
+      kosten
+    ]
+  );
+  await tx.query("update assistant_conversation set updated_at = now() where id = $1", [
+    conversationId
+  ]);
+  return {
+    conversationId,
+    message: {
+      id: gespeichert.rows[0].id,
+      role: "antwort",
+      text: geprueft.text,
+      cards: kontext.karten.filter((karte) => geprueft.keys.includes(karte.key)).map((karte) => ({ key: karte.key, title: karte.title })),
+      hints: hinweise,
+      createdAt: new Date(gespeichert.rows[0].created_at).toISOString()
+    }
+  };
+}
+
 // src/app.ts
 var uuid = external_exports.string().uuid();
 var HEALTH_PROBE_USER = "00000000-0000-0000-0000-000000000000";
@@ -16163,7 +16805,7 @@ function missingColumnHint(error) {
 function withoutSecrets(text) {
   return text.replace(/:\/\/[^@\s]*@/g, "://***@");
 }
-function createApp() {
+function createApp(options = {}) {
   const app = new Hono2().basePath("/api");
   app.get("/health", (c) => c.json({ ok: true, path: c.req.path }));
   app.get("/health/db", async (c) => {
@@ -16411,6 +17053,55 @@ function createApp() {
     const linkId = parseId(c.req.param("linkId"));
     await withUserTx(c.get("claims"), (tx) => revokeGuestToken(tx, projectId, linkId));
     return c.json({ ok: true });
+  });
+  const lotseModel = options.lotseModel === void 0 ? modelAusUmgebung() : options.lotseModel;
+  v1.post("/projects/:id/lotse", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    if (lotseModel === null) {
+      throw new HTTPException(501, {
+        message: "Der Lotse ist auf dieser Umgebung nicht eingerichtet.",
+        cause: {
+          hint: "Es fehlt ANTHROPIC_API_KEY. Die Lotsenkarten zu jedem Vorgang stehen trotzdem bereit."
+        }
+      });
+    }
+    const parsed = lotseAskRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Stell die Frage bitte in ganzen Worten \u2014 drei Zeichen sind zu wenig.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const antwort = await withUserTx(
+      c.get("claims"),
+      (tx) => frage(tx, projectId, {
+        model: lotseModel,
+        frage: parsed.data.question,
+        ...parsed.data.conversationId === void 0 ? {} : { conversationId: parsed.data.conversationId },
+        // Das Datum kommt vom Server, nicht aus der Anfrage. Beim
+        // Wochenbericht ist `?today=` eine Bequemlichkeit; hier wäre es der
+        // erste Griff am Kontext, und der gehört laut 6.4 nicht dem Client.
+        today: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)
+      })
+    );
+    return c.json(antwort, 201);
+  });
+  v1.get("/projects/:id/lotse", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const conversations = await withUserTx(
+      c.get("claims"),
+      (tx) => loadConversations(tx, projectId)
+    );
+    return c.json({ conversations, available: lotseModel !== null });
+  });
+  v1.get("/projects/:id/lotse/:conversationId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const conversationId = parseId(c.req.param("conversationId"));
+    const gespraech = await withUserTx(
+      c.get("claims"),
+      (tx) => loadConversation(tx, projectId, conversationId)
+    );
+    return c.json(gespraech);
   });
   v1.get("/projects/:id/diary", async (c) => {
     const projectId = parseId(c.req.param("id"));

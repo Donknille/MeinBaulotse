@@ -385,3 +385,47 @@ describe('(6) Eine veröffentlichte Lotsenkarte ist unveränderlich', () => {
     ).rejects.toThrow();
   });
 });
+
+/**
+ * Die erste unverhandelbare Regel des Projekts: „Jede Tabelle hat RLS."
+ *
+ * Diese Prüfung fragt nicht den Anwendungscode, sondern den Katalog. Sie
+ * fällt genau dann um, wenn jemand eine Migration schreibt und die zwei
+ * Zeilen `alter table … enable row level security` vergisst — und das ist der
+ * einzige Zeitpunkt, an dem es billig zu beheben ist. Später fällt es
+ * niemandem auf: Eine Tabelle ohne RLS verhält sich für den, der sie gerade
+ * benutzt, völlig unauffällig.
+ */
+describe('Rechte gehören in die Datenbank', () => {
+  it('schaltet auf jeder Tabelle RLS ein', async () => {
+    const ohne = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ tablename: string }>(
+          `select tablename from pg_tables
+            where schemaname = 'public' and not rowsecurity
+            order by tablename`,
+        )
+      ).rows.map((row) => row.tablename),
+    );
+    expect(ohne).toEqual([]);
+  });
+
+  it('lässt keine Tabelle ohne eine einzige Policy zurück', async () => {
+    // RLS ohne Policy sperrt alles — das ist sicher, aber fast immer ein
+    // Versehen: Die Tabelle ist dann für die Anwendung schlicht nicht da.
+    const stumm = await withAdminTx(async (tx) =>
+      (
+        await tx.query<{ tablename: string }>(
+          `select t.tablename from pg_tables t
+            where t.schemaname = 'public'
+              and not exists (
+                select 1 from pg_policies p
+                 where p.schemaname = 'public' and p.tablename = t.tablename
+              )
+            order by t.tablename`,
+        )
+      ).rows.map((row) => row.tablename),
+    );
+    expect(stumm).toEqual([]);
+  });
+});

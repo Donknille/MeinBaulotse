@@ -19,6 +19,7 @@ import {
   GanttChartSquare,
   Link2,
   Mail,
+  MessageCircleQuestion,
   Users,
 } from 'lucide-react';
 import type {
@@ -45,6 +46,7 @@ export function PlanView({
   onOpenDecision,
   weeklyReportHref,
   diaryHref,
+  lotseHref,
   onPreviewTask,
   onCreateGuestLink,
 }: {
@@ -65,6 +67,7 @@ export function PlanView({
   weeklyReportHref?: string;
   /** Adresse des Bautagebuchs. */
   diaryHref?: string;
+  lotseHref?: string;
   /** Rechnet vor, was eine Verschiebung nach sich zöge. */
   onPreviewTask?: (taskId: string, change: TaskUpdateRequest) => Promise<SchedulePreview>;
   /** Legt einen Abstimmungslink an und gibt ihn genau einmal zurück. */
@@ -113,6 +116,15 @@ export function PlanView({
               >
                 <Camera size={16} aria-hidden />
                 Bautagebuch
+              </a>
+            )}
+            {lotseHref === undefined ? null : (
+              <a
+                href={lotseHref}
+                className="inline-flex w-fit items-center gap-2 text-body text-electric-blue underline-offset-4 hover:underline"
+              >
+                <MessageCircleQuestion size={16} aria-hidden />
+                Frag den Lotsen
               </a>
             )}
           </div>

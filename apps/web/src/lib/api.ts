@@ -18,6 +18,10 @@ import type {
   GuestTaskView,
   GuestTokenCreated,
   GuestTokenCreateRequest,
+  LotseAnswer,
+  LotseAskRequest,
+  LotseConversation,
+  LotseMessage,
   DiaryCreateRequest,
   DiaryEntryDto,
   DiaryUpdateRequest,
@@ -268,5 +272,23 @@ export const api = {
     request<ChecklistItemDto>(`/projects/${projectId}/checklist/${itemId}`, {
       method: 'PATCH',
       body: JSON.stringify(change),
+    }),
+
+  // Frag den Lotsen. Die Anfrage traegt eine Frage und sonst nichts — was in
+  // den Kontext gehoert, entscheidet der Server (Abschnitt 6.4).
+  lotseConversations: (projectId: string) =>
+    request<{ conversations: LotseConversation[]; available: boolean }>(
+      `/projects/${projectId}/lotse`,
+    ),
+
+  lotseConversation: (projectId: string, conversationId: string) =>
+    request<{ conversation: LotseConversation; messages: LotseMessage[] }>(
+      `/projects/${projectId}/lotse/${conversationId}`,
+    ),
+
+  askLotse: (projectId: string, body: LotseAskRequest) =>
+    request<LotseAnswer>(`/projects/${projectId}/lotse`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };

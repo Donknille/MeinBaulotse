@@ -739,3 +739,72 @@ export type ChecklistUpdateRequest = z.infer<typeof checklistUpdateRequest>;
  * Vorbereitungszeit des Bauherrn und nicht um Arbeitstage auf der Baustelle.
  */
 export const GUIDE_CARD_LEAD_DAYS = 7;
+
+// -- Frag den Lotsen (Abschnitt 3.7) -----------------------------------------
+
+/**
+ * Die Anfrage trägt eine Frage und sonst nichts.
+ *
+ * Das ist Absicht und steht so in 6.4: „Der Kontextaufbau ist serverseitig und
+ * nicht vom Client steuerbar." Ein Feld, mit dem der Client sagen könnte,
+ * welche Daten in den Kontext gehören, wäre genau die Steuerung, die es nicht
+ * geben soll — und der kürzeste Weg zu einem Kontext mit fremden Daten darin.
+ */
+export const lotseAskRequest = z.object({
+  question: z.string().trim().min(3).max(2000),
+  conversationId: z.string().uuid().optional(),
+});
+export type LotseAskRequest = z.infer<typeof lotseAskRequest>;
+
+export const lotseGuardrail = z.enum(['recht', 'mangel', 'kosten']);
+export type LotseGuardrail = z.infer<typeof lotseGuardrail>;
+
+export const lotseConversation = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  updatedAt: z.string(),
+});
+export type LotseConversation = z.infer<typeof lotseConversation>;
+
+/**
+ * Die Hinweise kommen getrennt vom Antworttext.
+ *
+ * Sie sind nicht angehängter Fließtext, sondern eigene Bausteine: Die
+ * Oberfläche setzt sie abgesetzt, damit erkennbar bleibt, was das Produkt
+ * sagt und was das Modell. Der Zusatz „Hinweis auf eine Gesetzesstelle, keine
+ * Rechtsberatung" wird nach CI 11.3 nie verkürzt und nie eingeklappt.
+ */
+export const lotseHint = z.object({
+  kind: lotseGuardrail,
+  title: z.string(),
+  text: z.string(),
+  reference: z.string().optional(),
+});
+export type LotseHint = z.infer<typeof lotseHint>;
+
+export const lotseCardRef = z.object({ key: z.string(), title: z.string() });
+export type LotseCardRef = z.infer<typeof lotseCardRef>;
+
+/**
+ * Karten und Hinweise hängen am Beitrag, nicht an der Antwort des Augenblicks.
+ *
+ * Sonst wären sie beim nächsten Öffnen des Gesprächs weg — und der Satz
+ * „Hinweis auf eine Gesetzesstelle, keine Rechtsberatung" wird nach CI 11.3
+ * nie ausgeblendet. Ein Hinweis, der nur bis zum Neuladen steht, ist genau
+ * das: ausgeblendet.
+ */
+export const lotseMessage = z.object({
+  id: z.string().uuid(),
+  role: z.enum(['frage', 'antwort']),
+  text: z.string(),
+  cards: z.array(lotseCardRef),
+  hints: z.array(lotseHint),
+  createdAt: z.string(),
+});
+export type LotseMessage = z.infer<typeof lotseMessage>;
+
+export const lotseAnswer = z.object({
+  conversationId: z.string().uuid(),
+  message: lotseMessage,
+});
+export type LotseAnswer = z.infer<typeof lotseAnswer>;
