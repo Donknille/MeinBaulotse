@@ -13696,6 +13696,15 @@ var contractUpdateRequest = external_exports.object({
   commitmentFreeMonths: external_exports.number().int().min(0).max(60).nullable().optional(),
   descriptionItems: external_exports.array(external_exports.object({ key: external_exports.string(), present: external_exports.boolean(), note: external_exports.string().max(500).optional() })).optional()
 });
+var memberInviteRequest = external_exports.object({
+  displayName: external_exports.string().trim().min(2).max(120),
+  role: memberRole,
+  company: external_exports.string().trim().max(160).optional(),
+  email: external_exports.string().trim().email().max(200).optional(),
+  phone: external_exports.string().trim().max(60).optional(),
+  /** Nur bei `trade`: welches Gewerk. */
+  tradeCode: external_exports.string().trim().max(60).optional()
+});
 var dossierEvent = external_exports.object({
   kind: external_exports.enum(["vorgang", "aenderung", "tagebuch", "mangel", "zahlung"]),
   date: isoDate,
@@ -18016,6 +18025,7 @@ function createApp(options = {}) {
   });
   v1.get("/me/projects", async (c) => {
     const projects = await withUserTx(c.get("claims"), async (tx) => {
+      await tx.query("select mbl.claim_invitations()");
       const result = await tx.query(
         `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
                 p.has_basement, p.catholic_municipality, p.planned_start, p.contractual_completion,
@@ -18033,6 +18043,99 @@ function createApp(options = {}) {
     const projectId = parseId(c.req.param("id"));
     const project = await withUserTx(c.get("claims"), (tx) => loadProject(tx, projectId));
     return c.json(project);
+  });
+  v1.post("/projects/:id/members", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = memberInviteRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "F\xFCr eine Einladung brauchen wir mindestens einen Namen und eine Rolle.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const members = await withUserTx(c.get("claims"), async (tx) => {
+      const daten = parsed.data;
+      try {
+        const angelegt = await tx.query(
+          `insert into project_member
+             (project_id, role, display_name, company, email, phone, trade_id)
+           values ($1, $2::mbl.member_role, $3, $4, $5, $6,
+                   case when $7::text is null then null
+                        else (select id from public.trade
+                               where code = $7 and (project_id is null or project_id = $1)
+                               order by project_id nulls last limit 1) end)`,
+          [
+            projectId,
+            daten.role,
+            daten.displayName,
+            daten.company ?? null,
+            daten.email ?? null,
+            daten.phone ?? null,
+            daten.tradeCode ?? null
+          ]
+        );
+        if (angelegt.rowCount === 0) {
+          throw new HTTPException(403, { message: "Einladen darf der Bauherr." });
+        }
+      } catch (error) {
+        if (error instanceof HTTPException) throw error;
+        if (error.code === "23505") {
+          throw new HTTPException(409, {
+            message: "Diese Adresse ist in dem Bauvorhaben schon eingetragen.",
+            cause: { hint: "Willst du die bestehende Einladung erneut verschicken?" }
+          });
+        }
+        if (error.constraint === "project_member_trade_scope") {
+          throw new HTTPException(422, {
+            message: "Zu einem Einzelgewerk geh\xF6rt ein Gewerk.",
+            cause: {
+              hint: "W\xE4hl aus, wof\xFCr die Firma zust\xE4ndig ist \u2014 davon h\xE4ngt ab, was sie sieht."
+            }
+          });
+        }
+        throw error;
+      }
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id, meta)
+         values ($1, mbl.current_member_id($1), 'app', 'member.invited', 'project_member', $1, $2)`,
+        [projectId, JSON.stringify({ role: parsed.data.role })]
+      );
+      return loadMembers(tx, projectId);
+    });
+    return c.json({ members }, 201);
+  });
+  v1.delete("/projects/:id/members/:memberId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const memberId = parseId(c.req.param("memberId"));
+    const members = await withUserTx(c.get("claims"), async (tx) => {
+      const eigen = await tx.query(
+        "select $2 = mbl.current_member_id($1) as ok",
+        [projectId, memberId]
+      );
+      if (eigen.rows[0]?.ok === true) {
+        throw new HTTPException(409, {
+          message: "Dich selbst kannst du nicht hinausnehmen.",
+          cause: { hint: "Sonst k\xE4me niemand mehr an das Bauvorhaben heran." }
+        });
+      }
+      const gesperrt = await tx.query(
+        `update project_member set revoked_at = now()
+          where id = $1 and project_id = $2 and revoked_at is null`,
+        [memberId, projectId]
+      );
+      if (gesperrt.rowCount === 0) {
+        throw new HTTPException(404, {
+          message: "Diese Person geh\xF6rt nicht (mehr) zum Bauvorhaben."
+        });
+      }
+      await tx.query(
+        "update guest_token set revoked_at = now() where member_id = $1 and revoked_at is null",
+        [memberId]
+      );
+      return loadMembers(tx, projectId);
+    });
+    return c.json({ members });
   });
   v1.get("/projects/:id/tasks", async (c) => {
     const projectId = parseId(c.req.param("id"));

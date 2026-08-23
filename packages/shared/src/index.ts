@@ -1056,6 +1056,30 @@ export const contractUpdateRequest = z.object({
 });
 export type ContractUpdateRequest = z.infer<typeof contractUpdateRequest>;
 
+// -- Beteiligte einladen (Abschnitt 2.2) -------------------------------------
+
+/**
+ * `email` ist nicht zwingend, und das ist der Kern der Sache.
+ *
+ * Ein Mitbauherr, ein Generalunternehmer, ein Sachverständiger arbeiten in
+ * der Anwendung und brauchen ein Konto — die Einladung geht an ihre Adresse.
+ * Ein Einzelgewerk soll gar keins brauchen (Leitsatz 1.6.2); für es wird nur
+ * die Zeile angelegt, und es bekommt einen Abstimmungslink.
+ *
+ * Eine Maske, die für beide eine Adresse verlangte, verlangte sie dem
+ * Fliesenleger ab, der keine benutzt.
+ */
+export const memberInviteRequest = z.object({
+  displayName: z.string().trim().min(2).max(120),
+  role: memberRole,
+  company: z.string().trim().max(160).optional(),
+  email: z.string().trim().email().max(200).optional(),
+  phone: z.string().trim().max(60).optional(),
+  /** Nur bei `trade`: welches Gewerk. */
+  tradeCode: z.string().trim().max(60).optional(),
+});
+export type MemberInviteRequest = z.infer<typeof memberInviteRequest>;
+
 // -- Bauakte (Abschnitt 5.6) -------------------------------------------------
 
 /**

@@ -94,6 +94,34 @@ export function Field({
   );
 }
 
+/**
+ * Dasselbe Aussehen wie `Field`, aber ohne `<label>`.
+ *
+ * Ein `<label>` gehört zu **einem** Bedienelement. Steht eine Gruppe von
+ * Knöpfen darin, erbt der erste die Beschriftung als seinen Namen — für
+ * Vorleseprogramme heißt der Knopf „Zweiter Bauherr" dann „Was ist die
+ * Rolle?". Aufgefallen ist es, weil der Test genau darüber gestolpert ist:
+ * Was eine Maschine nicht ansprechen kann, findet ein Mensch mit
+ * Vorleseprogramm auch nicht.
+ */
+export function FieldGroup({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-body font-medium text-charcoal">{label}</legend>
+      {children}
+      {hint === undefined ? null : <span className="text-caption text-steel">{hint}</span>}
+    </fieldset>
+  );
+}
+
 // Der schwarze Rand ist die Signatur der Referenz: Felder wirken wichtig,
 // nicht optional. 16 px Schriftgröße, weil iOS darunter ungefragt hineinzoomt.
 const CONTROL =

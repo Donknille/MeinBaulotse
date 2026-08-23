@@ -30,6 +30,7 @@ import {
   defectUpdateRequest,
   guideFeedbackRequest,
   lotseAskRequest,
+  memberInviteRequest,
   paymentCreateRequest,
   paymentReleaseRequest,
   onboardingRequest,
@@ -341,6 +342,14 @@ export function createApp(options: AppOptions = {}): Hono<App> {
   // fiel das nicht auf.
   v1.get('/me/projects', async (c) => {
     const projects = await withUserTx(c.get('claims'), async (tx) => {
+      // Einladungen einlösen, bevor gezählt wird.
+      //
+      // Hier und nicht bei jeder Anfrage: Das ist der eine Augenblick, in dem
+      // es zählt — wer eingeladen wurde, sucht sein Bauvorhaben in dieser
+      // Liste. Stünde es nicht drin, hätte er keinen zweiten Weg hinein, und
+      // die Einladung wäre eine Mail ohne Ziel.
+      await tx.query('select mbl.claim_invitations()');
+
       const result = await tx.query<ProjectRow & { role: ProjectSummary['role'] }>(
         `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
                 p.has_basement, p.catholic_municipality, p.planned_start, p.contractual_completion,
@@ -359,6 +368,136 @@ export function createApp(options: AppOptions = {}): Hono<App> {
     const projectId = parseId(c.req.param('id'));
     const project = await withUserTx(c.get('claims'), (tx) => loadProject(tx, projectId));
     return c.json(project);
+  });
+
+  // -- Beteiligte ------------------------------------------------------------
+
+  /**
+   * Jemanden ins Bauvorhaben holen.
+   *
+   * Zwei Arten von Beteiligten, und der Unterschied ist wichtig:
+   *
+   * - **Mit Konto**: Mitbauherr, Generalunternehmer, Sachverständiger. Sie
+   *   arbeiten in der Anwendung, und die Einladung geht an ihre Adresse. Beim
+   *   ersten Anmelden wird daraus ihre Mitgliedschaft.
+   * - **Ohne Konto**: das Einzelgewerk. Es bekommt einen Abstimmungslink und
+   *   soll gar kein Konto brauchen (Leitsatz 1.6.2). Für sie wird hier nur
+   *   die Zeile angelegt; den Link erzeugt `/guest-links`.
+   *
+   * Deshalb ist `email` nicht zwingend: Wer keine Adresse hat, bekommt einen
+   * Link. Wer eine hat, bekommt beides.
+   */
+  v1.post('/projects/:id/members', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = memberInviteRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Für eine Einladung brauchen wir mindestens einen Namen und eine Rolle.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const members = await withUserTx(c.get('claims'), async (tx) => {
+      const daten = parsed.data;
+      try {
+        const angelegt = await tx.query(
+          `insert into project_member
+             (project_id, role, display_name, company, email, phone, trade_id)
+           values ($1, $2::mbl.member_role, $3, $4, $5, $6,
+                   case when $7::text is null then null
+                        else (select id from public.trade
+                               where code = $7 and (project_id is null or project_id = $1)
+                               order by project_id nulls last limit 1) end)`,
+          [
+            projectId,
+            daten.role,
+            daten.displayName,
+            daten.company ?? null,
+            daten.email ?? null,
+            daten.phone ?? null,
+            daten.tradeCode ?? null,
+          ],
+        );
+        if (angelegt.rowCount === 0) {
+          throw new HTTPException(403, { message: 'Einladen darf der Bauherr.' });
+        }
+      } catch (error) {
+        if (error instanceof HTTPException) throw error;
+        if ((error as { code?: string }).code === '23505') {
+          throw new HTTPException(409, {
+            message: 'Diese Adresse ist in dem Bauvorhaben schon eingetragen.',
+            cause: { hint: 'Willst du die bestehende Einladung erneut verschicken?' },
+          });
+        }
+        // Die Datenbank verlangt zu jedem Einzelgewerk ein Gewerk, und das zu
+        // Recht: „Gewerk" ohne Gewerk schneidet nichts zu, und die
+        // Zeilenschärfe aus 2.2 hängt genau daran.
+        if ((error as { constraint?: string }).constraint === 'project_member_trade_scope') {
+          throw new HTTPException(422, {
+            message: 'Zu einem Einzelgewerk gehört ein Gewerk.',
+            cause: {
+              hint: 'Wähl aus, wofür die Firma zuständig ist — davon hängt ab, was sie sieht.',
+            },
+          });
+        }
+        throw error;
+      }
+
+      await tx.query(
+        `insert into audit_log (project_id, actor_member_id, actor_channel, action,
+                                entity_type, entity_id, meta)
+         values ($1, mbl.current_member_id($1), 'app', 'member.invited', 'project_member', $1, $2)`,
+        [projectId, JSON.stringify({ role: parsed.data.role })],
+      );
+
+      return loadMembers(tx, projectId);
+    });
+    return c.json({ members }, 201);
+  });
+
+  /**
+   * Jemanden wieder hinausnehmen.
+   *
+   * Gesperrt, nicht gelöscht: Was jemand eingetragen, bestätigt oder
+   * geschrieben hat, bleibt stehen — es ist ja passiert. Eine Historie mit
+   * einer namenlosen Lücke wäre bei Streit wertlos.
+   */
+  v1.delete('/projects/:id/members/:memberId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const memberId = parseId(c.req.param('memberId'));
+
+    const members = await withUserTx(c.get('claims'), async (tx) => {
+      const eigen = await tx.query<{ ok: boolean }>(
+        'select $2 = mbl.current_member_id($1) as ok',
+        [projectId, memberId],
+      );
+      if (eigen.rows[0]?.ok === true) {
+        throw new HTTPException(409, {
+          message: 'Dich selbst kannst du nicht hinausnehmen.',
+          cause: { hint: 'Sonst käme niemand mehr an das Bauvorhaben heran.' },
+        });
+      }
+
+      const gesperrt = await tx.query(
+        `update project_member set revoked_at = now()
+          where id = $1 and project_id = $2 and revoked_at is null`,
+        [memberId, projectId],
+      );
+      if (gesperrt.rowCount === 0) {
+        throw new HTTPException(404, {
+          message: 'Diese Person gehört nicht (mehr) zum Bauvorhaben.',
+        });
+      }
+
+      // Ein gesperrtes Mitglied darf auch mit seinen Links nicht mehr herein.
+      await tx.query(
+        'update guest_token set revoked_at = now() where member_id = $1 and revoked_at is null',
+        [memberId],
+      );
+
+      return loadMembers(tx, projectId);
+    });
+    return c.json({ members });
   });
 
   v1.get('/projects/:id/tasks', async (c) => {

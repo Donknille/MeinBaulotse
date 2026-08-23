@@ -22,18 +22,20 @@ import {
   GanttChartSquare,
   Link2,
   Mail,
+  UserPlus,
   MessageCircleQuestion,
   Users,
 } from 'lucide-react';
 import type {
   DecisionDto,
   GuestTokenCreated,
+  MemberInviteRequest,
   ProjectSchedule,
   ScheduledTaskDto,
   SchedulePreview,
   TaskUpdateRequest,
 } from '@meinbaulotse/shared';
-import { Button, Card, Pill, SectionPill } from './ui';
+import { Button, Card, Field, FieldGroup, Pill, SectionPill } from './ui';
 import { TaskRow } from './schedule';
 import { Cockpit } from './Cockpit';
 import { Timeline } from './Timeline';
@@ -55,6 +57,8 @@ export function PlanView({
   dossierHref,
   onPreviewTask,
   onCreateGuestLink,
+  onInvite,
+  onRemoveMember,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
@@ -81,6 +85,10 @@ export function PlanView({
   onPreviewTask?: (taskId: string, change: TaskUpdateRequest) => Promise<SchedulePreview>;
   /** Legt einen Abstimmungslink an und gibt ihn genau einmal zurück. */
   onCreateGuestLink?: (memberId: string) => Promise<GuestTokenCreated>;
+  /** Nimmt jemanden ins Bauvorhaben auf. */
+  onInvite?: (body: MemberInviteRequest) => Promise<void>;
+  /** Sperrt eine Mitgliedschaft — gelöscht wird nichts. */
+  onRemoveMember?: (memberId: string) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -265,7 +273,7 @@ export function PlanView({
       </details>
       {/* Die Beteiligten und ihre Abstimmungslinks. Steht hinter dem Ablauf,
           weil es Verwaltung ist und keine Auskunft über den Bau. */}
-      {schedule.permissions.includes('member.invite') && schedule.members.length > 0 ? (
+      {schedule.permissions.includes('member.invite') ? (
         <details className="group flex flex-col gap-8">
           <summary className="cursor-pointer list-none">
             <SectionPill tone="neutral" icon={<Users size={18} />}>
@@ -281,6 +289,8 @@ export function PlanView({
             <Beteiligte
               schedule={schedule}
               {...(onCreateGuestLink === undefined ? {} : { onCreateGuestLink })}
+              {...(onInvite === undefined ? {} : { onInvite })}
+              {...(onRemoveMember === undefined ? {} : { onRemoveMember })}
             />
           </div>
         </details>
@@ -341,12 +351,18 @@ export function PlanView({
 function Beteiligte({
   schedule,
   onCreateGuestLink,
+  onInvite,
+  onRemoveMember,
 }: {
   schedule: ProjectSchedule;
   onCreateGuestLink?: (memberId: string) => Promise<GuestTokenCreated>;
+  onInvite?: (body: MemberInviteRequest) => Promise<void>;
+  onRemoveMember?: (memberId: string) => Promise<void>;
 }) {
   const [links, setLinks] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [einladen, setEinladen] = useState(false);
+  const [fehler, setFehler] = useState<string | null>(null);
 
   return (
     <Card className="py-0">
@@ -366,6 +382,34 @@ function Beteiligte({
               </span>
               {member.hasAccount ? (
                 <Pill tone="blue">Mit Konto</Pill>
+              ) : member.email !== null ? (
+                // Eingeladen, aber noch nicht angemeldet. Ohne diesen Hinweis
+                // sieht das genauso aus wie „gar kein Zugang", und der
+                // Bauherr fragt sich, ob die Einladung angekommen ist.
+                <span className="flex flex-wrap items-center gap-2">
+                  <Pill tone="neutral">Eingeladen</Pill>
+                  {onCreateGuestLink === undefined ? null : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy === member.id}
+                      onClick={() => {
+                        setBusy(member.id);
+                        void onCreateGuestLink(member.id)
+                          .then((created) =>
+                            setLinks((vorher) => ({
+                              ...vorher,
+                              [member.id]: `${window.location.origin}/abstimmen/${created.token}`,
+                            })),
+                          )
+                          .finally(() => setBusy(null));
+                      }}
+                    >
+                      <Link2 size={16} aria-hidden />
+                      {member.hasGuestLink ? 'Neuen Link' : 'Abstimmungslink'}
+                    </Button>
+                  )}
+                </span>
               ) : onCreateGuestLink === undefined ? (
                 <Pill tone="neutral">{member.hasGuestLink ? 'Link vorhanden' : 'Ohne Zugang'}</Pill>
               ) : (
@@ -391,6 +435,25 @@ function Beteiligte({
               )}
             </div>
 
+            {onRemoveMember === undefined || member.role === 'owner' ? null : (
+              <button
+                type="button"
+                className="w-fit text-caption text-steel underline underline-offset-4 hover:text-charcoal"
+                onClick={() => {
+                  setBusy(member.id);
+                  void onRemoveMember(member.id)
+                    .catch((error: unknown) =>
+                      setFehler(
+                        error instanceof Error ? error.message : 'Das hat nicht geklappt.',
+                      ),
+                    )
+                    .finally(() => setBusy(null));
+                }}
+              >
+                Aus dem Bauvorhaben nehmen
+              </button>
+            )}
+
             {links[member.id] === undefined ? null : (
               <div className="flex flex-col gap-1 rounded-[var(--radius-large)] bg-paper-mist p-3">
                 <p className="text-caption text-steel">
@@ -414,7 +477,159 @@ function Beteiligte({
           </li>
         ))}
       </ul>
+
+      {onInvite === undefined ? null : (
+        <div className="border-t border-ash py-3">
+          {fehler === null ? null : (
+            <p className="pb-2 text-body text-tangerine">{fehler}</p>
+          )}
+          {!einladen ? (
+            <Button variant="outline" onClick={() => setEinladen(true)}>
+              <UserPlus size={16} aria-hidden />
+              Jemanden dazunehmen
+            </Button>
+          ) : (
+            <Einladen
+              trades={schedule.tasks
+                .filter((task) => task.tradeName !== null)
+                .map((task) => ({ code: task.tradeCode!, name: task.tradeName! }))}
+              onCancel={() => setEinladen(false)}
+              onSave={async (body) => {
+                setFehler(null);
+                try {
+                  await onInvite(body);
+                  setEinladen(false);
+                } catch (error) {
+                  setFehler(error instanceof Error ? error.message : 'Das hat nicht geklappt.');
+                }
+              }}
+            />
+          )}
+        </div>
+      )}
     </Card>
+  );
+}
+
+/**
+ * Jemanden dazunehmen.
+ *
+ * Die Rolle steht zuerst, weil sie alles Weitere bestimmt: Ein Einzelgewerk
+ * braucht ein Gewerk und keine Adresse, alle anderen brauchen eine Adresse
+ * und kein Gewerk. Eine Maske, die immer beides verlangte, verlangte dem
+ * Fliesenleger eine Mailadresse ab, die er nicht benutzt.
+ */
+function Einladen({
+  trades,
+  onCancel,
+  onSave,
+}: {
+  trades: { code: string; name: string }[];
+  onCancel: () => void;
+  onSave: (body: MemberInviteRequest) => Promise<void>;
+}) {
+  const [rolle, setRolle] = useState<MemberInviteRequest['role']>('contractor');
+  const [name, setName] = useState('');
+  const [firma, setFirma] = useState('');
+  const [adresse, setAdresse] = useState('');
+  const [gewerk, setGewerk] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const eindeutig = [...new Map(trades.map((trade) => [trade.code, trade])).values()];
+  const brauchtAdresse = rolle !== 'trade';
+  // Ein Einzelgewerk ohne Gewerk gäbe es nicht: Die Zeilenschärfe aus 2.2
+  // hängt daran, und die Datenbank lässt es ohnehin nicht zu.
+  const vollstaendig =
+    name.trim().length >= 2 && (brauchtAdresse ? adresse.includes('@') : gewerk !== '');
+
+  return (
+    <div className="flex flex-col gap-4 pt-1">
+      <FieldGroup label="Was ist die Rolle?" hint={ROLE_DESCRIPTION[rolle]}>
+        <div className="flex flex-wrap gap-2">
+          {(['co_owner', 'contractor', 'trade', 'expert', 'viewer'] as const).map((wert) => (
+            <Button
+              key={wert}
+              variant={rolle === wert ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setRolle(wert)}
+            >
+              {ROLE_LABEL[wert]}
+            </Button>
+          ))}
+        </div>
+      </FieldGroup>
+
+      <Field label="Name">
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Jörg Baumeister"
+          className="h-12 w-full rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+        />
+      </Field>
+
+      <Field label="Firma">
+        <input
+          value={firma}
+          onChange={(event) => setFirma(event.target.value)}
+          className="h-12 w-full rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+        />
+      </Field>
+
+      {brauchtAdresse ? (
+        <Field
+          label="E-Mail-Adresse"
+          hint="Sobald sich jemand mit dieser Adresse anmeldet, sieht er dein Bauvorhaben."
+        >
+          <input
+            type="email"
+            value={adresse}
+            onChange={(event) => setAdresse(event.target.value)}
+            className="h-12 w-full rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+          />
+        </Field>
+      ) : (
+        <Field
+          label="Welches Gewerk?"
+          hint="Ein Einzelgewerk braucht kein Konto. Es bekommt einen Abstimmungslink."
+        >
+          <select
+            value={gewerk}
+            onChange={(event) => setGewerk(event.target.value)}
+            className="h-12 w-full rounded-[var(--radius-input)] border border-pebble px-3 text-body"
+          >
+            <option value="">Bitte wählen</option>
+            {eindeutig.map((trade) => (
+              <option key={trade.code} value={trade.code}>
+                {trade.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="primary"
+          disabled={busy || !vollstaendig}
+          onClick={() => {
+            setBusy(true);
+            void onSave({
+              displayName: name.trim(),
+              role: rolle,
+              ...(firma.trim() === '' ? {} : { company: firma.trim() }),
+              ...(brauchtAdresse && adresse.trim() !== '' ? { email: adresse.trim() } : {}),
+              ...(!brauchtAdresse && gewerk !== '' ? { tradeCode: gewerk } : {}),
+            }).finally(() => setBusy(false));
+          }}
+        >
+          Dazunehmen
+        </Button>
+        <Button variant="ghost" onClick={onCancel}>
+          Abbrechen
+        </Button>
+      </div>
+    </div>
   );
 }
 

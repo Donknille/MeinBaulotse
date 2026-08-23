@@ -213,6 +213,29 @@ Drei Dinge laufen darunter mit, ohne dass man sie bedienen müsste:
 Fotos brauchen die Ablage des Supabase-Projekts (siehe `docs/SETUP.md`).
 Lokal ohne Supabase sagt die Erfassung das offen und nimmt Notizen entgegen.
 
+## Jemanden dazunehmen
+
+Im Plan unter **Wer mitmacht** steht *Jemanden dazunehmen*. Die Rolle wird
+zuerst gewählt, weil sie alles Weitere bestimmt:
+
+- **Zweiter Bauherr, Generalunternehmer, Baubegleiter, Mitleser** brauchen ein
+  Konto. Sie werden mit ihrer E-Mail-Adresse eingetragen und stehen dann als
+  *Eingeladen*. Sobald sich jemand mit genau dieser Adresse anmeldet, steht
+  das Bauvorhaben in seiner Liste — mit **seiner** Rolle.
+- **Ein Gewerk** braucht kein Konto und soll auch keins brauchen (Leitsatz
+  1.6.2). Statt einer Adresse wird das Gewerk gewählt, und statt einer
+  Einladung gibt es einen Abstimmungslink.
+
+Zum Ausprobieren: einen Baubegleiter mit Adresse eintragen und einen
+Elektriker ohne. Beim Elektriker verschwindet das Adressfeld, dafür kommt die
+Gewerkeauswahl — und ohne Gewerk bleibt der Knopf grau. Ein „Gewerk" ohne
+Gewerk schneidet nichts zu, und die Zeilenschärfe hängt genau daran.
+
+*Aus dem Bauvorhaben nehmen* sperrt die Mitgliedschaft und alle Links dieser
+Person. Gelöscht wird nichts: Was jemand eingetragen oder bestätigt hat,
+bleibt in der Historie stehen — es ist ja passiert. Sich selbst kann der
+Bauherr nicht hinausnehmen; sonst käme niemand mehr an das Bauvorhaben heran.
+
 ## Termine abstimmen
 
 Im Plan steht unter dem Ablauf der Abschnitt **Beteiligte**. Neben jedem
@@ -402,8 +425,6 @@ Zweitbauherr, Sachverständiger. Der GU sieht den Verweis nicht und käme auch
 
 ## Was noch fehlt
 
-- **Der Einladungsvorgang.** Der Seed trägt den GU direkt ein. Die Policy dafür
-  (`member.invite`) steht, die Route dazu fehlt noch.
 - **Lotsenkarten für die übrigen Vorgänge.** Zwölf Karten decken die Phasen ab,
   in denen am meisten schiefgeht; die anderen 22 Vorgänge sagen ehrlich, dass es
   zu ihnen noch keine gibt. Und die fachliche Prüfung durch einen

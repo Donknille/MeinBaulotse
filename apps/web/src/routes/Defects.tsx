@@ -15,7 +15,7 @@ import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, Camera, CircleAlert, Plus, ScrollText } from 'lucide-react';
 import type { DefectDto, DefectStatus } from '@meinbaulotse/shared';
-import { Button, Card, Field, Pill } from '../components/ui';
+import { Button, Card, Field, FieldGroup, Pill } from '../components/ui';
 import { TopBar } from '../components/TopBar';
 import { api, type DefectEventDto } from '../lib/api';
 import { formatDate } from '../lib/format';
@@ -350,7 +350,7 @@ function Erfassen({
         />
       </Field>
 
-      <Field
+      <FieldGroup
         label="Wie schwer?"
         hint="Wesentlich heißt: Das würde ich so nicht abnehmen. Nur solche Mängel sperren eine Zahlung."
       >
@@ -368,7 +368,7 @@ function Erfassen({
             Wesentlich
           </Button>
         </div>
-      </Field>
+      </FieldGroup>
 
       <Field label="Gehört zu welchem Vorgang?">
         <select

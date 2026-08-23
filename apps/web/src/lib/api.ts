@@ -21,6 +21,8 @@ import type {
   ChangeOrderCreateRequest,
   ContractMirror,
   Dossier,
+  MemberInviteRequest,
+  ProjectMemberDto,
   ContractUpdateRequest,
   DefectCreateRequest,
   DefectDto,
@@ -249,6 +251,17 @@ export const api = {
 
   photoPrompts: async (projectId: string) =>
     (await request<{ fulfilled: string[] }>(`/projects/${projectId}/photo-prompts`)).fulfilled,
+
+  inviteMember: (projectId: string, body: MemberInviteRequest) =>
+    request<{ members: ProjectMemberDto[] }>(`/projects/${projectId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  removeMember: (projectId: string, memberId: string) =>
+    request<{ members: ProjectMemberDto[] }>(`/projects/${projectId}/members/${memberId}`, {
+      method: 'DELETE',
+    }),
 
   createGuestLink: (projectId: string, body: GuestTokenCreateRequest) =>
     request<GuestTokenCreated>(`/projects/${projectId}/guest-links`, {
