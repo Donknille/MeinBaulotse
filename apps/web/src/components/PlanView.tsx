@@ -19,6 +19,7 @@ import {
   GanttChartSquare,
   Images,
   Scale,
+  Sparkles,
   Users,
 } from 'lucide-react';
 import type {
@@ -117,6 +118,13 @@ export function PlanView({
             >
               <Images size={16} aria-hidden />
               Bautagebuch
+            </Link>
+            <Link
+              to={`/projekt/${schedule.project.id}/lotse`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"
+            >
+              <Sparkles size={16} aria-hidden />
+              Frag den Lotsen
             </Link>
             {/* Der Weg zu den Beteiligten steht neben dem Tagebuch, nicht in
                 einer Einstellungsecke: Wer einen Termin einträgt, will als

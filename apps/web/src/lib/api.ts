@@ -7,6 +7,9 @@
  */
 
 import type {
+  AssistantAskRequest,
+  AssistantStatus,
+  AssistantThreadDto,
   ChecklistUpdateRequest,
   DecisionDto,
   DecisionUpdateRequest,
@@ -243,6 +246,23 @@ export const api = {
     }),
 
   media: (projectId: string) => request<{ media: MediaDto[] }>(`/projects/${projectId}/media`),
+
+  // -- Frag den Lotsen --------------------------------------------------------
+  //
+  // Gesendet wird eine Frage und höchstens eine Unterhaltungskennung. Es gibt
+  // bewusst kein Feld für Kontext: Der wird serverseitig gebaut und ist vom
+  // Client nicht steuerbar (Abschnitt 3.7).
+
+  assistant: (projectId: string) =>
+    request<{ status: AssistantStatus; threads: AssistantThreadDto[] }>(
+      `/projects/${projectId}/assistant`,
+    ),
+
+  askAssistant: (projectId: string, frage: AssistantAskRequest) =>
+    request<AssistantThreadDto>(`/projects/${projectId}/assistant`, {
+      method: 'POST',
+      body: JSON.stringify(frage),
+    }),
 
   // -- Abstimmung -------------------------------------------------------------
   //

@@ -1108,3 +1108,65 @@ export function confirmationInPlainWords(
       return 'Zwei Angaben';
   }
 }
+
+// -- Frag den Lotsen ---------------------------------------------------------
+//
+// Abschnitt 3.7. Der Assistent steht hinter der Redaktion, nicht davor: Ohne
+// die Wissensschicht darunter halluziniert er (Abschnitt 9, Punkt 4). Was
+// hier an Feldern steht, dient deshalb weniger dem Gespräch als der
+// Nachvollziehbarkeit — welche Karten die Antwort trägt und welche Leitplanke
+// gegriffen hat.
+
+export const assistantGuardrail = z.enum(['recht', 'mangel', 'kosten']);
+export type AssistantGuardrail = z.infer<typeof assistantGuardrail>;
+
+export const assistantMessageDto = z.object({
+  id: z.string().uuid(),
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+  /** Die Lotsenkarten, auf denen diese Antwort steht. */
+  citedCards: z.array(z.object({ id: z.string().uuid(), key: z.string(), title: z.string() })),
+  guardrails: z.array(assistantGuardrail),
+  createdAt: z.string(),
+});
+export type AssistantMessageDto = z.infer<typeof assistantMessageDto>;
+
+export const assistantThreadDto = z.object({
+  id: z.string().uuid(),
+  title: z.string().nullable(),
+  createdAt: z.string(),
+  messages: z.array(assistantMessageDto),
+});
+export type AssistantThreadDto = z.infer<typeof assistantThreadDto>;
+
+export const assistantAskRequest = z.object({
+  threadId: z.string().uuid().nullish(),
+  question: z.string().min(3).max(2000),
+});
+export type AssistantAskRequest = z.infer<typeof assistantAskRequest>;
+
+/** Was der Assistent gerade kann — und was ihn gegebenenfalls aufhält. */
+export const assistantStatus = z.object({
+  available: z.boolean(),
+  /** Warum nicht, falls nicht. Immer mit einem nächsten Schritt. */
+  reason: z.string().nullable(),
+  /** Verbleibende Fragen in dieser Stunde. */
+  questionsLeftThisHour: z.number().int(),
+  /** Anteil des Monatsdeckels, der schon verbraucht ist, in Prozent. */
+  budgetUsedPercent: z.number().int(),
+});
+export type AssistantStatus = z.infer<typeof assistantStatus>;
+
+/**
+ * Die Einstiegsfragen.
+ *
+ * Ein leeres Eingabefeld ist die häufigste Sackgasse einer Chat-Oberfläche:
+ * Wer nicht weiß, was er fragen kann, fragt nichts. Diese vier stehen deshalb
+ * als Knöpfe da — und jede ist eine, die ein Bauherr wirklich hat.
+ */
+export const ASSISTANT_STARTERS: readonly string[] = [
+  'Was passiert diese Woche auf meiner Baustelle?',
+  'Worauf muss ich beim nächsten Vorgang achten?',
+  'Welche Entscheidung ist gerade am dringendsten?',
+  'Was bedeutet der Verzug für meinen Endtermin?',
+];

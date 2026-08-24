@@ -17,6 +17,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `content/lotsenkarten` | Redaktionsinhalt der Wissensschicht als Markdown. Erstbefüllung, siehe README dort |
 | `apps/web/src/lib/queue.ts` | Offline-Warteschlange der Erfassung. IndexedDB, jeder Schritt wiederholbar |
 | `apps/web/src/routes/Guest.tsx` | Abstimmung ohne Konto. Steht außerhalb der Anmeldeprüfung |
+| `apps/api/src/assistant-guardrails.ts` | Die Leitplanken aus 3.7 als Code, nicht als Bitte an das Modell |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
 
@@ -76,9 +77,21 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Server, und ein Token in der Adresse landet in jedem Zugriffsprotokoll.
    Gespeichert wird nur sein sha256.
 
-8. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
+8. **Der Assistent bekommt nur das eigene Projekt, und die Leitplanken stehen
+   im Code.** Der Kontextaufbau ist serverseitig (`buildContext`) und vom
+   Client nicht steuerbar — die Anfrage kennt nur Frage und Unterhaltung. Die
+   Zusicherung stammt aus der RLS, nicht aus einem `where`, das man vergessen
+   kann.
+
+   Rechtshinweis und Sachverständigenhinweis hängt `withGuardrailNotes` an die
+   fertige Antwort, ob das Modell sie selbst gab oder nicht. Ein Systemprompt
+   ist die weiche Ebene; die harte ist eine Zeichenkette. Was das Modell gesehen
+   hat, steht als `context_snapshot` bei der Antwort — ohne das lässt sich eine
+   falsche Auskunft nie einordnen.
+
+9. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
-9. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
+10. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
    entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und der
    Vite-Proxy schneidet nichts ab. **Fünf** Stellen halten das zusammen:
    `apps/api/src/app.ts` (`basePath`), `apps/web/vite.config.ts` (Proxy ohne
@@ -89,14 +102,14 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Die fünfte ist die unauffälligste und hat am längsten gekostet: Ohne die
    Ausnahme beantwortet der Service Worker **jede** Navigation aus dem
    Zwischenspeicher, auch `/api/health` in der Adresszeile. Die Gegenprobe aus
-   Regel 10 ist dann ausgerechnet dort blind, wo man sie braucht.
+   Regel 11 ist dann ausgerechnet dort blind, wo man sie braucht.
 
    Und `registerType` gehört auf `autoUpdate`. Mit `prompt` wartet der neue
    Service Worker, bis ihn jemand freischaltet — solange kein Modul
    `virtual:pwa-register` importiert, gibt es dieses „jemand" nicht, und
    Auslieferungen erreichen niemanden, während die CI grün meldet.
 
-10. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
+11. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
    macht aus `apps/api/src/vercel.ts` die eingecheckte Datei `api/index.js`,
    die außer Node-Bausteinen nichts mehr importiert. Nach jeder Änderung an
    der API neu erzeugen; die CI prüft es.
@@ -120,7 +133,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Schema passt zur ausgelieferten Fassung. Ohne den zweiten sieht eine
    fehlende Verbindung aus wie eine leere Datenlage.
 
-11. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
+12. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
    Sonst geht eine Auslieferung live, bevor die Migration eingespielt ist, und
    jede betroffene Ansicht endet in `column … does not exist` — während
    `/api/health/db` fröhlich `ok` meldet, denn die Verbindung stand ja. Genau

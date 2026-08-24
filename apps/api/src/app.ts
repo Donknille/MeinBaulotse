@@ -17,6 +17,7 @@ import {
   type FederalState,
 } from '@meinbaulotse/schedule';
 import {
+  assistantAskRequest,
   checklistUpdateRequest,
   decisionUpdateRequest,
   diaryEntryCreateRequest,
@@ -36,6 +37,8 @@ import {
   type ProjectSummary,
   type ScheduledTaskDto,
 } from '@meinbaulotse/shared';
+import { anthropicClient, assistantConfigured } from './anthropic.js';
+import { ask, assistantStatusFor, listThreads } from './assistant.js';
 import { requireAuth, type AuthedVariables } from './auth.js';
 import { loadDecisions, updateDecision } from './decisions.js';
 import {
@@ -683,6 +686,49 @@ export function createApp(): Hono<App> {
       revokeGuestLink(tx, projectId, linkId),
     );
     return c.json({ links });
+  });
+
+  // -- Frag den Lotsen --------------------------------------------------------
+  //
+  // Der Client schickt eine Frage und höchstens eine Unterhaltungskennung.
+  // Sonst nichts. Es gibt bewusst keinen Parameter, mit dem sich der Kontext
+  // erweitern ließe — Abschnitt 3.7 verlangt, dass der Kontextaufbau
+  // serverseitig und nicht vom Client steuerbar ist, und ein Feld, das man
+  // später „nur für die Vorschau" hinzufügt, ist genau der Weg dorthin.
+
+  v1.get('/projects/:id/assistant', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const antwort = await withUserTx(c.get('claims'), async (tx) => ({
+      status: await assistantStatusFor(tx, projectId),
+      threads: await listThreads(tx, projectId),
+    }));
+    return c.json(antwort);
+  });
+
+  v1.post('/projects/:id/assistant', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = assistantAskRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: 'Diese Frage können wir nicht deuten.' });
+    }
+    if (!assistantConfigured()) {
+      throw new HTTPException(503, {
+        message:
+          'Der Lotse ist in dieser Umgebung nicht eingerichtet. Alles andere funktioniert wie gewohnt.',
+      });
+    }
+
+    const heute = new Date().toISOString().slice(0, 10);
+    const faden = await withUserTx(c.get('claims'), (tx) =>
+      ask(
+        tx,
+        projectId,
+        anthropicClient(),
+        { threadId: parsed.data.threadId ?? null, question: parsed.data.question },
+        heute,
+      ),
+    );
+    return c.json(faden);
   });
 
   v1.get('/projects/:id/photo-prompts', async (c) => {

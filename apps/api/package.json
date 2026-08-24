@@ -21,6 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "@hono/node-server": "^1.13.7",
     "@meinbaulotse/db": "workspace:*",
     "@meinbaulotse/schedule": "workspace:*",

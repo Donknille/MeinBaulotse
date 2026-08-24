@@ -47,6 +47,12 @@ const EXPECTED: readonly Expectation[] = [
   // Bildspeicher, gibt es keine Fotos, aber die Anwendung läuft — sie sagt
   // beim Hochladen offen, was fehlt.
   { migration: '0010_diary.sql', table: 'diary_entry', column: 'content_hash' },
+  // Ohne 0012 endet jede Planansicht in `column t.counter_start does not exist`
+  // — die Bestätigungsgrade hängen im Plan mit drin.
+  { migration: '0012_guest.sql', table: 'task', column: 'counter_start' },
+  // Ohne 0013 gibt es den Lotsen nicht, und die Planansicht fragt seinen
+  // Zustand ab, sobald jemand die Seite öffnet.
+  { migration: '0013_assistant.sql', table: 'assistant_thread', column: 'member_id' },
 ];
 
 export interface SchemaState {

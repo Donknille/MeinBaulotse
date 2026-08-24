@@ -6,6 +6,7 @@ import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { onDemoSessionChange, readDemoSession, type DemoSession } from './lib/demo-auth';
 import { DemoLogin } from './routes/DemoLogin';
 import { SignIn } from './routes/SignIn';
+import { Assistant } from './routes/Assistant';
 import { Capture } from './routes/Capture';
 import { Diary } from './routes/Diary';
 import { Guest } from './routes/Guest';
@@ -101,6 +102,7 @@ export function App() {
               <Route path="/projekt/:projectId/erfassen" element={<Capture />} />
               <Route path="/projekt/:projectId/tagebuch" element={<Diary />} />
               <Route path="/projekt/:projectId/beteiligte" element={<GuestLinks />} />
+              <Route path="/projekt/:projectId/lotse" element={<Assistant />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}
