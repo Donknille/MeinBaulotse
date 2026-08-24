@@ -6,8 +6,8 @@
  * ohne `SUPABASE_JWT_SECRET` und ohne `DATABASE_URL`.
  *
  * Bewusst nur für die lokalen Einstiegspunkte — Entwicklungsserver und
- * Demo-Seed. Auf Vercel kommen die Werte aus der Umgebung, und
- * `api/[[...route]].ts` importiert diese Datei nicht.
+ * Demo-Seed. Auf Vercel kommen die Werte aus der Umgebung, und die gebündelte
+ * Function `api/index.js` importiert diese Datei nicht.
  */
 
 import { dirname, join } from 'node:path';

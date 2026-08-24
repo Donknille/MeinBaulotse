@@ -192,16 +192,20 @@ gibt, schriebe jede Branch-Vorschau in die Produktionsdatenbank.
 
 ### Umgebungsvariablen
 
-Sechs Pflichtwerte, alle im Bereich *Production*:
+Vier Pflichtwerte, alle im Bereich *Production*:
 
-| Name | Quelle |
-|---|---|
-| `DATABASE_URL` | Database → Connection string → **Transaction pooler, Port 6543** |
-| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
-| `SUPABASE_ANON_KEY` | Project Settings → API |
-| `SUPABASE_JWT_SECRET` | Project Settings → API → JWT Settings |
-| `VITE_SUPABASE_URL` | wie `SUPABASE_URL` |
-| `VITE_SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` |
+| Name | Quelle | Wer ihn liest |
+|---|---|---|
+| `DATABASE_URL` | Database → Connection string → **Transaction pooler, Port 6543** | die Function |
+| `SUPABASE_JWT_SECRET` | Project Settings → API → JWT Settings | die Function, zum Prüfen jedes Tokens |
+| `VITE_SUPABASE_URL` | `https://<projektkennung>.supabase.co` | der Browser |
+| `VITE_SUPABASE_ANON_KEY` | Project Settings → API | der Browser |
+
+Vier und nicht sechs: `SUPABASE_URL` und `SUPABASE_ANON_KEY` **ohne** Präfix
+liest kein Code. Der Server braucht die Adresse nicht — er redet mit der
+Datenbank, nicht mit der Supabase-API —, und der Anon-Key ist ein
+Browser-Wert. Die Supabase-Integration für Vercel legt beide trotzdem an;
+schadet nichts, nur lässt man sie besser stehen, als sie von Hand zu pflegen.
 
 Dazu die freiwilligen. Jede ist ohne Eintrag gefahrlos — die zugehörige
 Funktion bleibt dann einfach aus und sagt das auch:
@@ -253,7 +257,7 @@ Abschnitt 2.)*
 Die beiden `VITE_`-Werte landen im Browser-Bundle. Das ist so vorgesehen: Der
 Anon-Key ist öffentlich, alles Weitere entscheidet die Datenbank über RLS.
 
-**Alle sechs vor dem ersten Deploy setzen.** Die `VITE_`-Werte werden beim Bauen
+**Alle vier vor dem ersten Deploy setzen.** Die `VITE_`-Werte werden beim Bauen
 ins Bundle eingebacken; wer sie nachträgt, braucht einen neuen Build.
 
 **Der `service_role`-Key wird nirgends gebraucht.** Abschnitt 6.4 der
