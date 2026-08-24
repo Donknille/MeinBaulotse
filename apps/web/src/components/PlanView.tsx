@@ -10,10 +10,20 @@
  */
 
 import { useState } from 'react';
-import { CalendarDays, Check, ChevronDown, GanttChartSquare, Scale } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import {
+  CalendarDays,
+  Camera,
+  Check,
+  ChevronDown,
+  GanttChartSquare,
+  Images,
+  Scale,
+} from 'lucide-react';
 import type {
   DecisionDto,
   DecisionUpdateRequest,
+  PhotoPromptStatus,
   ProjectSchedule,
   ScheduledTaskDto,
   ShiftPreview,
@@ -38,8 +48,11 @@ export function PlanView({
   onPreviewShift,
   onChangeDecision,
   guideCards,
+  photoPrompts,
 }: {
   schedule: ProjectSchedule;
+  /** Fehlen sie, bleibt „Jetzt fotografieren" im Cockpit weg. */
+  photoPrompts?: readonly PhotoPromptStatus[];
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
   onChangeTask?: (taskId: string, change: TaskUpdateRequest) => Promise<void>;
   /** Fehlt sie, wird ohne Vorschau verschoben. */
@@ -82,6 +95,7 @@ export function PlanView({
         <Cockpit
           schedule={schedule}
           currentPhase={currentPhase}
+          {...(photoPrompts === undefined ? {} : { photoPrompts })}
           {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
           {...(guideCards === undefined ? {} : { onGuideCard: setGuideCardTask })}
           onDecision={setDecision}
@@ -90,7 +104,28 @@ export function PlanView({
         {/* Der Wochenbericht steht direkt unter dem Cockpit: Er beantwortet
             dieselben Fragen, nur zusammengefasst und für einen Blick pro
             Woche statt für einen pro Tag. */}
-        {onChangeTask !== undefined ? <WeeklyReportLink projectId={schedule.project.id} /> : null}
+        {onChangeTask !== undefined ? (
+          <nav className="-mx-3 flex flex-wrap items-center">
+            <WeeklyReportLink projectId={schedule.project.id} />
+            <Link
+              to={`/projekt/${schedule.project.id}/tagebuch`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"
+            >
+              <Images size={16} aria-hidden />
+              Bautagebuch
+            </Link>
+            {/* Der Kameraknopf steht auch hier, nicht nur im Cockpit-Kasten:
+                Der Kasten erscheint nur, wenn gerade etwas zu fotografieren
+                ist. Der Weg zur Kamera muss immer da sein. */}
+            <Link
+              to={`/projekt/${schedule.project.id}/erfassen`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"
+            >
+              <Camera size={16} aria-hidden />
+              Foto aufnehmen
+            </Link>
+          </nav>
+        ) : null}
       </header>
 
       {/* Die Zeitachse erst ab 768 px. Mobil bleibt die Liste die Grundansicht

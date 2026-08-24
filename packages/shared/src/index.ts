@@ -713,3 +713,227 @@ export function floatInPlainWords(totalFloatDays: number | null): string {
   }
   return `Darf sich um ${totalFloatDays} Werktage verschieben, ohne dass der Endtermin kippt.`;
 }
+
+// -- Erfassung und Tagebuch --------------------------------------------------
+//
+// Abschnitt 3.8. Der Nutzer sieht ein Fotoalbum; was hier an Feldern steht,
+// bekommt er größtenteils nie zu Gesicht. Sie sind trotzdem da, weil sich die
+// Frage „war das an dem Tag wirklich so" hinterher nicht mehr nachrüsten lässt.
+
+/**
+ * Das Wetter eines Tages, wie es die nächstgelegene DWD-Station gemessen hat.
+ *
+ * Mit dem Eintrag eingefroren, samt Station und Entfernung. Ohne die beiden
+ * wäre die Angabe eine Behauptung: „12 Grad, Regen" sagt nichts darüber, ob
+ * die Messung von der Baustelle oder aus achtzig Kilometern Entfernung stammt.
+ */
+export const weatherObservation = z.object({
+  date: isoDate,
+  /** Kennung der DWD-Station, mit der sich die Messung nachschlagen lässt. */
+  stationId: z.string().nullable(),
+  stationName: z.string().nullable(),
+  /** Luftlinie zwischen Baustelle und Station, in Metern. */
+  distanceMeters: z.number().int().nullable(),
+  temperatureMinC: z.number().nullable(),
+  temperatureMaxC: z.number().nullable(),
+  /** Niederschlagssumme des Tages in Millimetern. */
+  precipitationMm: z.number().nullable(),
+  /** Stärkste Böe in km/h — die Zahl, an der Kranarbeiten scheitern. */
+  windGustKmh: z.number().nullable(),
+  /** dry | fog | rain | sleet | snow | hail | thunderstorm */
+  condition: z.string().nullable(),
+  /** Woher die Werte stammen, für die Nachprüfbarkeit in der Bauakte. */
+  source: z.string(),
+});
+export type WeatherObservation = z.infer<typeof weatherObservation>;
+
+/**
+ * Ein Foto oder Anhang.
+ *
+ * Drei Zeitangaben, drei verschiedene Fragen — siehe die Spalten-Kommentare in
+ * `0010_diary.sql`. Die Oberfläche zeigt eine Abweichung an, statt sie zu
+ * glätten: Ein Foto, das laut Kamera vom Dienstag stammt und laut Nutzer vom
+ * Donnerstag, ist keine Panne, sondern eine Auskunft.
+ */
+export const mediaDto = z.object({
+  id: z.string().uuid(),
+  storagePath: z.string(),
+  mime: z.string(),
+  bytes: z.number().int(),
+  sha256: z.string(),
+  exifTakenAt: z.string().nullable(),
+  exifLat: z.number().nullable(),
+  exifLon: z.number().nullable(),
+  capturedAt: z.string().nullable(),
+  statedDate: isoDate.nullable(),
+  taskId: z.string().uuid().nullable(),
+  taskName: z.string().nullable(),
+  photoPromptKey: z.string().nullable(),
+  caption: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type MediaDto = z.infer<typeof mediaDto>;
+
+export const diaryEntryDto = z.object({
+  id: z.string().uuid(),
+  entryDate: isoDate,
+  body: z.string(),
+  authorName: z.string().nullable(),
+  authorRole: memberRole.nullable(),
+  weather: weatherObservation.nullable(),
+  taskIds: z.array(z.string().uuid()),
+  taskNames: z.array(z.string()),
+  media: z.array(mediaDto),
+  /** Versiegelt heißt: nur noch zurückziehbar, nicht mehr änderbar. */
+  sealedAt: z.string().nullable(),
+  chainIndex: z.number().int().nullable(),
+  contentHash: z.string().nullable(),
+  retractedAt: z.string().nullable(),
+  retractionReason: z.string().nullable(),
+  /** Wie lange sich der Eintrag noch ändern lässt, in Minuten. */
+  editableForMinutes: z.number().int().nullable(),
+  createdAt: z.string(),
+  /** Ob der Anrufer ihn ändern darf — Verfasser und noch nicht versiegelt. */
+  canEdit: z.boolean(),
+});
+export type DiaryEntryDto = z.infer<typeof diaryEntryDto>;
+
+export const diaryEntryCreateRequest = z.object({
+  entryDate: isoDate,
+  body: z.string().max(20_000).default(''),
+  taskIds: z.array(z.string().uuid()).max(50).default([]),
+  /**
+   * Ob das Wetter nachgeschlagen werden soll. Standard ja; die Erfassung im
+   * Funkloch schaltet es aus, wenn der Tag zu lange her ist.
+   */
+  withWeather: z.boolean().default(true),
+});
+export type DiaryEntryCreateRequest = z.infer<typeof diaryEntryCreateRequest>;
+
+export const diaryEntryUpdateRequest = z.object({
+  body: z.string().max(20_000).optional(),
+  entryDate: isoDate.optional(),
+  taskIds: z.array(z.string().uuid()).max(50).optional(),
+  /** Zurückziehen. Der Eintrag bleibt sichtbar und trägt den Grund. */
+  retract: z.string().min(3).max(500).optional(),
+});
+export type DiaryEntryUpdateRequest = z.infer<typeof diaryEntryUpdateRequest>;
+
+/**
+ * Was der Browser meldet, **nachdem** er die Datei selbst hochgeladen hat.
+ *
+ * Die Bytes gehen nie durch diese API (Abschnitt 6.1). Hier kommt nur an, wo
+ * sie liegen und was sie belegen — und die Prüfsumme, die beides verbindet.
+ */
+export const mediaRegisterRequest = z.object({
+  storagePath: z.string().min(1).max(500),
+  mime: z.string().min(3).max(120),
+  bytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/, 'Prüfsumme als 64 Hexziffern erwartet'),
+  diaryEntryId: z.string().uuid().nullish(),
+  taskId: z.string().uuid().nullish(),
+  photoPromptKey: z.string().max(60).nullish(),
+  caption: z.string().max(500).nullish(),
+  /** Aus der Datei gelesen, nicht behauptet. Fehlt sie, bleibt sie leer. */
+  exifTakenAt: z.string().datetime({ offset: true }).nullish(),
+  exifLat: z.number().min(-90).max(90).nullish(),
+  exifLon: z.number().min(-180).max(180).nullish(),
+  /** Uhrzeit des Geräts beim Auslösen — die Antwort im Flugmodus. */
+  capturedAt: z.string().datetime({ offset: true }).nullish(),
+  statedDate: isoDate.nullish(),
+});
+export type MediaRegisterRequest = z.infer<typeof mediaRegisterRequest>;
+
+/** Ein Fotoauftrag aus der Lotsenkarte, mit seinem Erfüllungsstand. */
+export const photoPromptStatus = z.object({
+  taskId: z.string().uuid(),
+  taskName: z.string(),
+  taskStart: isoDate.nullable(),
+  key: z.string(),
+  what: z.string(),
+  why: z.string().nullable(),
+  /** Wie viele Fotos diesen Auftrag erfüllen. Null heißt offen. */
+  fulfilledBy: z.number().int(),
+  /**
+   * Dringend, weil das Motiv gleich verdeckt ist. Ein Leitungsverlauf vor dem
+   * Estrich ist eine Woche lang fotografierbar und danach nie wieder.
+   */
+  urgent: z.boolean(),
+});
+export type PhotoPromptStatus = z.infer<typeof photoPromptStatus>;
+
+export const diaryChainCheck = z.object({
+  /** Prüfsumme des jüngsten versiegelten Eintrags — der Kopf der Kette. */
+  headHash: z.string().nullable(),
+  sealedCount: z.number().int(),
+  openCount: z.number().int(),
+  intact: z.boolean(),
+  /** Nur die Fundstellen. Eine heile Kette liefert eine leere Liste. */
+  breaks: z.array(
+    z.object({
+      chainIndex: z.number().int(),
+      entryId: z.string().uuid(),
+      entryDate: isoDate,
+      reason: z.string(),
+    }),
+  ),
+});
+export type DiaryChainCheck = z.infer<typeof diaryChainCheck>;
+
+/**
+ * Das Wetter in einem Satz, wie es im Tagebuch steht.
+ *
+ * Kein Fließtext aus Zahlen: Was zählt, sind die zwei bis drei Angaben, die
+ * eine Verzögerung erklären. Frost, Dauerregen und Sturm sind Verzugsgründe,
+ * Luftdruck ist keiner.
+ */
+export function weatherInPlainWords(weather: WeatherObservation | null): string {
+  if (weather === null) return 'Wetter nicht erfasst.';
+
+  const teile: string[] = [];
+  if (weather.temperatureMinC !== null && weather.temperatureMaxC !== null) {
+    teile.push(
+      `${Math.round(weather.temperatureMinC)} bis ${Math.round(weather.temperatureMaxC)} °C`,
+    );
+  }
+  if (weather.precipitationMm !== null && weather.precipitationMm > 0) {
+    teile.push(`${weather.precipitationMm.toFixed(1).replace('.', ',')} mm Niederschlag`);
+  }
+  if (weather.windGustKmh !== null && weather.windGustKmh >= 50) {
+    teile.push(`Böen bis ${Math.round(weather.windGustKmh)} km/h`);
+  }
+  const lage = WEATHER_CONDITION[weather.condition ?? ''];
+  if (lage !== undefined) teile.push(lage);
+
+  if (teile.length === 0) return 'Wetter nicht erfasst.';
+  return `${teile.join(', ')}.`;
+}
+
+const WEATHER_CONDITION: Record<string, string> = {
+  dry: 'trocken',
+  fog: 'Nebel',
+  rain: 'Regen',
+  sleet: 'Schneeregen',
+  snow: 'Schnee',
+  hail: 'Hagel',
+  thunderstorm: 'Gewitter',
+};
+
+/**
+ * Frost und Dauerregen sind der häufigste Verzugsgrund im Rohbau — und der
+ * einzige, den niemand zu vertreten hat. Steht er im Tagebuch, ist er später
+ * belegt statt behauptet.
+ */
+export function weatherStoppedWork(weather: WeatherObservation | null): string | null {
+  if (weather === null) return null;
+  if (weather.temperatureMinC !== null && weather.temperatureMinC < -5) {
+    return 'Bei unter minus fünf Grad ruhen Beton- und Mauerarbeiten in der Regel.';
+  }
+  if (weather.precipitationMm !== null && weather.precipitationMm >= 20) {
+    return 'Über 20 mm Niederschlag an einem Tag — Erdarbeiten stehen dann meist still.';
+  }
+  if (weather.windGustKmh !== null && weather.windGustKmh >= 60) {
+    return 'Ab etwa 60 km/h Böen wird der Kranbetrieb eingestellt.';
+  }
+  return null;
+}

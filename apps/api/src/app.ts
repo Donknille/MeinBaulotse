@@ -19,7 +19,10 @@ import {
 import {
   checklistUpdateRequest,
   decisionUpdateRequest,
+  diaryEntryCreateRequest,
+  diaryEntryUpdateRequest,
   guideCardFeedbackRequest,
+  mediaRegisterRequest,
   onboardingRequest,
   isoDate,
   taskUpdateRequest,
@@ -30,6 +33,15 @@ import {
 } from '@meinbaulotse/shared';
 import { requireAuth, type AuthedVariables } from './auth.js';
 import { loadDecisions, updateDecision } from './decisions.js';
+import {
+  checkDiaryChain,
+  createDiaryEntry,
+  listDiary,
+  listMedia,
+  listPhotoPrompts,
+  registerMedia,
+  updateDiaryEntry,
+} from './diary.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { loadGuideCardView, markGuideCardRead, setChecklistItem } from './guide-cards.js';
 import { createProjectFromAnswers } from './onboarding.js';
@@ -478,6 +490,95 @@ export function createApp(): Hono<App> {
       updateDecision(tx, projectId, decisionId, parsed.data),
     );
     return c.json(entscheidung);
+  });
+
+  // -- Tagebuch und Fotos ----------------------------------------------------
+  //
+  // Abschnitt 3.8. Der Nutzer sieht ein Fotoalbum; Versiegelung und Hash-Kette
+  // bekommt er nie zu Gesicht. Deshalb gibt es hier keine Route „versiegeln":
+  // Das erledigt die Datenbank beim Lesen, und ein Knopf dafür wäre eine
+  // Aufforderung, über etwas nachzudenken, das von selbst richtig läuft.
+
+  v1.get('/projects/:id/diary', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const entries = await withUserTx(c.get('claims'), (tx) => listDiary(tx, projectId));
+    return c.json({ entries });
+  });
+
+  // Steht **vor** `/diary/:entryId`, sonst hielte Hono „verify" für eine
+  // Kennung und lehnte sie als ungültige UUID ab.
+  v1.get('/projects/:id/diary/verify', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const check = await withUserTx(c.get('claims'), (tx) => checkDiaryChain(tx, projectId));
+    return c.json(check);
+  });
+
+  v1.post('/projects/:id/diary', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = diaryEntryCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const entry = await withUserTx(c.get('claims'), (tx) =>
+      createDiaryEntry(tx, projectId, parsed.data),
+    );
+    return c.json(entry, 201);
+  });
+
+  v1.patch('/projects/:id/diary/:entryId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const entryId = parseId(c.req.param('entryId'));
+    const parsed = diaryEntryUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const entry = await withUserTx(c.get('claims'), (tx) =>
+      updateDiaryEntry(tx, projectId, entryId, parsed.data),
+    );
+    return c.json(entry);
+  });
+
+  v1.get('/projects/:id/media', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const media = await withUserTx(c.get('claims'), (tx) => listMedia(tx, projectId));
+    return c.json({ media });
+  });
+
+  // Die Bytes sind hier längst vorbei: Der Browser hat die Datei direkt in den
+  // Objektspeicher geschoben (Abschnitt 6.1). Diese Route nimmt nur entgegen,
+  // dass es sie gibt — mit Prüfsumme, damit später niemand eine andere
+  // unterschieben kann.
+  v1.post('/projects/:id/media', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = mediaRegisterRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben zum Foto reichen noch nicht.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const media = await withUserTx(c.get('claims'), (tx) =>
+      registerMedia(tx, projectId, parsed.data),
+    );
+    return c.json(media, 201);
+  });
+
+  v1.get('/projects/:id/photo-prompts', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const roh = c.req.query('on');
+    if (roh !== undefined && !isoDate.safeParse(roh).success) {
+      throw new HTTPException(400, { message: 'Dieses Datum können wir nicht deuten.' });
+    }
+    const prompts = await withUserTx(c.get('claims'), (tx) =>
+      listPhotoPrompts(tx, projectId, roh ?? new Date().toISOString().slice(0, 10)),
+    );
+    return c.json({ prompts });
   });
 
   app.route('/v1', v1);

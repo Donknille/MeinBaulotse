@@ -10,8 +10,15 @@ import type {
   ChecklistUpdateRequest,
   DecisionDto,
   DecisionUpdateRequest,
+  DiaryChainCheck,
+  DiaryEntryCreateRequest,
+  DiaryEntryDto,
+  DiaryEntryUpdateRequest,
   GuideCardView,
+  MediaDto,
+  MediaRegisterRequest,
   OnboardingRequest,
+  PhotoPromptStatus,
   ProjectSchedule,
   ProjectSummary,
   ShiftPreview,
@@ -201,4 +208,41 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(change),
     }),
+
+  // -- Tagebuch und Fotos ----------------------------------------------------
+  //
+  // Die Bytes eines Fotos kommen hier nie vor. Sie gehen direkt in den
+  // Objektspeicher (siehe `media-store.ts`); `registerMedia` meldet nur, wo sie
+  // liegen und was sie belegen.
+
+  diary: (projectId: string) =>
+    request<{ entries: DiaryEntryDto[] }>(`/projects/${projectId}/diary`),
+
+  createDiaryEntry: (projectId: string, entry: DiaryEntryCreateRequest) =>
+    request<DiaryEntryDto>(`/projects/${projectId}/diary`, {
+      method: 'POST',
+      body: JSON.stringify(entry),
+    }),
+
+  updateDiaryEntry: (projectId: string, entryId: string, change: DiaryEntryUpdateRequest) =>
+    request<DiaryEntryDto>(`/projects/${projectId}/diary/${entryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  verifyDiary: (projectId: string) =>
+    request<DiaryChainCheck>(`/projects/${projectId}/diary/verify`),
+
+  registerMedia: (projectId: string, media: MediaRegisterRequest) =>
+    request<MediaDto>(`/projects/${projectId}/media`, {
+      method: 'POST',
+      body: JSON.stringify(media),
+    }),
+
+  media: (projectId: string) => request<{ media: MediaDto[] }>(`/projects/${projectId}/media`),
+
+  photoPrompts: (projectId: string, on?: string) =>
+    request<{ prompts: PhotoPromptStatus[] }>(
+      `/projects/${projectId}/photo-prompts${on === undefined ? '' : `?on=${on}`}`,
+    ),
 };

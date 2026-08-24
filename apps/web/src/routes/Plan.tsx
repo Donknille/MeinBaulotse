@@ -6,6 +6,7 @@ import { PlanView } from '../components/PlanView';
 import type { GuideCardHandlers } from '../components/GuideCard';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
+import { todayIso } from '../lib/progress';
 import type {
   DecisionUpdateRequest,
   ProjectSchedule,
@@ -19,6 +20,21 @@ export function Plan() {
   const query = useQuery({
     queryKey: ['schedule', projectId],
     queryFn: () => api.schedule(projectId!),
+    enabled: projectId !== undefined,
+  });
+
+  // Die Fotoaufträge kommen getrennt vom Plan. Sie hängen an den Karten und am
+  // Erfüllungsstand, nicht am Terminplan — und sie ändern sich, wenn jemand
+  // ein Foto ablegt, ohne dass sich ein einziger Termin bewegt hätte.
+  //
+  // Der Stichtag kommt aus dem Browser, nicht vom Server. Das restliche
+  // Cockpit rechnet mit `todayIso()`, also mit der Uhr des Geräts; ließe man
+  // hier den Server entscheiden, stünde auf einem Handy in einer anderen
+  // Zeitzone „heute läuft der Estrich" neben Fotoaufträgen von gestern.
+  const heute = todayIso();
+  const photoPrompts = useQuery({
+    queryKey: ['photo-prompts', projectId, heute],
+    queryFn: () => api.photoPrompts(projectId!, heute),
     enabled: projectId !== undefined,
   });
 
@@ -115,6 +131,9 @@ export function Plan() {
         <PlanView
           schedule={query.data}
           guideCards={guideCards}
+          {...(photoPrompts.data === undefined
+            ? {}
+            : { photoPrompts: photoPrompts.data.prompts })}
           onChangeTask={async (taskId, body) => {
             await change.mutateAsync({ taskId, body });
           }}

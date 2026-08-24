@@ -86,6 +86,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_guide_cards.
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0007_decision.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0008_decision_templates.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0009_change_effect.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0010_diary.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0011_storage.sql
 ```
 
 **Port 5432, nicht 6543.** Der Transaction-Pooler ist für die laufende
@@ -170,7 +172,7 @@ gibt, schriebe jede Branch-Vorschau in die Produktionsdatenbank.
 
 ### Umgebungsvariablen
 
-Sechs Stück, alle im Bereich *Production*:
+Sechs Pflichtwerte, alle im Bereich *Production*:
 
 | Name | Quelle |
 |---|---|
@@ -180,6 +182,15 @@ Sechs Stück, alle im Bereich *Production*:
 | `SUPABASE_JWT_SECRET` | Project Settings → API → JWT Settings |
 | `VITE_SUPABASE_URL` | wie `SUPABASE_URL` |
 | `VITE_SUPABASE_ANON_KEY` | wie `SUPABASE_ANON_KEY` |
+
+Dazu die freiwilligen. Jede ist ohne Eintrag gefahrlos — die zugehörige
+Funktion bleibt dann einfach aus und sagt das auch:
+
+| Name | Wirkung, wenn leer | Wirkung, wenn gesetzt |
+|---|---|---|
+| `WEATHER_API_URL` | *(nicht gesetzt = Standard)* | Adresse der Wetterabfrage. Standard ist `https://api.brightsky.dev` (DWD Open Data als JSON). Leer eingetragen: kein Wetter, im Tagebuch steht „Wetter nicht erfasst". |
+| `DEMO_LOGIN_KEY` | `/demo` gibt es nicht — so gehört es in Produktion | Testzugang ohne Mailversand, siehe `docs/DEMO.md` |
+| `DATABASE_SSL_NO_VERIFY` | Zertifikat wird geprüft | Notausgang, siehe unten. Nur setzen, wenn nichts mehr geht. |
 
 **`DATABASE_URL`: Transaction-Pooler auf 6543, nicht die Direktverbindung.**
 Der Grund ist nicht nur die Zahl der Verbindungen. Die Direktverbindung

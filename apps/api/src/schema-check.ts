@@ -41,6 +41,12 @@ const EXPECTED: readonly Expectation[] = [
   // Vorlagen (0008) stehen hier wieder nicht: Fehlen sie, entstehen beim
   // Anlegen eines Bauvorhabens keine Entscheidungen, aber nichts bricht.
   { migration: '0007_decision.sql', table: 'decision', column: 'due_date' },
+  // Ohne das Tagebuch endet jeder Aufruf der Erfassung in
+  // `relation "diary_entry" does not exist`, und das Cockpit fragt die
+  // Fotoaufträge bei jedem Laden ab. 0011 steht hier nicht: Fehlt der
+  // Bildspeicher, gibt es keine Fotos, aber die Anwendung läuft — sie sagt
+  // beim Hochladen offen, was fehlt.
+  { migration: '0010_diary.sql', table: 'diary_entry', column: 'content_hash' },
 ];
 
 export interface SchemaState {

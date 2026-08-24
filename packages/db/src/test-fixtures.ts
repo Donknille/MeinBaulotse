@@ -134,9 +134,14 @@ export async function truncateAll(): Promise<void> {
     // `guide_card` steht bewusst nicht dabei: Der Redaktionsinhalt kommt aus
     // einer Migration und gehört keinem Projekt. Was daran hängt — Gelesen-Stand
     // und Haken — verschwindet mit dem Projekt.
+    // `media` vor `diary_entry`: Die Verknüpfung ist `on delete restrict`, weil
+    // ein Foto in einer versiegelten Bauakte nicht mit dem Eintrag verschwinden
+    // darf. `truncate … cascade` nimmt darauf keine Rücksicht, aber die
+    // Reihenfolge macht die Absicht lesbar.
     await tx.query(`
-      truncate schedule_change, audit_log, checklist_item, guide_card_read, decision,
-               dependency, task, project_member, project, expert_org_member, expert_org
+      truncate media, diary_entry, schedule_change, audit_log, checklist_item,
+               guide_card_read, decision, dependency, task, project_member, project,
+               expert_org_member, expert_org
                restart identity cascade
     `);
     await tx.query('delete from trade where project_id is not null');

@@ -27,14 +27,30 @@
  * schaut zu und muss entscheiden. Beide sehen denselben Bau, aber nicht
  * dieselbe Aufforderung.
  *
- * Was noch fehlt und deshalb hier nicht steht: die Erfassung der Fotoaufträge
- * (AP 5). Die Aufträge selbst stehen auf der Lotsenkarte; ein Kameraknopf im
- * Cockpit, der nichts öffnet, wäre ein Versprechen, das die Anwendung nicht
+ * Seit AP 5 steht auch „Jetzt fotografieren" darin, und zwar an der Stelle,
+ * die Abschnitt 5.1 dafür vorsieht: hinter den Entscheidungen, vor dem, was
+ * schiefgeht. Der Knopf führt geradewegs zur Kamera, mit Vorgang und Auftrag
+ * im Gepäck — vorher wäre er ein Versprechen gewesen, das die Anwendung nicht
  * hält.
  */
 
-import { ArrowRight, BookOpen, Check, CircleDot, Flag, Scale, TriangleAlert } from 'lucide-react';
-import type { DecisionDto, ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
+import { Link } from 'react-router-dom';
+import {
+  ArrowRight,
+  BookOpen,
+  Camera,
+  Check,
+  CircleDot,
+  Flag,
+  Scale,
+  TriangleAlert,
+} from 'lucide-react';
+import type {
+  DecisionDto,
+  PhotoPromptStatus,
+  ProjectSchedule,
+  ScheduledTaskDto,
+} from '@meinbaulotse/shared';
 import { decisionInPlainWords, guideCardTiming, isGuideCardDue } from '@meinbaulotse/shared';
 import { Card } from './ui';
 import { GuideCardButton, PhaseBar } from './schedule';
@@ -47,12 +63,15 @@ const MAX_ZEILEN = 4;
 export function Cockpit({
   schedule,
   currentPhase,
+  photoPrompts,
   onSelect,
   onGuideCard,
   onDecision,
 }: {
   schedule: ProjectSchedule;
   currentPhase: string | undefined;
+  /** Fehlen sie, bleibt der Kasten „Jetzt fotografieren" weg — wie im Styleguide. */
+  photoPrompts?: readonly PhotoPromptStatus[];
   onSelect?: (task: ScheduledTaskDto) => void;
   onGuideCard?: (task: ScheduledTaskDto) => void;
   onDecision?: (decision: DecisionDto) => void;
@@ -91,6 +110,14 @@ export function Cockpit({
   const kalender = calendarOf(schedule.project);
   const darfEntscheiden = schedule.permissions.includes('decision.write');
   const anstehend = pendingDecisions(schedule.decisions, kalender, today);
+
+  // Was jetzt fotografiert werden muss, weil es gleich verdeckt ist. Erfüllte
+  // Aufträge fallen heraus: Eine Liste, die nicht kürzer wird, liest nach
+  // zweimal niemand mehr.
+  const fotos = (photoPrompts ?? []).filter(
+    (auftrag) => auftrag.urgent && auftrag.fulfilledBy === 0,
+  );
+  const darfFotografieren = schedule.permissions.includes('diary.write');
 
   // Was Aufmerksamkeit braucht, unterscheidet sich nach Rolle — und nur hier.
   const offeneMeldungen = schedule.tasks.filter((task) => meldungOffen(task, today));
@@ -272,7 +299,40 @@ export function Cockpit({
         </Abschnitt>
       ) : null}
 
-      {/* 5. Was du tun musst.
+      {/* 5. Jetzt fotografieren.
+             Der stille Held aus Abschnitt 3.1: Wer beim Rohbau nicht
+             fotografiert, wo die Leitungen liegen, bohrt sechs Jahre später
+             hinein. Der Nutzer erlebt es als Hilfe, das Produkt bekommt seine
+             Dokumentation. */}
+      {darfFotografieren && fotos.length > 0 ? (
+        <Abschnitt
+          titel="Jetzt fotografieren"
+          icon={<Camera size={18} className="text-lavender" aria-hidden />}
+          hinweis="Danach ist es verdeckt. Ein Foto jetzt ist in sechs Jahren mehr wert als jede Erinnerung."
+        >
+          <ul className="flex flex-col">
+            {fotos.slice(0, MAX_ZEILEN).map((auftrag) => (
+              <li key={`${auftrag.taskId}-${auftrag.key}`} className="border-b border-ash last:border-b-0">
+                <Link
+                  to={`/projekt/${schedule.project.id}/erfassen?vorgang=${auftrag.taskId}&auftrag=${encodeURIComponent(auftrag.key)}`}
+                  className="flex min-h-14 items-center justify-between gap-3 py-3 text-left transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist"
+                >
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-body-lg text-charcoal">{auftrag.what}</span>
+                    <span className="text-caption text-steel">
+                      {auftrag.taskName}
+                      {auftrag.why === null ? '' : ` · ${auftrag.why}`}
+                    </span>
+                  </span>
+                  <Camera size={20} className="shrink-0 text-lavender" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Abschnitt>
+      ) : null}
+
+      {/* 6. Was du tun musst.
              Hier, und nur hier, unterscheiden sich die Rollen: Der GU fuehrt
              aus und schuldet die Meldung; der Bauherr schaut zu und kann sie
              nicht abgeben. Ein Kasten „das solltest du melden" waere fuer ihn
@@ -320,7 +380,7 @@ export function Cockpit({
         </Abschnitt>
       ) : null}
 
-      {/* 6. Erst zum Schluss, was schiefgeht. */}
+      {/* 7. Erst zum Schluss, was schiefgeht. */}
       {verschoben.length > 0 ? (
         <Abschnitt
           titel="Verschoben"

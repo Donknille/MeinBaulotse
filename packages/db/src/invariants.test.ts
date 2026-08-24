@@ -613,6 +613,95 @@ describe('Prüfregeln des Schemas', () => {
   });
 });
 
+describe('(2) Ein versiegelter Tagebucheintrag ist unveränderlich', () => {
+  /**
+   * Invariante 2 aus Abschnitt 4.1: „nach `locked_at` sind nur `retracted_at`
+   * und `retraction_reason` änderbar."
+   *
+   * Der Rest des Tagebuchs — Kette, Wetter, Fotoaufträge — steht in
+   * `apps/api/src/diary.test.ts`, wo er über die Anwendung geprüft wird. Hier
+   * geht es nur um die Sperre selbst, und zwar auf der Ebene, auf der sie
+   * gelten muss: gegen jeden, der SQL sprechen kann.
+   */
+  async function eintragAnlegen(alterStunden: number): Promise<string> {
+    return withAdminTx(async (tx) => {
+      const result = await tx.query<{ id: string }>(
+        `insert into diary_entry
+           (project_id, entry_date, body, author_member_id, author_role, created_at)
+         values ($1, date '2026-05-04', 'Estrich eingebracht.', $2, 'owner',
+                 now() - ($3 || ' hours')::interval)
+         returning id`,
+        [fixture.projectId, fixture.actors.owner.memberId, String(alterStunden)],
+      );
+      return result.rows[0]!.id;
+    });
+  }
+
+  it('versiegelt erst nach 24 Stunden', async () => {
+    const frisch = await eintragAnlegen(2);
+    const reif = await eintragAnlegen(30);
+    await asOwner(async (tx) => tx.query('select mbl.seal_due_diary_entries($1)', [fixture.projectId]));
+
+    const zustand = await withAdminTx(async (tx) =>
+      tx.query<{ id: string; locked: boolean }>(
+        'select id, locked_at is not null as locked from diary_entry where id = any($1::uuid[])',
+        [[frisch, reif]],
+      ),
+    );
+    const nach = new Map(zustand.rows.map((row) => [row.id, row.locked]));
+    expect(nach.get(frisch)).toBe(false);
+    expect(nach.get(reif)).toBe(true);
+  });
+
+  it('lässt den Text danach nicht mehr ändern, auch nicht dem Eigentümer', async () => {
+    const id = await eintragAnlegen(30);
+    await asOwner(async (tx) => tx.query('select mbl.seal_due_diary_entries($1)', [fixture.projectId]));
+
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query('update diary_entry set body = $2 where id = $1', [id, 'Doch nicht.']),
+      ),
+    ).rejects.toThrow(/versiegelt/i);
+  });
+
+  it('lässt das Zurückziehen zu — der Eintrag bleibt stehen', async () => {
+    const id = await eintragAnlegen(30);
+    await asOwner(async (tx) => tx.query('select mbl.seal_due_diary_entries($1)', [fixture.projectId]));
+
+    await asOwner(async (tx) =>
+      tx.query(
+        `update diary_entry set retracted_at = now(), retraction_reason = $2 where id = $1`,
+        [id, 'Falscher Vorgang.'],
+      ),
+    );
+
+    const zeile = await withAdminTx(async (tx) =>
+      tx.query<{ retraction_reason: string | null; body: string }>(
+        'select retraction_reason, body from diary_entry where id = $1',
+        [id],
+      ),
+    );
+    expect(zeile.rows[0]!.retraction_reason).toBe('Falscher Vorgang.');
+    expect(zeile.rows[0]!.body).toBe('Estrich eingebracht.');
+  });
+
+  it('kennt kein Löschen — das Recht dazu ist gar nicht vergeben', async () => {
+    const id = await eintragAnlegen(2);
+    await expect(
+      asOwner(async (tx) => tx.query('delete from diary_entry where id = $1', [id])),
+    ).rejects.toThrow();
+  });
+
+  it('verlangt zu jedem Zurückziehen einen Grund', async () => {
+    const id = await eintragAnlegen(2);
+    await expect(
+      withAdminTx(async (tx) =>
+        tx.query('update diary_entry set retracted_at = now() where id = $1', [id]),
+      ),
+    ).rejects.toThrow();
+  });
+});
+
 async function countChanges(): Promise<number> {
   return withAdminTx(
     async (tx) =>

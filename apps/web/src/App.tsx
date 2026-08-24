@@ -6,6 +6,8 @@ import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { onDemoSessionChange, readDemoSession, type DemoSession } from './lib/demo-auth';
 import { DemoLogin } from './routes/DemoLogin';
 import { SignIn } from './routes/SignIn';
+import { Capture } from './routes/Capture';
+import { Diary } from './routes/Diary';
 import { Onboarding } from './routes/Onboarding';
 import { Plan } from './routes/Plan';
 import { Projects } from './routes/Projects';
@@ -85,6 +87,11 @@ export function App() {
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/projekt/:projectId" element={<Plan />} />
               <Route path="/projekt/:projectId/wochenbericht" element={<WeeklyReport />} />
+              {/* Die Schnellerfassung ist eine eigene Adresse, damit sie vom
+                  Startbildschirm aus als Verknüpfung erreichbar ist — auf der
+                  Baustelle zählt jeder Tipp (Abschnitt 5.4). */}
+              <Route path="/projekt/:projectId/erfassen" element={<Capture />} />
+              <Route path="/projekt/:projectId/tagebuch" element={<Diary />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}

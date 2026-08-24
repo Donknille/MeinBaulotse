@@ -15,6 +15,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `api/index.js` | **Erzeugt.** Die Function auf Vercel, fertig gebündelt |
 | `apps/web` | Vite + React, installierbare PWA |
 | `content/lotsenkarten` | Redaktionsinhalt der Wissensschicht als Markdown. Erstbefüllung, siehe README dort |
+| `apps/web/src/lib/queue.ts` | Offline-Warteschlange der Erfassung. IndexedDB, jeder Schritt wiederholbar |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
 
@@ -51,9 +52,20 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    vier kurzen Feldern sind als Tabelle besser zu überblicken als als vierzehn
    winzige Markdown-Dateien. `pnpm decisions:generate` macht daraus
    `0008_decision_templates.sql`.
-6. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
+6. **Fotos gehen nie durch den Anwendungsserver.** Der Browser lädt mit seiner
+   eigenen Supabase-Sitzung direkt in den Objektspeicher; die API bekommt nur
+   Pfad, Größe und Prüfsumme (`apps/web/src/lib/media-store.ts`). Der erste
+   Ordner im Pfad **ist** die Kennung des Bauvorhabens — daraus leitet die
+   Policy auf `storage.objects` ihre Rechte ab. Wer den Pfadaufbau ändert,
+   ändert eine Rechteprüfung.
+
+   Ein versiegelter Tagebucheintrag trägt die Prüfsummen seiner Fotos im Hash.
+   Ein Foto danach zu tauschen bricht die Kette; deshalb weist ein Trigger es
+   schon vorher ab.
+
+7. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
-7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
+8. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
    entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und der
    Vite-Proxy schneidet nichts ab. **Fünf** Stellen halten das zusammen:
    `apps/api/src/app.ts` (`basePath`), `apps/web/vite.config.ts` (Proxy ohne
@@ -64,14 +76,14 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Die fünfte ist die unauffälligste und hat am längsten gekostet: Ohne die
    Ausnahme beantwortet der Service Worker **jede** Navigation aus dem
    Zwischenspeicher, auch `/api/health` in der Adresszeile. Die Gegenprobe aus
-   Regel 8 ist dann ausgerechnet dort blind, wo man sie braucht.
+   Regel 9 ist dann ausgerechnet dort blind, wo man sie braucht.
 
    Und `registerType` gehört auf `autoUpdate`. Mit `prompt` wartet der neue
    Service Worker, bis ihn jemand freischaltet — solange kein Modul
    `virtual:pwa-register` importiert, gibt es dieses „jemand" nicht, und
    Auslieferungen erreichen niemanden, während die CI grün meldet.
 
-8. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
+9. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
    macht aus `apps/api/src/vercel.ts` die eingecheckte Datei `api/index.js`,
    die außer Node-Bausteinen nichts mehr importiert. Nach jeder Änderung an
    der API neu erzeugen; die CI prüft es.
@@ -95,7 +107,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Schema passt zur ausgelieferten Fassung. Ohne den zweiten sieht eine
    fehlende Verbindung aus wie eine leere Datenlage.
 
-9. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
+10. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
    Sonst geht eine Auslieferung live, bevor die Migration eingespielt ist, und
    jede betroffene Ansicht endet in `column … does not exist` — während
    `/api/health/db` fröhlich `ok` meldet, denn die Verbindung stand ja. Genau
