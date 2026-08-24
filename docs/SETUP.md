@@ -121,6 +121,29 @@ Die zweite Abfrage ist die wichtigere. Die Zählung oben stimmt auch dann, wenn
 `0002_rls.sql` nur zur Hälfte durchgelaufen ist — dann stehen die Stammdaten
 da, aber die Rechte fehlen.
 
+#### Wenn ein zweiter Lauf abbricht
+
+`ERROR: 42710: type "federal_state" already exists` heißt nicht „kaputt",
+sondern „das gab es schon": Die Sammeldatei ist für eine **leere** Datenbank
+geschrieben. Seit sie einen Riegel am Anfang hat, sagt sie das im Klartext und
+ändert nichts.
+
+Erst nachsehen, wie weit der erste Lauf kam — `32 von 32` heißt fertig, dann
+ist nichts zu tun. Steht dort weniger, einmal sauber zurücksetzen und die Datei
+erneut laufen lassen:
+
+```sql
+drop schema if exists mbl cascade;
+drop schema if exists public cascade;
+create schema public;
+grant usage on schema public to postgres, anon, authenticated, service_role;
+grant all on schema public to postgres, service_role;
+```
+
+**Nur auf einem Projekt, in dem sonst nichts liegt.** Der Befehl wirft alles
+weg, was in `public` steht — auch Fremdes. Die Anmeldedaten in `auth` bleiben
+unberührt, die stehen in einem anderen Schema.
+
 #### Der Fotospeicher
 
 Um den musst du dich nicht kümmern: `0011_storage.sql` legt den Eimer

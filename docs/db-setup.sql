@@ -50,6 +50,37 @@
 --
 -- ===========================================================================
 
+
+-- ---------------------------------------------------------------------------
+-- Diese Datei ist für eine leere Datenbank. Ein zweiter Lauf endete bisher in
+-- ERROR: 42710: type "federal_state" already exists — in Zeile 74 von 4000,
+-- und wer das liest, weiß nicht, ob der erste Lauf zur Hälfte oder ganz
+-- durchgekommen ist.
+--
+-- Deshalb steht die Frage jetzt vorn und mit der Antwort daneben.
+-- ---------------------------------------------------------------------------
+do $mbl_bereits$
+begin
+  if to_regclass('public.project') is not null
+     or exists (select 1 from information_schema.schemata where schema_name = 'mbl') then
+    raise exception
+      E'Diese Datenbank ist schon eingerichtet — hier wurde nichts geändert.\n\n'
+      'Wie weit der erste Lauf kam, sagt dir das hier:\n'
+      '    select count(*) filter (where rowsecurity) as mit_rls, count(*) as tabellen\n'
+      '      from pg_tables where schemaname = ''public'';\n\n'
+      'Steht dort 32 von 32, ist alles drin und du bist fertig.\n\n'
+      'Steht dort weniger, setz zurück und lauf einmal sauber durch — aber nur '
+      'auf einem Projekt, in dem sonst nichts liegt:\n'
+      '    drop schema if exists mbl cascade;\n'
+      '    drop schema if exists public cascade;\n'
+      '    create schema public;\n'
+      '    grant usage on schema public to postgres, anon, authenticated, service_role;\n'
+      '    grant all on schema public to postgres, service_role;'
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
+end
+$mbl_bereits$;
+
 -- ===========================================================================
 --  Abschnitt: 0001_schema.sql
 -- ===========================================================================
