@@ -18,6 +18,7 @@ import {
   Camera,
   Check,
   ChevronDown,
+  FileText,
   GanttChartSquare,
   Images,
   Scale,
@@ -146,6 +147,18 @@ export function PlanView({
               <Sparkles size={16} aria-hidden />
               Frag den Lotsen
             </Link>
+            {/* Die Bauakte hängt am selben Recht wie der Export: Sie ist die
+                Zusammenstellung, er sind die Rohdaten. Wer sie nicht hat, sieht
+                den Weg dorthin gar nicht erst. */}
+            {schedule.permissions.includes('export.run') ? (
+              <Link
+                to={`/projekt/${schedule.project.id}/bauakte`}
+                className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"
+              >
+                <FileText size={16} aria-hidden />
+                Bauakte
+              </Link>
+            ) : null}
             {/* Der Weg zu den Beteiligten steht neben dem Tagebuch, nicht in
                 einer Einstellungsecke: Wer einen Termin einträgt, will als
                 Nächstes wissen, ob das ausführende Unternehmen ihn kennt. */}

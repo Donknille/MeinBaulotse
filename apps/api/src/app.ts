@@ -46,6 +46,7 @@ import { anthropicClient, assistantConfigured } from './anthropic.js';
 import { ask, assistantStatusFor, listThreads } from './assistant.js';
 import { requireAuth, type AuthedVariables } from './auth.js';
 import { createDefect, listDefects, updateDefect } from './defects.js';
+import { buildDossier, exportProject } from './dossier.js';
 import {
   loadContractMirror,
   loadDrawdowns,
@@ -700,6 +701,55 @@ export function createApp(): Hono<App> {
       revokeGuestLink(tx, projectId, linkId),
     );
     return c.json({ links });
+  });
+
+  // -- Bauakte ----------------------------------------------------------------
+  //
+  // Der Server stellt die Akte zusammen, der Browser setzt sie und druckt sie.
+  // Warum das PDF nicht hier entsteht, steht ausführlich in `dossier.ts`: Der
+  // Fotoanhang bräuchte einen Server, der die Bilder lesen kann — und lesen
+  // darf sie nur, wer eine Sitzung hat.
+
+  v1.get('/projects/:id/dossier', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const from = c.req.query('from');
+    const to = c.req.query('to');
+    if (
+      from === undefined ||
+      to === undefined ||
+      !isoDate.safeParse(from).success ||
+      !isoDate.safeParse(to).success
+    ) {
+      throw new HTTPException(400, { message: 'Für die Akte brauchen wir einen Zeitraum.' });
+    }
+    if (to < from) {
+      throw new HTTPException(422, { message: 'Das Ende liegt vor dem Anfang.' });
+    }
+
+    const akte = await withUserTx(c.get('claims'), async (tx) => {
+      const plan = await loadSchedule(tx, projectId);
+      return buildDossier(tx, projectId, from, to, plan.computedEnd);
+    });
+    return c.json(akte);
+  });
+
+  // Der vollständige Datenexport (Abschnitt 6.5). Er hängt am Recht
+  // `export.run` — dieselbe Zeile der Rechtematrix wie die Akte selbst.
+  v1.get('/projects/:id/export', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const daten = await withUserTx(c.get('claims'), async (tx) => {
+      const darf = await tx.query<{ darf: boolean }>(
+        "select mbl.has_perm($1, 'export.run') as darf",
+        [projectId],
+      );
+      if (darf.rows[0]?.darf !== true) {
+        throw new HTTPException(403, {
+          message: 'Den vollständigen Export holt sich der Bauherr. Sprich ihn bitte an.',
+        });
+      }
+      return exportProject(tx, projectId);
+    });
+    return c.json(daten);
   });
 
   // -- Mängel -----------------------------------------------------------------

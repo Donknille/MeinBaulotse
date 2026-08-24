@@ -157,6 +157,24 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    kein Abbild des Schemas, sondern die Aussage „ohne das läuft nichts";
    dadurch nennt die Fehlermeldung den Dateinamen statt einer Spalte.
 
+14. **Die Bauakte entsteht im Browser, nicht auf dem Server.** Abschnitt 6.1
+   nennt für PDF „serverseitig, React-PDF oder Headless-Chromium". Das geht
+   hier nicht, und der Grund ist keine Bequemlichkeit, sondern Regel 1: Der
+   Fotoanhang aus Abschnitt 5.6 bräuchte einen Server, der die Bilder lesen
+   kann — lesen darf sie nur, wer eine Sitzung hat. Ein serverseitiges PDF mit
+   Fotoanhang wäre nur mit `service_role` zu haben.
+
+   Also andersherum: `apps/api/src/dossier.ts` stellt die Akte als Daten
+   zusammen — Chronologie, Prüfsummen, Reihenfolge —, und
+   `apps/web/src/routes/Dossier.tsx` **ist** das PDF; „Drucken → Als PDF
+   sichern" kann jedes Gerät, auf dem die Anwendung läuft.
+
+   Die Abnahme hängt an der **Unterscheidbarkeit** der Bestätigungsgrade, und
+   die funktioniert deshalb ohne Farbe: ein Zeichen (`CONFIRMATION_MARK` in
+   `packages/shared`), ein Wort und die Rahmenstärke. Ein ausgedrucktes PDF ist
+   oft schwarzweiß, und eine Unterscheidung, die den Bürodrucker nicht
+   übersteht, ist im Streitfall keine.
+
 ## Befehle
 
 ```bash

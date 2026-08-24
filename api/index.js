@@ -27605,7 +27605,7 @@ function addMonths(date, months) {
 }
 function commitmentInterest(input) {
   const zinsbeginn = addMonths(input.grantedOn, Math.max(0, input.freeMonths));
-  const abgerufenBis = (tag2) => input.drawdowns.filter((abruf) => compareDates(abruf.date, tag2) <= 0).reduce((summe2, abruf) => summe2 + abruf.amountCents, 0);
+  const abgerufenBis = (tag3) => input.drawdowns.filter((abruf) => compareDates(abruf.date, tag3) <= 0).reduce((summe2, abruf) => summe2 + abruf.amountCents, 0);
   const offenAmEnde = Math.max(0, input.loanAmountCents - abgerufenBis(input.until));
   const monatlich = Math.round(offenAmEnde * input.ratePerYearBp / 1e4 / 12);
   if (input.loanAmountCents <= 0 || input.ratePerYearBp <= 0 || compareDates(zinsbeginn, input.until) >= 0) {
@@ -27619,9 +27619,9 @@ function commitmentInterest(input) {
   }
   const grenzen = [
     zinsbeginn,
-    ...input.drawdowns.map((abruf) => abruf.date).filter((tag2) => compareDates(tag2, zinsbeginn) > 0 && compareDates(tag2, input.until) < 0),
+    ...input.drawdowns.map((abruf) => abruf.date).filter((tag3) => compareDates(tag3, zinsbeginn) > 0 && compareDates(tag3, input.until) < 0),
     input.until
-  ].slice().sort(compareDates).filter((tag2, index, alle) => index === 0 || alle[index - 1] !== tag2);
+  ].slice().sort(compareDates).filter((tag3, index, alle) => index === 0 || alle[index - 1] !== tag3);
   const segments = [];
   let summe = 0;
   for (let index = 0; index < grenzen.length - 1; index += 1) {
@@ -28441,6 +28441,68 @@ function suggestedEscalation(deadline, status, today) {
     return 1;
   return daysBetween(deadline, today) > 14 ? 3 : 2;
 }
+var dossierEntryKind = external_exports.enum([
+  "vorgang",
+  "verschiebung",
+  "abstimmung",
+  "tagebuch",
+  "mangel",
+  "zahlung",
+  "entscheidung"
+]);
+var dossierEntry = external_exports.object({
+  /** Der Tag, an dem es passiert ist — nicht der, an dem es erfasst wurde. */
+  on: isoDate,
+  at: external_exports.string(),
+  kind: dossierEntryKind,
+  title: external_exports.string(),
+  detail: external_exports.string().nullable(),
+  actor: external_exports.string().nullable(),
+  actorRole: memberRole.nullable(),
+  /** app | guest_link | import | system — wie die Angabe hereinkam. */
+  channel: external_exports.string().nullable(),
+  /** Nur bei Terminangaben gesetzt. Trägt die optische Unterscheidung. */
+  confirmation: confirmationLevel.nullable(),
+  /** Prüfsumme, wo es eine gibt — beim Tagebuch. */
+  hash: external_exports.string().nullable()
+});
+var dossierMember = external_exports.object({
+  displayName: external_exports.string().nullable(),
+  company: external_exports.string().nullable(),
+  role: memberRole,
+  tradeName: external_exports.string().nullable(),
+  email: external_exports.string().nullable()
+});
+var dossier = external_exports.object({
+  generatedAt: external_exports.string(),
+  period: external_exports.object({ from: isoDate, to: isoDate }),
+  project: external_exports.object({
+    id: external_exports.string().uuid(),
+    name: external_exports.string(),
+    address: external_exports.string().nullable(),
+    postalCode: external_exports.string().nullable(),
+    city: external_exports.string().nullable(),
+    federalState,
+    buildType,
+    contractType,
+    plannedStart: isoDate,
+    contractualCompletion: isoDate.nullable(),
+    computedEnd: isoDate.nullable(),
+    contractSumCents: external_exports.number().int().nullable()
+  }),
+  members: external_exports.array(dossierMember),
+  /** Die Prüfsumme der Tagebuchkette, für das Deckblatt (Abschnitt 5.6). */
+  chain: diaryChainCheck,
+  entries: external_exports.array(dossierEntry),
+  media: external_exports.array(mediaDto),
+  /** Wie viele Angaben welchen Bestätigungsgrad tragen — die Kurzfassung. */
+  confirmationCounts: external_exports.object({
+    self_stated: external_exports.number().int(),
+    counterparty_stated: external_exports.number().int(),
+    mutual: external_exports.number().int(),
+    disputed: external_exports.number().int()
+  })
+});
 
 // src/anthropic.ts
 init_sdk();
@@ -28586,7 +28648,7 @@ async function buildContext(tx, projectId, today) {
       order by t.current_start, t.sort_order`,
     [projectId, today]
   );
-  const entscheidungen = await tx.query(
+  const entscheidungen2 = await tx.query(
     `select title, due_date, status::text, reason
        from decision
       where project_id = $1 and status in ('offen','in_bemusterung')
@@ -28594,7 +28656,7 @@ async function buildContext(tx, projectId, today) {
       limit 10`,
     [projectId]
   );
-  const verschiebungen = await tx.query(
+  const verschiebungen2 = await tx.query(
     `select t.name as task_name, c.field, c.old_value, c.new_value, c.reason_code::text
        from schedule_change c
        join task t on t.id = c.task_id
@@ -28605,7 +28667,7 @@ async function buildContext(tx, projectId, today) {
       limit 12`,
     [projectId]
   );
-  const tagebuch = await tx.query(
+  const tagebuch2 = await tx.query(
     `select e.entry_date, e.body, m.display_name as author
        from diary_entry e
        left join project_member m on m.id = e.author_member_id
@@ -28647,20 +28709,20 @@ async function buildContext(tx, projectId, today) {
       status: row.status
     })),
     upcoming: vorgaenge.rows.filter((row) => !row.laeuft && (row.current_start ?? "") > today).slice(0, 8).map((row) => ({ name: row.name, start: row.current_start, end: row.current_end })),
-    decisions: entscheidungen.rows.map((row) => ({
+    decisions: entscheidungen2.rows.map((row) => ({
       title: row.title,
       dueDate: row.due_date,
       status: row.status,
       reason: row.reason
     })),
-    recentShifts: verschiebungen.rows.map((row) => ({
+    recentShifts: verschiebungen2.rows.map((row) => ({
       taskName: row.task_name,
       field: row.field,
       from: String(row.old_value ?? "\u2014"),
       to: String(row.new_value ?? "\u2014"),
       reason: row.reason_code
     })),
-    diary: tagebuch.rows.map((row) => ({
+    diary: tagebuch2.rows.map((row) => ({
       date: row.entry_date,
       body: row.body.slice(0, 400),
       author: row.author
@@ -30167,6 +30229,748 @@ function uebersetze(fallback) {
   };
 }
 
+// src/weather.ts
+var STANDARD_URL = "https://api.brightsky.dev";
+var ZEITGRENZE_MS = 5e3;
+function weatherApiUrl() {
+  const roh = process.env["WEATHER_API_URL"];
+  if (roh === void 0) return STANDARD_URL;
+  const gekuerzt = roh.trim().replace(/\/+$/, "");
+  return gekuerzt === "" ? null : gekuerzt;
+}
+var zwischenspeicher = /* @__PURE__ */ new Map();
+async function fetchWeather(suche, fetchImpl = fetch) {
+  const basis = weatherApiUrl();
+  if (basis === null) return null;
+  const schluessel = `${suche.lat.toFixed(3)}|${suche.lon.toFixed(3)}|${suche.date}`;
+  const bekannt = zwischenspeicher.get(schluessel);
+  if (bekannt !== void 0) return bekannt;
+  const adresse = `${basis}/weather?lat=${suche.lat}&lon=${suche.lon}&date=${suche.date}&last_date=${suche.date}&tz=Europe/Berlin`;
+  let beobachtung = null;
+  try {
+    const antwort = await fetchImpl(adresse, {
+      signal: AbortSignal.timeout(ZEITGRENZE_MS),
+      headers: { accept: "application/json" }
+    });
+    if (antwort.ok) {
+      beobachtung = summarise(await antwort.json(), suche.date);
+    }
+  } catch (error) {
+    console.warn("Wetter nicht abrufbar:", error instanceof Error ? error.message : error);
+  }
+  zwischenspeicher.set(schluessel, beobachtung);
+  return beobachtung;
+}
+function summarise(antwort, date) {
+  const stunden = antwort.weather ?? [];
+  if (stunden.length === 0) return null;
+  const quelle = antwort.sources?.[0];
+  const temperaturen = stunden.map((stunde) => stunde.temperature).filter((wert) => typeof wert === "number");
+  const niederschlag = stunden.map((stunde) => stunde.precipitation).filter((wert) => typeof wert === "number");
+  const boeen = stunden.map((stunde) => stunde.wind_gust_speed).filter((wert) => typeof wert === "number");
+  return {
+    date,
+    stationId: quelle?.dwd_station_id ?? quelle?.wmo_station_id ?? null,
+    stationName: quelle?.station_name ?? null,
+    distanceMeters: typeof quelle?.distance === "number" ? Math.round(quelle.distance) : null,
+    temperatureMinC: temperaturen.length === 0 ? null : round1(Math.min(...temperaturen)),
+    temperatureMaxC: temperaturen.length === 0 ? null : round1(Math.max(...temperaturen)),
+    precipitationMm: niederschlag.length === 0 ? null : round1(niederschlag.reduce((summe, wert) => summe + wert, 0)),
+    windGustKmh: boeen.length === 0 ? null : round1(Math.max(...boeen)),
+    condition: dominantCondition(stunden.map((stunde) => stunde.condition ?? null)),
+    source: "DWD Open Data \xFCber Brightsky"
+  };
+}
+function dominantCondition(werte) {
+  const rang = ["thunderstorm", "hail", "snow", "sleet", "rain", "fog", "dry"];
+  for (const lage of rang) {
+    if (werte.includes(lage)) return lage;
+  }
+  return null;
+}
+function round1(wert) {
+  return Math.round(wert * 10) / 10;
+}
+
+// src/diary.ts
+var DRINGEND_TAGE = 7;
+async function listDiary(tx, projectId, limit2 = 100) {
+  await tx.query("select mbl.seal_due_diary_entries($1)", [projectId]);
+  const result = await tx.query(
+    `select e.id, e.entry_date, e.body, m.display_name as author_name, e.author_role,
+            e.weather, e.task_ids, e.locked_at, e.chain_index, e.content_hash,
+            e.retracted_at, e.retraction_reason, e.created_at,
+            coalesce((
+              select array_agg(t.name order by t.sort_order, t.name)
+                from task t where t.id = any(e.task_ids)
+            ), '{}') as task_names,
+            case when e.locked_at is not null then null else greatest(0, ceil(
+              extract(epoch from (e.created_at + interval '24 hours' - now())) / 60
+            ))::text end as editable_minutes,
+            (e.locked_at is null
+             and e.author_member_id = mbl.current_member_id(e.project_id)) as can_edit
+       from diary_entry e
+       left join project_member m on m.id = e.author_member_id
+      where e.project_id = $1
+      order by e.entry_date desc, e.created_at desc
+      limit $2`,
+    [projectId, limit2]
+  );
+  const media = await loadMediaByEntry(
+    tx,
+    projectId,
+    result.rows.map((row) => row.id)
+  );
+  return result.rows.map((row) => toDiaryEntry(row, media.get(row.id) ?? []));
+}
+function toDiaryEntry(row, media) {
+  return {
+    id: row.id,
+    entryDate: row.entry_date,
+    body: row.body,
+    authorName: row.author_name,
+    authorRole: row.author_role,
+    weather: row.weather,
+    taskIds: row.task_ids,
+    taskNames: row.task_names,
+    media,
+    sealedAt: row.locked_at,
+    chainIndex: row.chain_index,
+    contentHash: row.content_hash,
+    retractedAt: row.retracted_at,
+    retractionReason: row.retraction_reason,
+    editableForMinutes: row.editable_minutes === null ? null : Number(row.editable_minutes),
+    createdAt: row.created_at,
+    canEdit: row.can_edit
+  };
+}
+function toMedia(row) {
+  return {
+    id: row.id,
+    storagePath: row.storage_path,
+    mime: row.mime,
+    bytes: row.bytes,
+    sha256: row.sha256,
+    exifTakenAt: row.exif_taken_at,
+    exifLat: row.exif_lat === null ? null : Number(row.exif_lat),
+    exifLon: row.exif_lon === null ? null : Number(row.exif_lon),
+    capturedAt: row.captured_at,
+    statedDate: row.stated_date,
+    taskId: row.task_id,
+    taskName: row.task_name,
+    photoPromptKey: row.photo_prompt_key,
+    caption: row.caption,
+    createdAt: row.created_at
+  };
+}
+async function loadMediaByEntry(tx, projectId, entryIds) {
+  const gruppiert = /* @__PURE__ */ new Map();
+  if (entryIds.length === 0) return gruppiert;
+  const result = await tx.query(
+    `select m.*, t.name as task_name
+       from media m
+       left join task t on t.id = m.task_id
+      where m.project_id = $1 and m.diary_entry_id = any($2::uuid[])
+      order by m.created_at`,
+    [projectId, entryIds]
+  );
+  for (const row of result.rows) {
+    const liste = gruppiert.get(row.diary_entry_id) ?? [];
+    liste.push(toMedia(row));
+    gruppiert.set(row.diary_entry_id, liste);
+  }
+  return gruppiert;
+}
+async function listMedia(tx, projectId, limit2 = 300) {
+  const result = await tx.query(
+    `select m.*, t.name as task_name
+       from media m
+       left join task t on t.id = m.task_id
+      where m.project_id = $1
+      order by coalesce(m.captured_at, m.exif_taken_at, m.created_at) desc
+      limit $2`,
+    [projectId, limit2]
+  );
+  return result.rows.map(toMedia);
+}
+async function createDiaryEntry(tx, projectId, request) {
+  const ort = await tx.query(
+    "select lat, lon from project where id = $1",
+    [projectId]
+  );
+  if (ort.rows.length === 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const koordinaten = ort.rows[0];
+  const wetter = request.withWeather && koordinaten.lat !== null && koordinaten.lon !== null ? await fetchWeather({
+    lat: Number(koordinaten.lat),
+    lon: Number(koordinaten.lon),
+    date: request.entryDate
+  }) : null;
+  const eingefuegt = await tx.query(
+    `insert into diary_entry
+         (project_id, entry_date, body, task_ids, weather, author_member_id, author_role)
+       values ($1, $2, $3, $4::uuid[], $5::jsonb, mbl.current_member_id($1), mbl.member_role($1))
+       returning id`,
+    [
+      projectId,
+      request.entryDate,
+      request.body,
+      request.taskIds,
+      wetter === null ? null : JSON.stringify(wetter)
+    ]
+  ).catch(rethrowAsHttp("In deiner Rolle l\xE4sst sich hier kein Eintrag anlegen."));
+  return loadOne(tx, projectId, eingefuegt.rows[0].id);
+}
+async function updateDiaryEntry(tx, projectId, entryId, request) {
+  await tx.query("select mbl.seal_due_diary_entries($1)", [projectId]);
+  const felder = [];
+  const werte = [entryId, projectId];
+  const setze = (spalte, wert, cast = "") => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}${cast}`);
+  };
+  if (request.body !== void 0) setze("body", request.body);
+  if (request.entryDate !== void 0) setze("entry_date", request.entryDate, "::date");
+  if (request.taskIds !== void 0) setze("task_ids", request.taskIds, "::uuid[]");
+  if (request.retract !== void 0) {
+    felder.push("retracted_at = now()");
+    setze("retraction_reason", request.retract);
+  }
+  if (felder.length === 0) return loadOne(tx, projectId, entryId);
+  const result = await tx.query(`update diary_entry set ${felder.join(", ")} where id = $1 and project_id = $2`, werte).catch(
+    rethrowAsHttp(
+      "Dieser Eintrag ist versiegelt. Zur\xFCckziehen kannst du ihn \u2014 er bleibt dann sichtbar und tr\xE4gt deinen Grund."
+    )
+  );
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, {
+      message: "Diesen Eintrag gibt es nicht, oder er stammt von jemand anderem."
+    });
+  }
+  return loadOne(tx, projectId, entryId);
+}
+async function loadOne(tx, projectId, entryId) {
+  const alle = await listDiary(tx, projectId, 500);
+  const eintrag = alle.find((entry) => entry.id === entryId);
+  if (eintrag === void 0) {
+    throw new HTTPException(404, { message: "Diesen Eintrag gibt es nicht." });
+  }
+  return eintrag;
+}
+async function registerMedia(tx, projectId, request) {
+  if (!request.storagePath.startsWith(`${projectId}/`)) {
+    throw new HTTPException(400, {
+      message: "Dieser Ablageweg geh\xF6rt nicht zu diesem Bauvorhaben."
+    });
+  }
+  const eingefuegt = await tx.query(
+    `insert into media (
+         project_id, diary_entry_id, task_id, storage_path, mime, bytes, sha256,
+         exif_taken_at, exif_lat, exif_lon, captured_at, stated_date,
+         photo_prompt_key, caption, uploaded_by_member_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+               mbl.current_member_id($1))
+       -- Dasselbe Foto zweimal ist kein Fehler, sondern eine Warteschlange, die
+       -- nach einem Verbindungsabbruch noch einmal abliefert. Sie darf nicht in
+       -- einer Fehlermeldung enden, und zwei Zeilen f\xFCr ein Bild w\xE4ren in der
+       -- Bauakte eine Doppelung, die niemand erkl\xE4ren kann.
+       on conflict (project_id, sha256) do update
+         set caption          = coalesce(excluded.caption, media.caption),
+             diary_entry_id   = coalesce(media.diary_entry_id, excluded.diary_entry_id),
+             task_id          = coalesce(media.task_id, excluded.task_id),
+             photo_prompt_key = coalesce(media.photo_prompt_key, excluded.photo_prompt_key)
+       returning id`,
+    [
+      projectId,
+      request.diaryEntryId ?? null,
+      request.taskId ?? null,
+      request.storagePath,
+      request.mime,
+      request.bytes,
+      request.sha256,
+      request.exifTakenAt ?? null,
+      request.exifLat ?? null,
+      request.exifLon ?? null,
+      request.capturedAt ?? null,
+      request.statedDate ?? null,
+      request.photoPromptKey ?? null,
+      request.caption ?? null
+    ]
+  ).catch(rethrowAsHttp("In deiner Rolle l\xE4sst sich hier kein Foto ablegen."));
+  const result = await tx.query(
+    `select m.*, t.name as task_name
+       from media m left join task t on t.id = m.task_id
+      where m.id = $1`,
+    [eingefuegt.rows[0].id]
+  );
+  return toMedia(result.rows[0]);
+}
+async function listPhotoPrompts(tx, projectId, on) {
+  const result = await tx.query(
+    `select t.id as task_id, t.name as task_name, t.current_start as task_start,
+            c.photo_prompts as prompts,
+            (t.current_start is not null
+             and t.current_start <= ($2::date + $3::int)
+             and coalesce(t.current_end, t.current_start) >= $2::date - 30) as urgent
+       from task t
+       join guide_card c on c.id = t.guide_card_id
+      where t.project_id = $1
+        and jsonb_array_length(c.photo_prompts) > 0
+        and t.status <> 'entfallen'
+        -- Was lange vorbei ist, ist nicht mehr fotografierbar. Eine Liste, die
+        -- alles beh\xE4lt, ist nach einem halben Jahr niemandes Arbeitsvorrat mehr.
+        and coalesce(t.current_end, t.current_start) >= $2::date - 60
+      order by t.current_start nulls last, t.sort_order`,
+    [projectId, on, DRINGEND_TAGE]
+  );
+  const erfuellt = await tx.query(
+    `select task_id, photo_prompt_key, count(*)::text as anzahl
+       from media
+      where project_id = $1 and photo_prompt_key is not null and task_id is not null
+      group by task_id, photo_prompt_key`,
+    [projectId]
+  );
+  const zaehler = new Map(
+    erfuellt.rows.map((row) => [`${row.task_id}|${row.photo_prompt_key}`, Number(row.anzahl)])
+  );
+  return result.rows.flatMap(
+    (row) => row.prompts.map((prompt) => ({
+      taskId: row.task_id,
+      taskName: row.task_name,
+      taskStart: row.task_start,
+      key: prompt.key,
+      what: prompt.what,
+      why: prompt.why,
+      fulfilledBy: zaehler.get(`${row.task_id}|${prompt.key}`) ?? 0,
+      urgent: row.urgent
+    }))
+  );
+}
+async function checkDiaryChain(tx, projectId) {
+  await tx.query("select mbl.seal_due_diary_entries($1)", [projectId]);
+  const pruefung = await tx.query("select * from mbl.verify_diary_chain($1)", [projectId]);
+  const zahlen = await tx.query(
+    `select count(*) filter (where locked_at is not null)::text as sealed,
+            count(*) filter (where locked_at is null)::text     as open,
+            (select diary_head_hash from project where id = $1) as head
+       from diary_entry where project_id = $1`,
+    [projectId]
+  );
+  const brueche = pruefung.rows.filter((row) => !row.ok);
+  return {
+    headHash: zahlen.rows[0]?.head ?? null,
+    sealedCount: Number(zahlen.rows[0]?.sealed ?? 0),
+    openCount: Number(zahlen.rows[0]?.open ?? 0),
+    intact: brueche.length === 0,
+    breaks: brueche.map((row) => ({
+      chainIndex: row.chain_index,
+      entryId: row.entry_id,
+      entryDate: row.entry_date,
+      reason: row.reason ?? "Unbekannter Grund."
+    }))
+  };
+}
+function rethrowAsHttp(message2) {
+  return (cause) => {
+    const code = cause?.code;
+    if (code === "42501") throw new HTTPException(403, { message: message2 });
+    if (code === "23514" && String(cause.message).includes("policy")) {
+      throw new HTTPException(403, { message: message2 });
+    }
+    throw cause;
+  };
+}
+
+// src/dossier.ts
+var CHANNEL_LABEL = {
+  app: "in der Anwendung",
+  guest_link: "\xFCber den Abstimmungslink",
+  import: "importiert",
+  system: "vom System"
+};
+var TASK_STATUS_LABEL = {
+  geplant: "geplant",
+  terminiert: "terminiert",
+  bestaetigt: "best\xE4tigt",
+  laeuft: "l\xE4uft",
+  fertig: "fertig",
+  abgenommen: "abgenommen",
+  verschoben: "verschoben",
+  entfallen: "entfallen"
+};
+var DEFECT_STATUS_LABEL = {
+  offen: "offen",
+  in_bearbeitung: "in Bearbeitung",
+  behoben_gemeldet: "als behoben gemeldet",
+  behoben: "behoben",
+  abgelehnt: "abgelehnt"
+};
+var REASON_LABEL = {
+  witterung: "Witterung",
+  lieferzeit: "Lieferzeit",
+  kapazitaet: "Kapazit\xE4t beim Gewerk",
+  planungsaenderung: "Planungs\xE4nderung",
+  bauherren_entscheidung: "Entscheidung des Bauherrn",
+  vorgewerk_verzug: "Vorgewerk in Verzug",
+  behoerde: "Beh\xF6rde",
+  mangelbeseitigung: "M\xE4ngelbeseitigung",
+  nachtrag: "Nachtrag",
+  sonstiges: "Sonstiges",
+  planinitialisierung: "Plan angelegt"
+};
+function iso(wert) {
+  return wert instanceof Date ? wert.toISOString() : wert;
+}
+function tag2(wert) {
+  return iso(wert).slice(0, 10);
+}
+function datum(wert) {
+  if (wert === null) return "\u2014";
+  const [jahr, monat, tag_] = wert.split("-");
+  return jahr === void 0 || monat === void 0 || tag_ === void 0 ? wert : `${tag_}.${monat}.${jahr}`;
+}
+async function buildDossier(tx, projectId, from, to, computedEnd) {
+  const projekt = await tx.query(
+    `select id, name, address, postal_code, city, federal_state, build_type, contract_type,
+            planned_start, contractual_completion, contract_sum_cents
+       from project where id = $1`,
+    [projectId]
+  );
+  if (projekt.rows.length === 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const kopf = projekt.rows[0];
+  const beteiligte = await tx.query(
+    `select m.display_name, m.company, m.role, tr.name as trade_name, m.email
+       from project_member m
+       left join trade tr on tr.id = m.trade_id
+      where m.project_id = $1 and m.revoked_at is null
+      order by m.role, m.display_name`,
+    [projectId]
+  );
+  const kette = await checkDiaryChain(tx, projectId);
+  const eintraege = [
+    ...await terminEintraege(tx, projectId, from, to),
+    ...await verschiebungen(tx, projectId, from, to),
+    ...await tagebuch(tx, projectId, from, to),
+    ...await maengel(tx, projectId, from, to),
+    ...await zahlungen(tx, projectId, from, to),
+    ...await entscheidungen(tx, projectId, from, to)
+  ].sort((links, rechts) => links.at.localeCompare(rechts.at));
+  const zaehler = { self_stated: 0, counterparty_stated: 0, mutual: 0, disputed: 0 };
+  for (const eintrag of eintraege) {
+    if (eintrag.confirmation !== null) zaehler[eintrag.confirmation] += 1;
+  }
+  return {
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    period: { from, to },
+    project: {
+      id: kopf.id,
+      name: kopf.name,
+      address: kopf.address,
+      postalCode: kopf.postal_code,
+      city: kopf.city,
+      federalState: kopf.federal_state,
+      buildType: kopf.build_type,
+      contractType: kopf.contract_type,
+      plannedStart: kopf.planned_start,
+      contractualCompletion: kopf.contractual_completion,
+      computedEnd,
+      contractSumCents: kopf.contract_sum_cents
+    },
+    members: beteiligte.rows.map((row) => ({
+      displayName: row.display_name,
+      company: row.company,
+      role: row.role,
+      tradeName: row.trade_name,
+      email: row.email
+    })),
+    chain: kette,
+    entries: eintraege,
+    media: await medienImZeitraum(tx, projectId, from, to),
+    confirmationCounts: zaehler
+  };
+}
+async function terminEintraege(tx, projectId, from, to) {
+  const result = await tx.query(
+    `select t.name, t.current_start, t.current_end, t.actual_start, t.actual_end,
+            t.status::text, t.confirmation, t.confirmed_at, cf.display_name as confirmed_by,
+            t.counter_start, t.counter_end, cb.display_name as counter_by, tr.name as trade_name
+       from task t
+       left join trade tr on tr.id = t.trade_id
+       left join project_member cf on cf.id = t.confirmed_by
+       left join project_member cb on cb.id = t.counter_by
+      where t.project_id = $1
+        and t.status <> 'entfallen'
+        and t.current_start is not null
+        and t.current_start <= $3::date
+        and coalesce(t.current_end, t.current_start) >= $2::date
+      order by t.current_start, t.sort_order`,
+    [projectId, from, to]
+  );
+  return result.rows.map((row) => {
+    const teile = [
+      `Geplant ${datum(row.current_start)} bis ${datum(row.current_end ?? row.current_start)}`
+    ];
+    if (row.actual_start !== null) {
+      teile.push(
+        `tats\xE4chlich ab ${datum(row.actual_start)}${row.actual_end === null ? "" : ` bis ${datum(row.actual_end)}`}`
+      );
+    }
+    if (row.confirmation === "mutual" && row.confirmed_at !== null) {
+      teile.push(
+        `abgestimmt am ${datum(tag2(row.confirmed_at))}${row.confirmed_by === null ? "" : ` mit ${row.confirmed_by}`}`
+      );
+    }
+    if (row.confirmation === "disputed" && row.counter_start !== null) {
+      teile.push(
+        `abweichende Angabe ${datum(row.counter_start)} bis ${datum(row.counter_end ?? row.counter_start)}${row.counter_by === null ? "" : ` von ${row.counter_by}`}`
+      );
+    }
+    return {
+      on: row.current_start,
+      // Für die Sortierung: der Beginn des Vorgangs, nicht die Erfassung.
+      at: `${row.current_start}T00:00:00.000Z`,
+      kind: "vorgang",
+      title: row.name,
+      detail: teile.join(" \xB7 "),
+      actor: row.trade_name,
+      actorRole: null,
+      channel: null,
+      confirmation: row.confirmation,
+      hash: null
+    };
+  });
+}
+async function verschiebungen(tx, projectId, from, to) {
+  const result = await tx.query(
+    `select c.created_at, t.name as task_name, c.field, c.old_value, c.new_value,
+            c.reason_code::text, c.reason_text, c.effect_days_on_completion,
+            c.actor_role, c.actor_channel::text, m.display_name as actor_name
+       from schedule_change c
+       join task t on t.id = c.task_id
+       left join project_member m on m.id = c.actor_member_id
+      where c.project_id = $1
+        and c.created_at >= $2::date
+        and c.created_at < ($3::date + 1)
+        and c.field in ('current_start', 'current_end', 'counter_proposal', 'confirmation', 'status')
+        and c.reason_code is distinct from 'planinitialisierung'
+      order by c.created_at`,
+    [projectId, from, to]
+  );
+  return result.rows.map((row) => {
+    const abstimmung = row.field === "confirmation" || row.field === "counter_proposal";
+    const wirkung = row.effect_days_on_completion === null || row.effect_days_on_completion === 0 ? null : `${row.effect_days_on_completion > 0 ? "+" : ""}${row.effect_days_on_completion} Werktage auf den Endtermin`;
+    return {
+      on: tag2(row.created_at),
+      at: iso(row.created_at),
+      kind: abstimmung ? "abstimmung" : "verschiebung",
+      title: row.task_name,
+      detail: [
+        beschreibeAenderung(row.field, row.old_value, row.new_value),
+        row.reason_code === null ? null : REASON_LABEL[row.reason_code] ?? row.reason_code,
+        row.reason_text,
+        wirkung
+      ].filter(Boolean).join(" \xB7 "),
+      actor: row.actor_name,
+      actorRole: row.actor_role,
+      channel: CHANNEL_LABEL[row.actor_channel] ?? row.actor_channel,
+      confirmation: null,
+      hash: null
+    };
+  });
+}
+function beschreibeAenderung(field, alt, neu) {
+  if (field === "counter_proposal") {
+    const wert = neu;
+    return wert?.start == null ? "Abweichende Angabe zur\xFCckgenommen" : `Abweichende Angabe: ${datum(wert.start)} bis ${datum(wert.end ?? wert.start)}`;
+  }
+  if (field === "confirmation") return "Termin beidseitig best\xE4tigt";
+  if (field === "status") {
+    const wort = (wert) => wert === null || wert === void 0 ? "\u2014" : TASK_STATUS_LABEL[String(wert)] ?? String(wert);
+    return `Zustand ${wort(alt)} \u2192 ${wort(neu)}`;
+  }
+  const name = field === "current_start" ? "Beginn" : "Ende";
+  return `${name} ${datum(alt === null ? null : String(alt))} \u2192 ${datum(neu === null ? null : String(neu))}`;
+}
+async function tagebuch(tx, projectId, from, to) {
+  const result = await tx.query(
+    `select e.entry_date, e.created_at, e.body, m.display_name as author, e.author_role,
+            e.content_hash, e.retracted_at, e.retraction_reason, e.weather
+       from diary_entry e
+       left join project_member m on m.id = e.author_member_id
+      where e.project_id = $1 and e.entry_date between $2::date and $3::date
+      order by e.entry_date, e.created_at`,
+    [projectId, from, to]
+  );
+  return result.rows.map((row) => ({
+    on: row.entry_date,
+    at: `${row.entry_date}T12:00:00.000Z`,
+    kind: "tagebuch",
+    title: row.retracted_at === null ? "Tagebuch" : "Tagebuch (zur\xFCckgezogen)",
+    detail: [
+      row.body,
+      row.retraction_reason === null ? null : `Zur\xFCckgezogen: ${row.retraction_reason}`,
+      row.weather?.temperatureMinC == null ? null : `${Math.round(row.weather.temperatureMinC)} bis ${Math.round(row.weather.temperatureMaxC ?? row.weather.temperatureMinC)} \xB0C`
+    ].filter(Boolean).join(" \xB7 "),
+    actor: row.author,
+    actorRole: row.author_role,
+    channel: null,
+    confirmation: null,
+    hash: row.content_hash
+  }));
+}
+async function maengel(tx, projectId, from, to) {
+  const result = await tx.query(
+    `select d.reported_at, d.title, d.description, d.location_text, d.severity::text,
+            d.status::text, d.deadline, d.resolved_at, m.display_name as reported_by
+       from defect d
+       left join project_member m on m.id = d.reported_by
+      where d.project_id = $1
+        and d.reported_at >= $2::date and d.reported_at < ($3::date + 1)
+      order by d.reported_at`,
+    [projectId, from, to]
+  );
+  return result.rows.map((row) => ({
+    on: tag2(row.reported_at),
+    at: iso(row.reported_at),
+    kind: "mangel",
+    title: `Mangel: ${row.title}`,
+    detail: [
+      row.severity === "wesentlich" ? "wesentlich" : "geringf\xFCgig",
+      row.location_text,
+      row.description,
+      row.deadline === null ? null : `Frist ${datum(row.deadline)}`,
+      row.resolved_at === null ? `Zustand: ${DEFECT_STATUS_LABEL[row.status] ?? row.status}` : `behoben am ${datum(tag2(row.resolved_at))}`
+    ].filter(Boolean).join(" \xB7 "),
+    actor: row.reported_by,
+    actorRole: null,
+    channel: null,
+    confirmation: null,
+    hash: null
+  }));
+}
+async function zahlungen(tx, projectId, from, to) {
+  const result = await tx.query(
+    `select p.name, p.amount_cents, p.status::text, p.released_at,
+            coalesce(rb.display_name, rb.email) as released_by,
+            p.withheld_cents, p.withheld_reason, p.paid_at
+       from payment_milestone p
+       left join project_member rb on rb.id = p.released_by
+      where p.project_id = $1
+        and p.released_at is not null
+        and p.released_at >= $2::date and p.released_at < ($3::date + 1)
+      order by p.released_at`,
+    [projectId, from, to]
+  );
+  return result.rows.map((row) => ({
+    on: tag2(row.released_at),
+    at: iso(row.released_at),
+    kind: "zahlung",
+    title: `${row.name} freigegeben`,
+    detail: [
+      `${(row.amount_cents / 100).toFixed(2)} \u20AC`,
+      row.withheld_cents > 0 ? `davon ${(row.withheld_cents / 100).toFixed(2)} \u20AC einbehalten${row.withheld_reason === null ? "" : `: ${row.withheld_reason}`}` : null,
+      row.paid_at === null ? null : `bezahlt am ${datum(row.paid_at)}`
+    ].filter(Boolean).join(" \xB7 "),
+    actor: row.released_by,
+    actorRole: null,
+    channel: null,
+    confirmation: null,
+    hash: null
+  }));
+}
+async function entscheidungen(tx, projectId, from, to) {
+  const result = await tx.query(
+    `select title, decided_at, decided_note, status::text
+       from decision
+      where project_id = $1
+        and decided_at is not null
+        and decided_at >= $2::date and decided_at < ($3::date + 1)
+      order by decided_at`,
+    [projectId, from, to]
+  );
+  return result.rows.map((row) => ({
+    on: tag2(row.decided_at),
+    at: iso(row.decided_at),
+    kind: "entscheidung",
+    title: `Entschieden: ${row.title}`,
+    detail: row.decided_note,
+    actor: null,
+    actorRole: null,
+    channel: null,
+    confirmation: null,
+    hash: null
+  }));
+}
+async function medienImZeitraum(tx, projectId, from, to) {
+  const result = await tx.query(
+    `select m.id, m.storage_path, m.mime, m.bytes, m.sha256, m.exif_taken_at, m.exif_lat,
+            m.exif_lon, m.captured_at, m.stated_date, m.task_id, t.name as task_name,
+            m.photo_prompt_key, m.caption, m.created_at
+       from media m
+       left join task t on t.id = m.task_id
+      where m.project_id = $1
+        and coalesce(m.stated_date, m.captured_at::date, m.created_at::date)
+              between $2::date and $3::date
+      order by coalesce(m.captured_at, m.exif_taken_at, m.created_at)`,
+    [projectId, from, to]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    storagePath: row.storage_path,
+    mime: row.mime,
+    bytes: row.bytes,
+    sha256: row.sha256,
+    exifTakenAt: row.exif_taken_at === null ? null : iso(row.exif_taken_at),
+    exifLat: row.exif_lat === null ? null : Number(row.exif_lat),
+    exifLon: row.exif_lon === null ? null : Number(row.exif_lon),
+    capturedAt: row.captured_at === null ? null : iso(row.captured_at),
+    statedDate: row.stated_date,
+    taskId: row.task_id,
+    taskName: row.task_name,
+    photoPromptKey: row.photo_prompt_key,
+    caption: row.caption,
+    createdAt: iso(row.created_at)
+  }));
+}
+async function exportProject(tx, projectId) {
+  const tabellen = [
+    "project",
+    "project_member",
+    "task",
+    "dependency",
+    "schedule_change",
+    "decision",
+    "diary_entry",
+    "media",
+    "checklist_item",
+    "guide_card_read",
+    "guest_token",
+    "defect",
+    "change_order",
+    "payment_milestone",
+    "financing",
+    "loan_drawdown",
+    "contract_check",
+    "audit_log"
+  ];
+  const inhalt = {
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    note: "Vollst\xE4ndiger Datenexport nach Abschnitt 6.5. Enth\xE4lt alles, was zu diesem Bauvorhaben gespeichert ist \u2014 auch Felder, die keine Ansicht zeigt. Der Klartext von Gast-Links steht nicht darin; er existiert nirgends mehr."
+  };
+  for (const tabelle of tabellen) {
+    const spalte = tabelle === "project" ? "id" : "project_id";
+    const result = await tx.query(
+      `select * from ${tabelle} where ${spalte} = $1`,
+      [projectId]
+    );
+    inhalt[tabelle] = result.rows;
+  }
+  return inhalt;
+}
+
 // src/contract-rules.ts
 function euro(cents) {
   return `${new Intl.NumberFormat("de-DE").format(Math.round(cents / 100))} \u20AC`;
@@ -30756,359 +31560,6 @@ async function updateDecision(tx, projectId, decisionId, change) {
     [decisionId]
   );
   return toDecision(geladen.rows[0]);
-}
-
-// src/weather.ts
-var STANDARD_URL = "https://api.brightsky.dev";
-var ZEITGRENZE_MS = 5e3;
-function weatherApiUrl() {
-  const roh = process.env["WEATHER_API_URL"];
-  if (roh === void 0) return STANDARD_URL;
-  const gekuerzt = roh.trim().replace(/\/+$/, "");
-  return gekuerzt === "" ? null : gekuerzt;
-}
-var zwischenspeicher = /* @__PURE__ */ new Map();
-async function fetchWeather(suche, fetchImpl = fetch) {
-  const basis = weatherApiUrl();
-  if (basis === null) return null;
-  const schluessel = `${suche.lat.toFixed(3)}|${suche.lon.toFixed(3)}|${suche.date}`;
-  const bekannt = zwischenspeicher.get(schluessel);
-  if (bekannt !== void 0) return bekannt;
-  const adresse = `${basis}/weather?lat=${suche.lat}&lon=${suche.lon}&date=${suche.date}&last_date=${suche.date}&tz=Europe/Berlin`;
-  let beobachtung = null;
-  try {
-    const antwort = await fetchImpl(adresse, {
-      signal: AbortSignal.timeout(ZEITGRENZE_MS),
-      headers: { accept: "application/json" }
-    });
-    if (antwort.ok) {
-      beobachtung = summarise(await antwort.json(), suche.date);
-    }
-  } catch (error) {
-    console.warn("Wetter nicht abrufbar:", error instanceof Error ? error.message : error);
-  }
-  zwischenspeicher.set(schluessel, beobachtung);
-  return beobachtung;
-}
-function summarise(antwort, date) {
-  const stunden = antwort.weather ?? [];
-  if (stunden.length === 0) return null;
-  const quelle = antwort.sources?.[0];
-  const temperaturen = stunden.map((stunde) => stunde.temperature).filter((wert) => typeof wert === "number");
-  const niederschlag = stunden.map((stunde) => stunde.precipitation).filter((wert) => typeof wert === "number");
-  const boeen = stunden.map((stunde) => stunde.wind_gust_speed).filter((wert) => typeof wert === "number");
-  return {
-    date,
-    stationId: quelle?.dwd_station_id ?? quelle?.wmo_station_id ?? null,
-    stationName: quelle?.station_name ?? null,
-    distanceMeters: typeof quelle?.distance === "number" ? Math.round(quelle.distance) : null,
-    temperatureMinC: temperaturen.length === 0 ? null : round1(Math.min(...temperaturen)),
-    temperatureMaxC: temperaturen.length === 0 ? null : round1(Math.max(...temperaturen)),
-    precipitationMm: niederschlag.length === 0 ? null : round1(niederschlag.reduce((summe, wert) => summe + wert, 0)),
-    windGustKmh: boeen.length === 0 ? null : round1(Math.max(...boeen)),
-    condition: dominantCondition(stunden.map((stunde) => stunde.condition ?? null)),
-    source: "DWD Open Data \xFCber Brightsky"
-  };
-}
-function dominantCondition(werte) {
-  const rang = ["thunderstorm", "hail", "snow", "sleet", "rain", "fog", "dry"];
-  for (const lage of rang) {
-    if (werte.includes(lage)) return lage;
-  }
-  return null;
-}
-function round1(wert) {
-  return Math.round(wert * 10) / 10;
-}
-
-// src/diary.ts
-var DRINGEND_TAGE = 7;
-async function listDiary(tx, projectId, limit2 = 100) {
-  await tx.query("select mbl.seal_due_diary_entries($1)", [projectId]);
-  const result = await tx.query(
-    `select e.id, e.entry_date, e.body, m.display_name as author_name, e.author_role,
-            e.weather, e.task_ids, e.locked_at, e.chain_index, e.content_hash,
-            e.retracted_at, e.retraction_reason, e.created_at,
-            coalesce((
-              select array_agg(t.name order by t.sort_order, t.name)
-                from task t where t.id = any(e.task_ids)
-            ), '{}') as task_names,
-            case when e.locked_at is not null then null else greatest(0, ceil(
-              extract(epoch from (e.created_at + interval '24 hours' - now())) / 60
-            ))::text end as editable_minutes,
-            (e.locked_at is null
-             and e.author_member_id = mbl.current_member_id(e.project_id)) as can_edit
-       from diary_entry e
-       left join project_member m on m.id = e.author_member_id
-      where e.project_id = $1
-      order by e.entry_date desc, e.created_at desc
-      limit $2`,
-    [projectId, limit2]
-  );
-  const media = await loadMediaByEntry(
-    tx,
-    projectId,
-    result.rows.map((row) => row.id)
-  );
-  return result.rows.map((row) => toDiaryEntry(row, media.get(row.id) ?? []));
-}
-function toDiaryEntry(row, media) {
-  return {
-    id: row.id,
-    entryDate: row.entry_date,
-    body: row.body,
-    authorName: row.author_name,
-    authorRole: row.author_role,
-    weather: row.weather,
-    taskIds: row.task_ids,
-    taskNames: row.task_names,
-    media,
-    sealedAt: row.locked_at,
-    chainIndex: row.chain_index,
-    contentHash: row.content_hash,
-    retractedAt: row.retracted_at,
-    retractionReason: row.retraction_reason,
-    editableForMinutes: row.editable_minutes === null ? null : Number(row.editable_minutes),
-    createdAt: row.created_at,
-    canEdit: row.can_edit
-  };
-}
-function toMedia(row) {
-  return {
-    id: row.id,
-    storagePath: row.storage_path,
-    mime: row.mime,
-    bytes: row.bytes,
-    sha256: row.sha256,
-    exifTakenAt: row.exif_taken_at,
-    exifLat: row.exif_lat === null ? null : Number(row.exif_lat),
-    exifLon: row.exif_lon === null ? null : Number(row.exif_lon),
-    capturedAt: row.captured_at,
-    statedDate: row.stated_date,
-    taskId: row.task_id,
-    taskName: row.task_name,
-    photoPromptKey: row.photo_prompt_key,
-    caption: row.caption,
-    createdAt: row.created_at
-  };
-}
-async function loadMediaByEntry(tx, projectId, entryIds) {
-  const gruppiert = /* @__PURE__ */ new Map();
-  if (entryIds.length === 0) return gruppiert;
-  const result = await tx.query(
-    `select m.*, t.name as task_name
-       from media m
-       left join task t on t.id = m.task_id
-      where m.project_id = $1 and m.diary_entry_id = any($2::uuid[])
-      order by m.created_at`,
-    [projectId, entryIds]
-  );
-  for (const row of result.rows) {
-    const liste = gruppiert.get(row.diary_entry_id) ?? [];
-    liste.push(toMedia(row));
-    gruppiert.set(row.diary_entry_id, liste);
-  }
-  return gruppiert;
-}
-async function listMedia(tx, projectId, limit2 = 300) {
-  const result = await tx.query(
-    `select m.*, t.name as task_name
-       from media m
-       left join task t on t.id = m.task_id
-      where m.project_id = $1
-      order by coalesce(m.captured_at, m.exif_taken_at, m.created_at) desc
-      limit $2`,
-    [projectId, limit2]
-  );
-  return result.rows.map(toMedia);
-}
-async function createDiaryEntry(tx, projectId, request) {
-  const ort = await tx.query(
-    "select lat, lon from project where id = $1",
-    [projectId]
-  );
-  if (ort.rows.length === 0) {
-    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
-  }
-  const koordinaten = ort.rows[0];
-  const wetter = request.withWeather && koordinaten.lat !== null && koordinaten.lon !== null ? await fetchWeather({
-    lat: Number(koordinaten.lat),
-    lon: Number(koordinaten.lon),
-    date: request.entryDate
-  }) : null;
-  const eingefuegt = await tx.query(
-    `insert into diary_entry
-         (project_id, entry_date, body, task_ids, weather, author_member_id, author_role)
-       values ($1, $2, $3, $4::uuid[], $5::jsonb, mbl.current_member_id($1), mbl.member_role($1))
-       returning id`,
-    [
-      projectId,
-      request.entryDate,
-      request.body,
-      request.taskIds,
-      wetter === null ? null : JSON.stringify(wetter)
-    ]
-  ).catch(rethrowAsHttp("In deiner Rolle l\xE4sst sich hier kein Eintrag anlegen."));
-  return loadOne(tx, projectId, eingefuegt.rows[0].id);
-}
-async function updateDiaryEntry(tx, projectId, entryId, request) {
-  await tx.query("select mbl.seal_due_diary_entries($1)", [projectId]);
-  const felder = [];
-  const werte = [entryId, projectId];
-  const setze = (spalte, wert, cast = "") => {
-    werte.push(wert);
-    felder.push(`${spalte} = $${werte.length}${cast}`);
-  };
-  if (request.body !== void 0) setze("body", request.body);
-  if (request.entryDate !== void 0) setze("entry_date", request.entryDate, "::date");
-  if (request.taskIds !== void 0) setze("task_ids", request.taskIds, "::uuid[]");
-  if (request.retract !== void 0) {
-    felder.push("retracted_at = now()");
-    setze("retraction_reason", request.retract);
-  }
-  if (felder.length === 0) return loadOne(tx, projectId, entryId);
-  const result = await tx.query(`update diary_entry set ${felder.join(", ")} where id = $1 and project_id = $2`, werte).catch(
-    rethrowAsHttp(
-      "Dieser Eintrag ist versiegelt. Zur\xFCckziehen kannst du ihn \u2014 er bleibt dann sichtbar und tr\xE4gt deinen Grund."
-    )
-  );
-  if (result.rowCount === 0) {
-    throw new HTTPException(404, {
-      message: "Diesen Eintrag gibt es nicht, oder er stammt von jemand anderem."
-    });
-  }
-  return loadOne(tx, projectId, entryId);
-}
-async function loadOne(tx, projectId, entryId) {
-  const alle = await listDiary(tx, projectId, 500);
-  const eintrag = alle.find((entry) => entry.id === entryId);
-  if (eintrag === void 0) {
-    throw new HTTPException(404, { message: "Diesen Eintrag gibt es nicht." });
-  }
-  return eintrag;
-}
-async function registerMedia(tx, projectId, request) {
-  if (!request.storagePath.startsWith(`${projectId}/`)) {
-    throw new HTTPException(400, {
-      message: "Dieser Ablageweg geh\xF6rt nicht zu diesem Bauvorhaben."
-    });
-  }
-  const eingefuegt = await tx.query(
-    `insert into media (
-         project_id, diary_entry_id, task_id, storage_path, mime, bytes, sha256,
-         exif_taken_at, exif_lat, exif_lon, captured_at, stated_date,
-         photo_prompt_key, caption, uploaded_by_member_id)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               mbl.current_member_id($1))
-       -- Dasselbe Foto zweimal ist kein Fehler, sondern eine Warteschlange, die
-       -- nach einem Verbindungsabbruch noch einmal abliefert. Sie darf nicht in
-       -- einer Fehlermeldung enden, und zwei Zeilen f\xFCr ein Bild w\xE4ren in der
-       -- Bauakte eine Doppelung, die niemand erkl\xE4ren kann.
-       on conflict (project_id, sha256) do update
-         set caption          = coalesce(excluded.caption, media.caption),
-             diary_entry_id   = coalesce(media.diary_entry_id, excluded.diary_entry_id),
-             task_id          = coalesce(media.task_id, excluded.task_id),
-             photo_prompt_key = coalesce(media.photo_prompt_key, excluded.photo_prompt_key)
-       returning id`,
-    [
-      projectId,
-      request.diaryEntryId ?? null,
-      request.taskId ?? null,
-      request.storagePath,
-      request.mime,
-      request.bytes,
-      request.sha256,
-      request.exifTakenAt ?? null,
-      request.exifLat ?? null,
-      request.exifLon ?? null,
-      request.capturedAt ?? null,
-      request.statedDate ?? null,
-      request.photoPromptKey ?? null,
-      request.caption ?? null
-    ]
-  ).catch(rethrowAsHttp("In deiner Rolle l\xE4sst sich hier kein Foto ablegen."));
-  const result = await tx.query(
-    `select m.*, t.name as task_name
-       from media m left join task t on t.id = m.task_id
-      where m.id = $1`,
-    [eingefuegt.rows[0].id]
-  );
-  return toMedia(result.rows[0]);
-}
-async function listPhotoPrompts(tx, projectId, on) {
-  const result = await tx.query(
-    `select t.id as task_id, t.name as task_name, t.current_start as task_start,
-            c.photo_prompts as prompts,
-            (t.current_start is not null
-             and t.current_start <= ($2::date + $3::int)
-             and coalesce(t.current_end, t.current_start) >= $2::date - 30) as urgent
-       from task t
-       join guide_card c on c.id = t.guide_card_id
-      where t.project_id = $1
-        and jsonb_array_length(c.photo_prompts) > 0
-        and t.status <> 'entfallen'
-        -- Was lange vorbei ist, ist nicht mehr fotografierbar. Eine Liste, die
-        -- alles beh\xE4lt, ist nach einem halben Jahr niemandes Arbeitsvorrat mehr.
-        and coalesce(t.current_end, t.current_start) >= $2::date - 60
-      order by t.current_start nulls last, t.sort_order`,
-    [projectId, on, DRINGEND_TAGE]
-  );
-  const erfuellt = await tx.query(
-    `select task_id, photo_prompt_key, count(*)::text as anzahl
-       from media
-      where project_id = $1 and photo_prompt_key is not null and task_id is not null
-      group by task_id, photo_prompt_key`,
-    [projectId]
-  );
-  const zaehler = new Map(
-    erfuellt.rows.map((row) => [`${row.task_id}|${row.photo_prompt_key}`, Number(row.anzahl)])
-  );
-  return result.rows.flatMap(
-    (row) => row.prompts.map((prompt) => ({
-      taskId: row.task_id,
-      taskName: row.task_name,
-      taskStart: row.task_start,
-      key: prompt.key,
-      what: prompt.what,
-      why: prompt.why,
-      fulfilledBy: zaehler.get(`${row.task_id}|${prompt.key}`) ?? 0,
-      urgent: row.urgent
-    }))
-  );
-}
-async function checkDiaryChain(tx, projectId) {
-  await tx.query("select mbl.seal_due_diary_entries($1)", [projectId]);
-  const pruefung = await tx.query("select * from mbl.verify_diary_chain($1)", [projectId]);
-  const zahlen = await tx.query(
-    `select count(*) filter (where locked_at is not null)::text as sealed,
-            count(*) filter (where locked_at is null)::text     as open,
-            (select diary_head_hash from project where id = $1) as head
-       from diary_entry where project_id = $1`,
-    [projectId]
-  );
-  const brueche = pruefung.rows.filter((row) => !row.ok);
-  return {
-    headHash: zahlen.rows[0]?.head ?? null,
-    sealedCount: Number(zahlen.rows[0]?.sealed ?? 0),
-    openCount: Number(zahlen.rows[0]?.open ?? 0),
-    intact: brueche.length === 0,
-    breaks: brueche.map((row) => ({
-      chainIndex: row.chain_index,
-      entryId: row.entry_id,
-      entryDate: row.entry_date,
-      reason: row.reason ?? "Unbekannter Grund."
-    }))
-  };
-}
-function rethrowAsHttp(message2) {
-  return (cause) => {
-    const code = cause?.code;
-    if (code === "42501") throw new HTTPException(403, { message: message2 });
-    if (code === "23514" && String(cause.message).includes("policy")) {
-      throw new HTTPException(403, { message: message2 });
-    }
-    throw cause;
-  };
 }
 
 // src/demo.ts
@@ -32025,8 +32476,8 @@ async function buildProposal(tx, projectId, taskId, change) {
     shiftWorkdays: eintrag.shiftWorkdays,
     isCritical: criticalOf.get(eintrag.taskId) ?? false
   });
-  const entscheidungen = await loadDecisionRows(tx, projectId);
-  const decisions = entscheidungen.map((row) => {
+  const entscheidungen2 = await loadDecisionRows(tx, projectId);
+  const decisions = entscheidungen2.map((row) => {
     const nachher = core.after.tasks.get(row.blocks_task_id);
     const neu = nachher === void 0 ? null : decisionDueDate(
       {
@@ -32707,6 +33158,38 @@ function createApp() {
       (tx) => revokeGuestLink(tx, projectId, linkId)
     );
     return c.json({ links });
+  });
+  v1.get("/projects/:id/dossier", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const from = c.req.query("from");
+    const to = c.req.query("to");
+    if (from === void 0 || to === void 0 || !isoDate.safeParse(from).success || !isoDate.safeParse(to).success) {
+      throw new HTTPException(400, { message: "F\xFCr die Akte brauchen wir einen Zeitraum." });
+    }
+    if (to < from) {
+      throw new HTTPException(422, { message: "Das Ende liegt vor dem Anfang." });
+    }
+    const akte = await withUserTx(c.get("claims"), async (tx) => {
+      const plan = await loadSchedule(tx, projectId);
+      return buildDossier(tx, projectId, from, to, plan.computedEnd);
+    });
+    return c.json(akte);
+  });
+  v1.get("/projects/:id/export", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const daten = await withUserTx(c.get("claims"), async (tx) => {
+      const darf = await tx.query(
+        "select mbl.has_perm($1, 'export.run') as darf",
+        [projectId]
+      );
+      if (darf.rows[0]?.darf !== true) {
+        throw new HTTPException(403, {
+          message: "Den vollst\xE4ndigen Export holt sich der Bauherr. Sprich ihn bitte an."
+        });
+      }
+      return exportProject(tx, projectId);
+    });
+    return c.json(daten);
   });
   v1.get("/projects/:id/defects", async (c) => {
     const projectId = parseId(c.req.param("id"));

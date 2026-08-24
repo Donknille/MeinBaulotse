@@ -84,6 +84,26 @@ export const STATUS_LABEL = {
   entfallen: 'Entfallen',
 } as const;
 
+/**
+ * Bauweise und Vertragsart in Worten.
+ *
+ * Ein `verbraucherbauvertrag` ist ein Wert in einer Spalte; „Verbraucherbauvertrag
+ * (§ 650i BGB)" ist eine Angabe in einem Dokument. In der Bauakte steht Letzteres
+ * — sie wird gelesen, nicht abgefragt.
+ */
+export const BUILD_TYPE_LABEL: Record<string, string> = {
+  efh_massiv: 'Einfamilienhaus, massiv gebaut',
+  efh_fertighaus: 'Fertighaus',
+  sanierung: 'Sanierung im Bestand',
+  sonstiges: 'Etwas anderes',
+};
+
+export const CONTRACT_TYPE_LABEL: Record<string, string> = {
+  verbraucherbauvertrag: 'Verbraucherbauvertrag (§ 650i BGB)',
+  einzelgewerke: 'Einzelgewerke, selbst beauftragt',
+  sonstiges: 'Etwas anderes',
+};
+
 export const FEDERAL_STATE_LABEL: Record<string, string> = {
   BW: 'Baden-Württemberg',
   BY: 'Bayern',

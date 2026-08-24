@@ -25,6 +25,7 @@ import type {
   DiaryEntryCreateRequest,
   DiaryEntryDto,
   DiaryEntryUpdateRequest,
+  Dossier,
   GuestLinkCreateRequest,
   GuestLinkCreated,
   GuestLinkSummary,
@@ -350,4 +351,24 @@ export const api = {
     request<{ prompts: PhotoPromptStatus[] }>(
       `/projects/${projectId}/photo-prompts${on === undefined ? '' : `?on=${on}`}`,
     ),
+
+  // -- Bauakte ----------------------------------------------------------------
+  //
+  // Die Akte kommt als Daten, nicht als Dokument. Gesetzt und gedruckt wird sie
+  // im Browser — der Grund steht in `apps/api/src/dossier.ts`: Der Fotoanhang
+  // bräuchte sonst einen Server, der die Bilder lesen kann, und lesen darf sie
+  // nur, wer eine eigene Sitzung hat.
+  //
+  // Der Export ist die zweite Hälfte von Abschnitt 5.6 — die Daten, die man
+  // mitnimmt, wenn man geht. Er kennt bewusst kein Format außer JSON: Ein
+  // Vollexport, den ein Tabellenprogramm öffnen kann, ist ein Vollexport, dem
+  // die Hälfte fehlt.
+
+  dossier: (projectId: string, from: string, to: string) =>
+    request<Dossier>(
+      `/projects/${projectId}/dossier?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+
+  exportProject: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/export`),
 };

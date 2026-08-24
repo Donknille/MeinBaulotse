@@ -11,6 +11,7 @@ import { Capture } from './routes/Capture';
 import { Contract } from './routes/Contract';
 import { Defects } from './routes/Defects';
 import { Diary } from './routes/Diary';
+import { Dossier } from './routes/Dossier';
 import { Guest } from './routes/Guest';
 import { GuestLinks } from './routes/GuestLinks';
 import { Onboarding } from './routes/Onboarding';
@@ -107,6 +108,10 @@ export function App() {
               <Route path="/projekt/:projectId/lotse" element={<Assistant />} />
               <Route path="/projekt/:projectId/maengel" element={<Defects />} />
               <Route path="/projekt/:projectId/vertrag" element={<Contract />} />
+              {/* Die Bauakte ist bewusst eine eigene Adresse und keine
+                  Schaltfläche in der Planansicht: Sie ist ein Dokument, das
+                  man teilt und wiederfindet — auch aus einem Lesezeichen. */}
+              <Route path="/projekt/:projectId/bauakte" element={<Dossier />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}

@@ -1393,3 +1393,101 @@ export function suggestedEscalation(
   // verstreicht, ist keine Frist.
   return daysBetween(deadline, today) > 14 ? 3 : 2;
 }
+
+// -- Bauakte -----------------------------------------------------------------
+//
+// Abschnitt 5.6. Im Produkt heißt sie **Bauakte**, nicht Beweisakte: „Der
+// Nutzer soll sie anlegen, weil sie ordentlich ist, nicht weil er Streit
+// erwartet."
+//
+// Der Inhalt ist trotzdem für den Streitfall gebaut. Was ihn trägt, ist nicht
+// die Vollständigkeit, sondern die Unterscheidbarkeit: Eine Chronik, in der
+// abgestimmte und einseitige Angaben gleich aussehen, beweist nichts.
+
+export const dossierEntryKind = z.enum([
+  'vorgang',
+  'verschiebung',
+  'abstimmung',
+  'tagebuch',
+  'mangel',
+  'zahlung',
+  'entscheidung',
+]);
+export type DossierEntryKind = z.infer<typeof dossierEntryKind>;
+
+export const dossierEntry = z.object({
+  /** Der Tag, an dem es passiert ist — nicht der, an dem es erfasst wurde. */
+  on: isoDate,
+  at: z.string(),
+  kind: dossierEntryKind,
+  title: z.string(),
+  detail: z.string().nullable(),
+  actor: z.string().nullable(),
+  actorRole: memberRole.nullable(),
+  /** app | guest_link | import | system — wie die Angabe hereinkam. */
+  channel: z.string().nullable(),
+  /** Nur bei Terminangaben gesetzt. Trägt die optische Unterscheidung. */
+  confirmation: confirmationLevel.nullable(),
+  /** Prüfsumme, wo es eine gibt — beim Tagebuch. */
+  hash: z.string().nullable(),
+});
+export type DossierEntry = z.infer<typeof dossierEntry>;
+
+export const dossierMember = z.object({
+  displayName: z.string().nullable(),
+  company: z.string().nullable(),
+  role: memberRole,
+  tradeName: z.string().nullable(),
+  email: z.string().nullable(),
+});
+
+export const dossier = z.object({
+  generatedAt: z.string(),
+  period: z.object({ from: isoDate, to: isoDate }),
+  project: z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    address: z.string().nullable(),
+    postalCode: z.string().nullable(),
+    city: z.string().nullable(),
+    federalState,
+    buildType,
+    contractType,
+    plannedStart: isoDate,
+    contractualCompletion: isoDate.nullable(),
+    computedEnd: isoDate.nullable(),
+    contractSumCents: z.number().int().nullable(),
+  }),
+  members: z.array(dossierMember),
+  /** Die Prüfsumme der Tagebuchkette, für das Deckblatt (Abschnitt 5.6). */
+  chain: diaryChainCheck,
+  entries: z.array(dossierEntry),
+  media: z.array(mediaDto),
+  /** Wie viele Angaben welchen Bestätigungsgrad tragen — die Kurzfassung. */
+  confirmationCounts: z.object({
+    self_stated: z.number().int(),
+    counterparty_stated: z.number().int(),
+    mutual: z.number().int(),
+    disputed: z.number().int(),
+  }),
+});
+export type Dossier = z.infer<typeof dossier>;
+
+/**
+ * Wie ein Bestätigungsgrad in der Akte aussieht.
+ *
+ * Die Abnahme von AP 9 verlangt, dass abgestimmte, einseitige und
+ * widersprüchliche Angaben **optisch unterscheidbar** sind. Auf Papier heißt
+ * das: nicht über Farbe. Ein ausgedrucktes PDF ist oft schwarzweiß, und eine
+ * Unterscheidung, die den Weg durch einen Bürodrucker nicht übersteht, ist im
+ * Streitfall keine.
+ *
+ * Deshalb drei Ebenen, die alle drei ohne Farbe funktionieren: ein Zeichen, ein
+ * Wort und die Rahmenstärke.
+ */
+export const CONFIRMATION_MARK: Record<z.infer<typeof confirmationLevel>, string> = {
+  self_stated: '○',
+  counterparty_stated: '◐',
+  mutual: '●',
+  disputed: '⚠',
+};

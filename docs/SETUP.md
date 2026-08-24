@@ -121,6 +121,23 @@ Die zweite Abfrage ist die wichtigere. Die Zählung oben stimmt auch dann, wenn
 `0002_rls.sql` nur zur Hälfte durchgelaufen ist — dann stehen die Stammdaten
 da, aber die Rechte fehlen.
 
+#### Der Fotospeicher
+
+Um den musst du dich nicht kümmern: `0011_storage.sql` legt den Eimer
+`baustellenfotos` an und hängt die Regeln daran. Er ist **nicht öffentlich** —
+der Browser holt jedes Bild mit einer kurzlebigen signierten Adresse, und wer
+darf, entscheidet dieselbe Rechtematrix wie überall. Zur Kontrolle:
+
+```sql
+select id, public from storage.buckets where id = 'baustellenfotos';  -- f
+select count(*) from pg_policies
+ where schemaname = 'storage' and tablename = 'objects'
+   and policyname like 'baustellenfotos%';                           -- 3
+```
+
+Fotos gehen nie durch den Anwendungsserver: Der Browser lädt sie direkt in den
+Eimer und meldet der API nur, wo sie liegen und welche Prüfsumme sie haben.
+
 > **Die Supabase-CLI trägt hier derzeit nicht.** `supabase db push` erwartet
 > Migrationsdateien im Format `YYYYMMDDHHMMSS_name.sql` und verfolgt sie über
 > genau diesen Zeitstempel in `supabase_migrations.schema_migrations`. Unsere
