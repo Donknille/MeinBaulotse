@@ -16,6 +16,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `apps/web` | Vite + React, installierbare PWA |
 | `content/lotsenkarten` | Redaktionsinhalt der Wissensschicht als Markdown. Erstbefüllung, siehe README dort |
 | `apps/web/src/lib/queue.ts` | Offline-Warteschlange der Erfassung. IndexedDB, jeder Schritt wiederholbar |
+| `apps/web/src/routes/Guest.tsx` | Abstimmung ohne Konto. Steht außerhalb der Anmeldeprüfung |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
 
@@ -63,9 +64,21 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Ein Foto danach zu tauschen bricht die Kette; deshalb weist ein Trigger es
    schon vorher ab.
 
-7. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
+7. **Ein Gast ist ein Mitglied mit anderem Türschlüssel.** Es gibt keinen
+   zweiten Rechteweg: `withGuestTx` hinterlegt den Hash des Tokens,
+   `mbl.current_member_id` löst daraus die Mitgliedschaft auf, und ab da gilt
+   jede Policy unverändert. Zusätzlich verengen die Scopes aus Abschnitt 2.3
+   die Rechte seiner Rolle — `mbl.has_perm` bildet den **Schnitt**, nie die
+   Vereinigung.
+
+   Der Token steht im **Fragment** des Links (`…/abstimmung#<token>`) und im
+   Anfragekörper, niemals im Pfad: Fragmente sendet kein Browser an einen
+   Server, und ein Token in der Adresse landet in jedem Zugriffsprotokoll.
+   Gespeichert wird nur sein sha256.
+
+8. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
-8. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
+9. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
    entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und der
    Vite-Proxy schneidet nichts ab. **Fünf** Stellen halten das zusammen:
    `apps/api/src/app.ts` (`basePath`), `apps/web/vite.config.ts` (Proxy ohne
@@ -76,14 +89,14 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Die fünfte ist die unauffälligste und hat am längsten gekostet: Ohne die
    Ausnahme beantwortet der Service Worker **jede** Navigation aus dem
    Zwischenspeicher, auch `/api/health` in der Adresszeile. Die Gegenprobe aus
-   Regel 9 ist dann ausgerechnet dort blind, wo man sie braucht.
+   Regel 10 ist dann ausgerechnet dort blind, wo man sie braucht.
 
    Und `registerType` gehört auf `autoUpdate`. Mit `prompt` wartet der neue
    Service Worker, bis ihn jemand freischaltet — solange kein Modul
    `virtual:pwa-register` importiert, gibt es dieses „jemand" nicht, und
    Auslieferungen erreichen niemanden, während die CI grün meldet.
 
-9. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
+10. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
    macht aus `apps/api/src/vercel.ts` die eingecheckte Datei `api/index.js`,
    die außer Node-Bausteinen nichts mehr importiert. Nach jeder Änderung an
    der API neu erzeugen; die CI prüft es.
@@ -107,7 +120,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Schema passt zur ausgelieferten Fassung. Ohne den zweiten sieht eine
    fehlende Verbindung aus wie eine leere Datenlage.
 
-10. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
+11. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
    Sonst geht eine Auslieferung live, bevor die Migration eingespielt ist, und
    jede betroffene Ansicht endet in `column … does not exist` — während
    `/api/health/db` fröhlich `ok` meldet, denn die Verbindung stand ja. Genau

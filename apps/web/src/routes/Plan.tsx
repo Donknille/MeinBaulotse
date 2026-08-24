@@ -53,6 +53,14 @@ export function Plan() {
     },
   });
 
+  // Zwei Angaben auflösen. Die Antwort ist der neu gerechnete Plan: Den
+  // anderen Termin zu übernehmen ist eine Verschiebung, und die zieht nach.
+  const dispute = useMutation({
+    mutationFn: ({ taskId, accept }: { taskId: string; accept: boolean }) =>
+      api.resolveDispute(projectId!, taskId, accept),
+    onSuccess: (schedule) => queryClient.setQueryData(['schedule', projectId], schedule),
+  });
+
   // Die Antwort ist die geänderte Entscheidung, nicht der Plan: Ein
   // Zustandswechsel verschiebt keinen Termin. Sie wird in den vorhandenen Plan
   // eingesetzt, damit die Ansicht nicht flackert.
@@ -140,6 +148,9 @@ export function Plan() {
           onPreviewShift={(taskId, body) => api.shiftPreview(projectId!, taskId, body)}
           onChangeDecision={async (decisionId, body) => {
             await changeDecision.mutateAsync({ decisionId, body });
+          }}
+          onResolveDispute={async (taskId, accept) => {
+            await dispute.mutateAsync({ taskId, accept });
           }}
         />
       )}

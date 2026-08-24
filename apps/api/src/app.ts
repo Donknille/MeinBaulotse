@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { describeConnection, withUserTx } from '@meinbaulotse/db';
+import { describeConnection, withGuestTx, withUserTx } from '@meinbaulotse/db';
 import {
   workdayDifference,
   workdayOffset,
@@ -21,6 +21,11 @@ import {
   decisionUpdateRequest,
   diaryEntryCreateRequest,
   diaryEntryUpdateRequest,
+  guestConfirmRequest,
+  guestCounterRequest,
+  guestLinkCreateRequest,
+  guestOpenRequest,
+  guestProgressRequest,
   guideCardFeedbackRequest,
   mediaRegisterRequest,
   onboardingRequest,
@@ -44,6 +49,21 @@ import {
 } from './diary.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { loadGuideCardView, markGuideCardRead, setChecklistItem } from './guide-cards.js';
+import {
+  confirmAccepted,
+  confirmTask,
+  counterProposeTask,
+  createGuestLink,
+  hashGuestToken,
+  introduceGuest,
+  listGuestLinks,
+  loadGuestView,
+  openGuestSession,
+  reportProgress,
+  resolveDispute,
+  revokeGuestLink,
+  traceHash,
+} from './guest.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { recomputeProject } from './scheduling.js';
 import { applyDecoupling, buildProposal, stampChangeEffect } from './shifting.js';
@@ -180,6 +200,18 @@ export function createApp(): Hono<App> {
     console.info('Testzugang aktiv: POST /api/demo/session');
     app.route('/demo', demoRoutes(demoKey));
   }
+
+  // -- Abstimmung ohne Konto -------------------------------------------------
+  //
+  // Diese Routen stehen **vor** `requireAuth` und außerhalb von `/v1`, weil
+  // sie keine Anmeldung kennen. Der Ausweis ist der Token im Anfragekörper;
+  // die Rechteprüfung macht wie überall die Datenbank, nur über
+  // `mbl.current_member_id` statt über `auth.uid()`.
+  //
+  // Bewusst durchweg `POST`, auch für das reine Ansehen: Ein `GET` müsste den
+  // Token in die Adresse legen, und der stünde dann in jedem Zugriffsprotokoll
+  // und in jedem Referrer (Abschnitt 6.4).
+  app.route('/v1/guest', guestRoutes());
 
   const v1 = new Hono<App>();
   v1.use('*', requireAuth);
@@ -569,6 +601,90 @@ export function createApp(): Hono<App> {
     return c.json(media, 201);
   });
 
+  // Zwei Angaben auflösen. Wer den anderen Termin übernimmt, verschiebt damit
+  // den Plan — deshalb läuft es durch dieselbe Rechnung wie jede Verschiebung,
+  // samt Wirkung im Historieneintrag.
+  v1.post('/projects/:id/tasks/:taskId/dispute', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = z
+      .object({ accept: z.boolean() })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: 'Sag bitte, welcher Termin gelten soll.' });
+    }
+
+    const schedule = await withUserTx(
+      c.get('claims'),
+      async (tx): Promise<ProjectSchedule> => {
+        // Erst rechnen, dann schreiben — dieselbe Reihenfolge und derselbe
+        // Grund wie beim Verschieben: Die Auswirkung auf den Endtermin muss im
+        // Historieneintrag stehen, und der ist danach nicht mehr änderbar.
+        if (parsed.data.accept) {
+          const anderer = await counterDatesOf(tx, projectId, taskId);
+          if (anderer !== null) {
+            const proposal = await buildProposal(tx, projectId, taskId, {
+              earliestStart: anderer,
+            });
+            await stampChangeEffect(tx, proposal.preview.effectWorkdays);
+          }
+        }
+        await resolveDispute(tx, projectId, taskId, parsed.data.accept);
+        await recomputeProject(tx, projectId);
+        // Erst nach der Neuberechnung bestätigen: Vorher wäre es eine Zusage
+        // zu Zahlen, die sich gleich noch ändern.
+        if (parsed.data.accept) await confirmAccepted(tx, projectId, taskId);
+        return loadSchedule(tx, projectId);
+      },
+      // Wer einen Gegenvorschlag übernimmt, tut es, weil das Unternehmen gerade
+      // nicht kann. Das ist der Grund, und er steht im Eintrag. `confirmationFrom`
+      // sorgt dafür, dass der übernommene Termin dem Unternehmen zugeschrieben
+      // wird und nicht dem Bauherrn, der ihn eingetragen hat.
+      parsed.data.accept
+        ? { changeReason: 'kapazitaet', confirmationFrom: 'counterparty' as const }
+        : {},
+    );
+
+    return c.json(schedule);
+  });
+
+  // -- Gast-Links verwalten ---------------------------------------------------
+  //
+  // Wer einladen darf, entscheidet die Policy `guest_token_create` über
+  // `member.invite`. Hier steht nur, wie der Link entsteht — und dass sein
+  // Klartext genau einmal herausgeht.
+
+  v1.get('/projects/:id/guest-links', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const links = await withUserTx(c.get('claims'), (tx) => listGuestLinks(tx, projectId));
+    return c.json({ links });
+  });
+
+  v1.post('/projects/:id/guest-links', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = guestLinkCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen für einen Link noch nicht.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const created = await withUserTx(c.get('claims'), (tx) =>
+      createGuestLink(tx, projectId, parsed.data, originOf(c.req.url, c.req.header('origin'))),
+    );
+    return c.json(created, 201);
+  });
+
+  v1.delete('/projects/:id/guest-links/:linkId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const linkId = parseId(c.req.param('linkId'));
+    const links = await withUserTx(c.get('claims'), (tx) =>
+      revokeGuestLink(tx, projectId, linkId),
+    );
+    return c.json({ links });
+  });
+
   v1.get('/projects/:id/photo-prompts', async (c) => {
     const projectId = parseId(c.req.param('id'));
     const roh = c.req.query('on');
@@ -622,7 +738,140 @@ export function createApp(): Hono<App> {
   return app;
 }
 
+// -- Abstimmung ohne Konto ---------------------------------------------------
+
+/**
+ * Die vier Routen, die der Polier auf der Baustelle berührt.
+ *
+ * Jede öffnet dieselbe Klammer: Token entgegennehmen, Sitzung eröffnen
+ * (das zählt, begrenzt und protokolliert in einem Schritt), handeln, die
+ * ganze Sicht zurückgeben. Die Antwort ist immer die vollständige Sicht und
+ * nie nur das Geänderte — der Gast hat kein Cockpit, in dem sich etwas
+ * nachladen ließe, und auf einer Baustelle ist die zweite Anfrage die, die
+ * nicht mehr durchkommt.
+ */
+function guestRoutes(): Hono {
+  const guest = new Hono();
+
+  /** Alles, was jede dieser Routen gemeinsam hat. */
+  const mitSitzung = async <T>(
+    c: { req: { header: (name: string) => string | undefined } },
+    token: string,
+    run: (
+      tx: Parameters<Parameters<typeof withGuestTx<T>>[1]>[0],
+      session: Awaited<ReturnType<typeof openGuestSession>>,
+    ) => Promise<T>,
+    options: { changeReason?: string; changeReasonText?: string } = {},
+  ): Promise<T> =>
+    withGuestTx(
+      hashGuestToken(token),
+      async (tx) => {
+        const session = await openGuestSession(tx, {
+          // Weder Adresse noch Kennung im Klartext, nur ein Streuwert
+          // (Abschnitt 6.5). Er beantwortet „derselbe Link, plötzlich von
+          // woanders" und sonst nichts.
+          ipHash: traceHash(
+            c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
+              c.req.header('x-real-ip'),
+          ),
+          userAgentHash: traceHash(c.req.header('user-agent')),
+        });
+        return run(tx, session);
+      },
+      options,
+    );
+
+  guest.post('/open', async (c) => {
+    const parsed = guestOpenRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: 'Dieser Link ist unvollständig.' });
+    }
+    const view = await mitSitzung(c, parsed.data.token, async (tx, session) => {
+      await introduceGuest(tx, parsed.data.name, parsed.data.company);
+      return loadGuestView(tx, session);
+    });
+    return c.json(view);
+  });
+
+  guest.post('/tasks/:taskId/confirm', async (c) => {
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = guestConfirmRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: 'Dieser Link ist unvollständig.' });
+    }
+    const view = await mitSitzung(c, parsed.data.token, (tx, session) =>
+      confirmTask(tx, session, taskId),
+    );
+    return c.json(view);
+  });
+
+  guest.post('/tasks/:taskId/counter', async (c) => {
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = guestCounterRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Für einen anderen Termin brauchen wir Beginn und Ende.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const view = await mitSitzung(
+      c,
+      parsed.data.token,
+      (tx, session) => counterProposeTask(tx, session, taskId, parsed.data),
+      {
+        // Ohne Grund wäre der Gegenvorschlag in der Historie eine Zahl ohne
+        // Erklärung. `kapazitaet` ist die ehrliche Voreinstellung: Wer einen
+        // anderen Termin nennt, kann meistens gerade nicht.
+        changeReason: parsed.data.reason ?? 'kapazitaet',
+        ...(parsed.data.note === undefined ? {} : { changeReasonText: parsed.data.note }),
+      },
+    );
+    return c.json(view);
+  });
+
+  guest.post('/tasks/:taskId/progress', async (c) => {
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = guestProgressRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: 'Diese Meldung können wir nicht deuten.' });
+    }
+    const view = await mitSitzung(c, parsed.data.token, (tx, session) =>
+      reportProgress(tx, session, taskId, parsed.data),
+    );
+    return c.json(view);
+  });
+
+  return guest;
+}
+
+/**
+ * Die Herkunft, unter der der Gast die Anwendung erreicht.
+ *
+ * Der Link muss auf dieselbe Adresse zeigen, unter der der Bauherr gerade
+ * arbeitet — auf einer Vorschau-Auslieferung ist das nicht die
+ * Produktionsadresse. Deshalb aus der Anfrage abgeleitet und nicht aus einer
+ * Umgebungsvariablen: Eine Variable wäre eine sechste Stelle, die zur
+ * Auslieferung passen muss.
+ */
+function originOf(requestUrl: string, originHeader: string | undefined): string {
+  if (originHeader !== undefined && originHeader !== '') return originHeader.replace(/\/+$/, '');
+  try {
+    return new URL(requestUrl).origin;
+  } catch {
+    return '';
+  }
+}
+
 // -- Hilfsfunktionen --------------------------------------------------------
+
+/** Der Termin, den die Gegenseite genannt hat — falls einer im Raum steht. */
+async function counterDatesOf(tx: Tx, projectId: string, taskId: string): Promise<string | null> {
+  const result = await tx.query<{ counter_start: string | null }>(
+    'select counter_start from task where id = $1 and project_id = $2',
+    [taskId, projectId],
+  );
+  return result.rows[0]?.counter_start ?? null;
+}
 
 interface ProjectRow {
   id: string;
@@ -722,6 +971,12 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     actual_end: string | null;
     status: ScheduledTaskDto['status'];
     confirmation: ScheduledTaskDto['confirmation'];
+    confirmed_at: string | null;
+    confirmed_by: string | null;
+    counter_start: string | null;
+    counter_end: string | null;
+    counter_note: string | null;
+    counter_by: string | null;
     total_float_days: number | null;
     is_critical: boolean;
     guide_card_id: string | null;
@@ -730,9 +985,13 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
             t.sort_order, t.is_milestone, t.is_wait, t.duration_days, t.duration_unit,
             t.current_start, t.current_end, t.baseline_start, t.baseline_end,
             t.earliest_start, t.actual_start, t.actual_end, t.status, t.confirmation,
+            t.confirmed_at, cf.display_name as confirmed_by,
+            t.counter_start, t.counter_end, t.counter_note, cb.display_name as counter_by,
             t.total_float_days, t.is_critical, t.guide_card_id
      from task t
      left join trade tr on tr.id = t.trade_id
+     left join project_member cf on cf.id = t.confirmed_by
+     left join project_member cb on cb.id = t.counter_by
      where t.project_id = $1
      order by t.sort_order, t.current_start`,
     [projectId],
@@ -758,6 +1017,12 @@ async function loadTasks(tx: Tx, projectId: string): Promise<ScheduledTaskDto[]>
     actualEnd: row.actual_end,
     status: row.status,
     confirmation: row.confirmation,
+    confirmedAt: row.confirmed_at,
+    confirmedBy: row.confirmed_by,
+    counterStart: row.counter_start,
+    counterEnd: row.counter_end,
+    counterNote: row.counter_note,
+    counterBy: row.counter_by,
     totalFloatDays: row.total_float_days,
     isCritical: row.is_critical,
     guideCardId: row.guide_card_id,

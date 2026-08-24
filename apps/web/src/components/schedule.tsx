@@ -6,7 +6,7 @@
 import { BookOpen, Check, Circle, CircleDot, Clock, Flag, Minus } from 'lucide-react';
 import type { PhaseProgress, ScheduledTaskDto } from '@meinbaulotse/shared';
 import { floatInPlainWords } from '@meinbaulotse/shared';
-import { CONFIRMATION_LABEL, formatDuration, formatRange } from '../lib/format';
+import { CONFIRMATION_LABEL, formatDate, formatDuration, formatRange } from '../lib/format';
 import { progressOf, type Progress } from '../lib/progress';
 
 /**
@@ -229,7 +229,21 @@ export function TaskRow({
                 {formatDuration(task.durationDays, task.durationUnit)}
               </span>
             )}
-            <ConfirmationChip value={task.confirmation} />
+            <ConfirmationChip
+              value={task.confirmation}
+              {...(task.confirmedAt === null
+                ? {}
+                : { confirmedOn: formatDate(task.confirmedAt.slice(0, 10)) })}
+            />
+            {/* Zwei Angaben heißt: zwei Termine. Sie hier zu verschweigen wäre
+              die halbe Auskunft — der Bauherr muss sehen, worüber die beiden
+              Seiten verschiedener Meinung sind, nicht nur *dass*. */}
+            {task.confirmation === 'disputed' && task.counterStart !== null ? (
+              <span className="text-caption text-tangerine">
+                {task.counterBy ?? 'Gegenseite'}:{' '}
+                {formatRange(task.counterStart, task.counterEnd, referenceYear)}
+              </span>
+            ) : null}
             {/* Eine Verschiebung von Hand muss man sehen, sonst sucht man den
               Grund im Berechnungskern. */}
             {task.earliestStart !== null ? (

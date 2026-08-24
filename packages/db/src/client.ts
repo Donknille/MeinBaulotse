@@ -49,6 +49,15 @@ export interface TransactionOptions {
   /** Grund einer Terminänderung; wandert in den `schedule_change`-Eintrag. */
   changeReason?: string;
   changeReasonText?: string;
+  /**
+   * `'counterparty'`, wenn in dieser Transaktion ein **fremder** Termin
+   * eingetragen wird — der Bauherr übernimmt den Vorschlag des Unternehmens.
+   *
+   * Ohne diese Angabe schriebe der Trigger `mbl.stamp_confirmation` „von dir
+   * eingetragen" über einen Termin, den jemand anderes genannt hat, und die
+   * anschließende Bestätigung wäre eine Bestätigung seiner selbst.
+   */
+  confirmationFrom?: 'counterparty';
 }
 
 export type Sql = <T extends pg.QueryResultRow = pg.QueryResultRow>(
@@ -220,6 +229,72 @@ export async function withUserTx<T>(
       'app.actor_channel',
       options.actorChannel ?? 'app',
     ]);
+    if (options.changeReason !== undefined) {
+      await client.query('select set_config($1, $2, true)', [
+        'app.change_reason',
+        options.changeReason,
+      ]);
+    }
+    if (options.changeReasonText !== undefined) {
+      await client.query('select set_config($1, $2, true)', [
+        'app.change_reason_text',
+        options.changeReasonText,
+      ]);
+    }
+    if (options.confirmationFrom !== undefined) {
+      await client.query('select set_config($1, $2, true)', [
+        'app.confirmation_from',
+        options.confirmationFrom,
+      ]);
+    }
+
+    const query: Sql = (text, values) => client.query(text, values as unknown[]);
+    const result = await run({ query, client });
+    await client.query('commit');
+    return result;
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Dasselbe für einen Gast, der über einen Link hereinkommt (Abschnitt 2.3).
+ *
+ * Der Unterschied zu `withUserTx` ist genau eine Zeile: Statt einer
+ * Nutzerkennung wird der **Hash** des Tokens hinterlegt, und die Datenbank
+ * löst daraus die Mitgliedschaft auf (`mbl.current_member_id` seit 0012).
+ * Alles andere bleibt: dieselbe Rolle `authenticated`, dieselben Policies,
+ * keine privilegierte Rolle. Ein Gast ist ein Mitglied mit einem anderen
+ * Türschlüssel, kein Sonderfall im Rechtesystem.
+ *
+ * `request.jwt.claims` trägt bewusst kein `sub`. Damit gibt `auth.uid()` null
+ * zurück, und ein Gast kann unter keinen Umständen versehentlich die Rechte
+ * eines angemeldeten Nutzers erben, dessen Sitzung zufällig im selben Browser
+ * liegt.
+ *
+ * `app.actor_channel` steht auf `guest_link`, und deshalb trägt jeder
+ * Historieneintrag, der daraus entsteht, diesen Kanal — ohne dass eine
+ * Aufrufstelle daran denken müsste.
+ */
+export async function withGuestTx<T>(
+  tokenHash: string,
+  run: (tx: Transaction) => Promise<T>,
+  options: Omit<TransactionOptions, 'actorChannel'> = {},
+  connectionString?: string,
+): Promise<T> {
+  const client = await getPool(connectionString).connect();
+  try {
+    await client.query('begin');
+    await client.query('select set_config($1, $2, true)', [
+      'request.jwt.claims',
+      JSON.stringify({ role: 'authenticated' }),
+    ]);
+    await client.query("select set_config('role', 'authenticated', true)");
+    await client.query('select set_config($1, $2, true)', ['app.guest_token_hash', tokenHash]);
+    await client.query("select set_config('app.actor_channel', 'guest_link', true)");
     if (options.changeReason !== undefined) {
       await client.query('select set_config($1, $2, true)', [
         'app.change_reason',

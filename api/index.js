@@ -1192,7 +1192,7 @@ var require_utils2 = __commonJS({
     var nodeCrypto = require("crypto");
     module2.exports = {
       postgresMd5PasswordHash,
-      randomBytes,
+      randomBytes: randomBytes2,
       deriveKey,
       sha256: sha2562,
       hashByName,
@@ -1202,7 +1202,7 @@ var require_utils2 = __commonJS({
     var webCrypto = nodeCrypto.webcrypto || globalThis.crypto;
     var subtleCrypto = webCrypto.subtle;
     var textEncoder = new TextEncoder();
-    function randomBytes(length) {
+    function randomBytes2(length) {
       return webCrypto.getRandomValues(Buffer.alloc(length));
     }
     async function md5(string) {
@@ -12231,6 +12231,46 @@ async function withUserTx(claims, run, options = {}, connectionString) {
         options.changeReasonText
       ]);
     }
+    if (options.confirmationFrom !== void 0) {
+      await client.query("select set_config($1, $2, true)", [
+        "app.confirmation_from",
+        options.confirmationFrom
+      ]);
+    }
+    const query = (text, values) => client.query(text, values);
+    const result = await run({ query, client });
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    await client.query("rollback").catch(() => void 0);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+async function withGuestTx(tokenHash, run, options = {}, connectionString) {
+  const client = await getPool(connectionString).connect();
+  try {
+    await client.query("begin");
+    await client.query("select set_config($1, $2, true)", [
+      "request.jwt.claims",
+      JSON.stringify({ role: "authenticated" })
+    ]);
+    await client.query("select set_config('role', 'authenticated', true)");
+    await client.query("select set_config($1, $2, true)", ["app.guest_token_hash", tokenHash]);
+    await client.query("select set_config('app.actor_channel', 'guest_link', true)");
+    if (options.changeReason !== void 0) {
+      await client.query("select set_config($1, $2, true)", [
+        "app.change_reason",
+        options.changeReason
+      ]);
+    }
+    if (options.changeReasonText !== void 0) {
+      await client.query("select set_config($1, $2, true)", [
+        "app.change_reason_text",
+        options.changeReasonText
+      ]);
+    }
     const query = (text, values) => client.query(text, values);
     const result = await run({ query, client });
     await client.query("commit");
@@ -13494,6 +13534,20 @@ var scheduledTask = external_exports.object({
   actualEnd: isoDate.nullable(),
   status: taskStatus,
   confirmation: confirmationLevel,
+  /** Wann und von wem abgestimmt — „Abgestimmt am 12.05." braucht beides. */
+  confirmedAt: external_exports.string().nullable(),
+  confirmedBy: external_exports.string().nullable(),
+  /**
+   * Der abweichende Termin der Gegenseite (Abschnitt 3.4, `disputed`).
+   *
+   * Er steht **neben** dem eingetragenen, nicht an seiner Stelle. Genau das
+   * ist der Unterschied zwischen „zwei Angaben" und „der GU hat den Termin
+   * geändert": Solange beide dastehen, entscheidet der Bauherr, welcher gilt.
+   */
+  counterStart: isoDate.nullable(),
+  counterEnd: isoDate.nullable(),
+  counterNote: external_exports.string().nullable(),
+  counterBy: external_exports.string().nullable(),
   totalFloatDays: external_exports.number().int().nullable(),
   isCritical: external_exports.boolean()
 });
@@ -13833,6 +13887,101 @@ var diaryChainCheck = external_exports.object({
     entryDate: isoDate,
     reason: external_exports.string()
   }))
+});
+var guestScope = external_exports.enum([
+  "confirm:task",
+  "report:progress",
+  "view:trade",
+  "view:project"
+]);
+var guestLocale = external_exports.enum(["de", "pl", "ro", "tr", "en"]);
+var guestTask = external_exports.object({
+  id: external_exports.string().uuid(),
+  name: external_exports.string(),
+  tradeName: external_exports.string().nullable(),
+  start: isoDate.nullable(),
+  end: isoDate.nullable(),
+  status: taskStatus,
+  confirmation: confirmationLevel,
+  /** Der abweichende Termin, falls einer im Raum steht. */
+  counterStart: isoDate.nullable(),
+  counterEnd: isoDate.nullable(),
+  counterNote: external_exports.string().nullable(),
+  counterBy: external_exports.string().nullable(),
+  actualStart: isoDate.nullable(),
+  actualEnd: isoDate.nullable(),
+  /** Ob dieser Gast diesen Vorgang gerade bestätigen kann. */
+  canConfirm: external_exports.boolean()
+});
+var guestView = external_exports.object({
+  projectName: external_exports.string(),
+  /** Adresse der Baustelle, soweit erfasst — sie steht als Überschrift. */
+  siteLine: external_exports.string().nullable(),
+  memberName: external_exports.string().nullable(),
+  company: external_exports.string().nullable(),
+  role: memberRole,
+  locale: guestLocale,
+  scopes: external_exports.array(guestScope),
+  /** Ob Name und Firma noch gefragt werden — nur beim ersten Mal. */
+  needsIntroduction: external_exports.boolean(),
+  expiresAt: external_exports.string(),
+  tasks: external_exports.array(guestTask)
+});
+var guestToken = external_exports.string().min(20).max(200);
+var guestOpenRequest = external_exports.object({
+  token: guestToken,
+  name: external_exports.string().max(120).optional(),
+  company: external_exports.string().max(120).optional()
+});
+var guestConfirmRequest = external_exports.object({ token: guestToken });
+var guestCounterRequest = external_exports.object({
+  token: guestToken,
+  start: isoDate,
+  end: isoDate,
+  note: external_exports.string().max(500).optional(),
+  reason: scheduleChangeReason.optional()
+});
+var guestProgressRequest = external_exports.object({
+  token: guestToken,
+  actualStart: isoDate.nullish(),
+  actualEnd: isoDate.nullish()
+});
+var guestLinkSummary = external_exports.object({
+  id: external_exports.string().uuid(),
+  memberId: external_exports.string().uuid(),
+  displayName: external_exports.string().nullable(),
+  company: external_exports.string().nullable(),
+  role: memberRole,
+  tradeName: external_exports.string().nullable(),
+  scopes: external_exports.array(guestScope),
+  locale: guestLocale,
+  boundEmail: external_exports.string().nullable(),
+  expiresAt: external_exports.string(),
+  lastUsedAt: external_exports.string().nullable(),
+  useCount: external_exports.number().int(),
+  claimedName: external_exports.string().nullable(),
+  revokedAt: external_exports.string().nullable()
+});
+var guestLinkCreateRequest = external_exports.object({
+  role: external_exports.enum(["contractor", "trade", "viewer"]),
+  displayName: external_exports.string().min(1).max(120),
+  company: external_exports.string().max(120).optional(),
+  email: external_exports.string().email().optional(),
+  phone: external_exports.string().max(40).optional(),
+  tradeCode: external_exports.string().max(40).optional(),
+  scopes: external_exports.array(guestScope).min(1),
+  locale: guestLocale.default("de"),
+  /** Standardablauf 180 Tage (Abschnitt 2.3). */
+  daysValid: external_exports.number().int().min(1).max(730).default(180)
+});
+var guestLinkCreated = external_exports.object({
+  link: guestLinkSummary,
+  /**
+   * Der Klartext-Token. Er verlässt den Server **genau einmal**; danach steht
+   * in der Datenbank nur noch sein Hash. Wer ihn verliert, bekommt einen neuen
+   * Link — nicht denselben zurück.
+   */
+  url: external_exports.string()
 });
 
 // ../../node_modules/hono/dist/helper/factory/index.js
@@ -15842,6 +15991,306 @@ async function linkGuideCards(tx, projectId) {
   return result.rowCount ?? 0;
 }
 
+// src/guest.ts
+var import_node_crypto7 = require("node:crypto");
+function newGuestToken() {
+  return (0, import_node_crypto7.randomBytes)(32).toString("base64url");
+}
+function hashGuestToken(token) {
+  return (0, import_node_crypto7.createHash)("sha256").update(token, "utf8").digest("hex");
+}
+function traceHash(value) {
+  if (value === void 0 || value === "") return null;
+  return (0, import_node_crypto7.createHash)("sha256").update(value, "utf8").digest("hex").slice(0, 32);
+}
+async function openGuestSession(tx, trace) {
+  const result = await tx.query("select * from mbl.use_guest_token($1, $2)", [trace.ipHash, trace.userAgentHash]);
+  const zeile = result.rows[0];
+  if (zeile === void 0) {
+    throw new HTTPException(401, {
+      message: "Dieser Link gilt nicht mehr. Frag bitte beim Bauherrn nach einem neuen."
+    });
+  }
+  if (!zeile.allowed) {
+    throw new HTTPException(429, {
+      message: "Das war eben viel auf einmal. Versuch es in einer Minute noch einmal."
+    });
+  }
+  return {
+    projectId: zeile.project_id,
+    memberId: zeile.member_id,
+    locale: zeile.locale,
+    scopes: zeile.scopes
+  };
+}
+async function introduceGuest(tx, name, company) {
+  if (name === void 0 && company === void 0) return;
+  await tx.query("select mbl.claim_guest_token($1, $2)", [name ?? null, company ?? null]);
+}
+async function loadGuestView(tx, session) {
+  const kopf = await tx.query(
+    `select p.name as project_name, p.address, p.city,
+            m.display_name, m.company, m.role,
+            t.claimed_at, t.expires_at,
+            mbl.has_perm(p.id, 'task.confirm') as can_confirm
+       from project p
+       join project_member m on m.id = $2
+       join guest_token t on t.id = mbl.guest_token_id()
+      where p.id = $1`,
+    [session.projectId, session.memberId]
+  );
+  const zeile = kopf.rows[0];
+  if (zeile === void 0) {
+    throw new HTTPException(401, { message: "Dieser Link gilt nicht mehr." });
+  }
+  const vorgaenge = await tx.query(
+    `select t.id, t.name, tr.name as trade_name, t.current_start, t.current_end,
+            t.status, t.confirmation, t.counter_start, t.counter_end, t.counter_note,
+            cb.display_name as counter_by, t.actual_start, t.actual_end
+       from task t
+       left join trade tr on tr.id = t.trade_id
+       left join project_member cb on cb.id = t.counter_by
+      where t.project_id = $1
+        and t.status <> 'entfallen'
+      order by t.current_start nulls last, t.sort_order`,
+    [session.projectId]
+  );
+  return {
+    projectName: zeile.project_name,
+    siteLine: [zeile.address, zeile.city].filter(Boolean).join(", ") || null,
+    memberName: zeile.display_name,
+    company: zeile.company,
+    role: zeile.role,
+    locale: session.locale,
+    scopes: session.scopes,
+    needsIntroduction: zeile.claimed_at === null,
+    expiresAt: zeile.expires_at,
+    tasks: vorgaenge.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      tradeName: row.trade_name,
+      start: row.current_start,
+      end: row.current_end,
+      status: row.status,
+      confirmation: row.confirmation,
+      counterStart: row.counter_start,
+      counterEnd: row.counter_end,
+      counterNote: row.counter_note,
+      counterBy: row.counter_by,
+      actualStart: row.actual_start,
+      actualEnd: row.actual_end,
+      // Bestätigen kann nur, wer nicht selbst zuletzt gesprochen hat. Der
+      // Trigger `mbl.guard_confirmation` weist das Gegenteil ab; hier steht
+      // dieselbe Regel als Auskunft, damit der Knopf gar nicht erst erscheint.
+      canConfirm: zeile.can_confirm && (row.confirmation === "self_stated" || row.confirmation === "disputed")
+    }))
+  };
+}
+async function confirmTask(tx, session, taskId) {
+  const result = await tx.query(
+    `update task
+          set confirmation = 'mutual',
+              confirmed_by = mbl.current_member_id(project_id),
+              confirmed_at = now(),
+              -- Ein best\xE4tigter Termin r\xE4umt den Gegenvorschlag ab: Wer
+              -- zustimmt, hat seinen eigenen Einwand zur\xFCckgenommen.
+              counter_start = null, counter_end = null,
+              counter_by = null, counter_at = null, counter_note = null
+        where id = $1 and project_id = $2`,
+    [taskId, session.projectId]
+  ).catch(translate);
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Diesen Vorgang gibt es hier nicht." });
+  }
+  return loadGuestView(tx, session);
+}
+async function counterProposeTask(tx, session, taskId, vorschlag) {
+  if (vorschlag.end < vorschlag.start) {
+    throw new HTTPException(422, { message: "Das Ende liegt vor dem Beginn." });
+  }
+  const result = await tx.query(
+    `update task
+          set counter_start = $3::date,
+              counter_end   = $4::date,
+              counter_note  = $5,
+              counter_by    = mbl.current_member_id(project_id),
+              counter_at    = now(),
+              confirmation  = 'disputed'
+        where id = $1 and project_id = $2`,
+    [taskId, session.projectId, vorschlag.start, vorschlag.end, vorschlag.note ?? null]
+  ).catch(translate);
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Diesen Vorgang gibt es hier nicht." });
+  }
+  return loadGuestView(tx, session);
+}
+async function reportProgress(tx, session, taskId, meldung) {
+  const felder = [];
+  const werte = [taskId, session.projectId];
+  const setze = (spalte, wert) => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}::date`);
+  };
+  if (meldung.actualStart !== void 0) setze("actual_start", meldung.actualStart);
+  if (meldung.actualEnd !== void 0) setze("actual_end", meldung.actualEnd);
+  if (felder.length === 0) return loadGuestView(tx, session);
+  const result = await tx.query(
+    `update task set ${felder.join(", ")} where id = $1 and project_id = $2`,
+    werte
+  ).catch(translate);
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Diesen Vorgang gibt es hier nicht." });
+  }
+  return loadGuestView(tx, session);
+}
+async function listGuestLinks(tx, projectId) {
+  const result = await tx.query(
+    `select g.id, g.member_id, m.display_name, m.company, m.role, tr.name as trade_name,
+            g.scopes, g.locale, g.bound_email, g.expires_at, g.last_used_at,
+            g.use_count, g.claimed_name, g.revoked_at
+       from guest_token g
+       join project_member m on m.id = g.member_id
+       left join trade tr on tr.id = m.trade_id
+      where g.project_id = $1
+      order by g.revoked_at nulls first, g.created_at desc`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    memberId: row.member_id,
+    displayName: row.display_name,
+    company: row.company,
+    role: row.role,
+    tradeName: row.trade_name,
+    scopes: row.scopes,
+    locale: row.locale,
+    boundEmail: row.bound_email,
+    expiresAt: row.expires_at,
+    lastUsedAt: row.last_used_at,
+    useCount: row.use_count,
+    claimedName: row.claimed_name,
+    revokedAt: row.revoked_at
+  }));
+}
+async function createGuestLink(tx, projectId, wunsch, baseUrl) {
+  let tradeId = null;
+  if (wunsch.tradeCode !== void 0) {
+    const gewerk = await tx.query(
+      `select id from trade
+        where code = $2 and (project_id = $1 or project_id is null)
+        order by project_id nulls last limit 1`,
+      [projectId, wunsch.tradeCode]
+    );
+    tradeId = gewerk.rows[0]?.id ?? null;
+  }
+  if (wunsch.role === "trade" && tradeId === null) {
+    throw new HTTPException(422, {
+      message: "Ein Einzelgewerk braucht sein Gewerk \u2014 sonst sieht es alles oder nichts."
+    });
+  }
+  const mitglied = await tx.query(
+    `insert into project_member
+         (project_id, role, display_name, company, email, phone, trade_id, invited_at)
+       values ($1, $2, $3, $4, $5, $6, $7, now())
+       returning id`,
+    [
+      projectId,
+      wunsch.role,
+      wunsch.displayName,
+      wunsch.company ?? null,
+      wunsch.email ?? null,
+      wunsch.phone ?? null,
+      tradeId
+    ]
+  ).catch(translate);
+  const token = newGuestToken();
+  const angelegt = await tx.query(
+    `insert into guest_token
+         (project_id, member_id, token_hash, scopes, locale, bound_email, bound_phone,
+          expires_at, created_by)
+       values ($1, $2, $3, $4::text[], $5, $6, $7, now() + ($8 || ' days')::interval,
+               mbl.current_member_id($1))
+       returning id`,
+    [
+      projectId,
+      mitglied.rows[0].id,
+      hashGuestToken(token),
+      wunsch.scopes,
+      wunsch.locale,
+      wunsch.email ?? null,
+      wunsch.phone ?? null,
+      String(wunsch.daysValid)
+    ]
+  ).catch(translate);
+  const alle = await listGuestLinks(tx, projectId);
+  const link = alle.find((eintrag) => eintrag.id === angelegt.rows[0].id);
+  return { link, url: `${baseUrl}/abstimmung#${token}` };
+}
+async function revokeGuestLink(tx, projectId, linkId) {
+  const result = await tx.query(
+    `update guest_token set revoked_at = now()
+      where id = $1 and project_id = $2 and revoked_at is null`,
+    [linkId, projectId]
+  );
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Diesen Link gibt es nicht mehr." });
+  }
+  return listGuestLinks(tx, projectId);
+}
+function translate(cause) {
+  const fehler = cause;
+  if (fehler?.code === "42501") {
+    throw new HTTPException(403, {
+      message: fehler.message ?? "Das darf dieser Link nicht."
+    });
+  }
+  if (fehler?.code === "23514" || fehler?.code === "23505") {
+    throw new HTTPException(422, { message: fehler.message ?? "Diese Angabe passt nicht." });
+  }
+  throw cause;
+}
+async function resolveDispute(tx, projectId, taskId, accept) {
+  const zeile = await tx.query(
+    `select counter_start, counter_end from task where id = $1 and project_id = $2`,
+    [taskId, projectId]
+  );
+  const vorschlag = zeile.rows[0];
+  if (vorschlag === void 0) {
+    throw new HTTPException(404, { message: "Diesen Vorgang gibt es hier nicht." });
+  }
+  if (!accept) {
+    await tx.query(
+      `update task
+            set counter_start = null, counter_end = null, counter_by = null,
+                counter_at = null, counter_note = null,
+                confirmation = 'self_stated'
+          where id = $1 and project_id = $2`,
+      [taskId, projectId]
+    ).catch(translate);
+    return { counterStart: null, counterEnd: null };
+  }
+  if (vorschlag.counter_start === null) {
+    throw new HTTPException(422, { message: "Zu diesem Vorgang steht kein anderer Termin." });
+  }
+  await tx.query(
+    `update task
+          set earliest_start = counter_start
+        where id = $1 and project_id = $2`,
+    [taskId, projectId]
+  ).catch(translate);
+  return { counterStart: vorschlag.counter_start, counterEnd: vorschlag.counter_end };
+}
+async function confirmAccepted(tx, projectId, taskId) {
+  await tx.query(
+    `update task
+          set confirmation = 'mutual',
+              confirmed_by = mbl.current_member_id(project_id),
+              confirmed_at = now()
+        where id = $1 and project_id = $2 and confirmation = 'counterparty_stated'`,
+    [taskId, projectId]
+  ).catch(translate);
+}
+
 // src/onboarding.ts
 var DEFAULT_TEMPLATE_KEY = "efh_massiv_unterkellert";
 async function loadTemplate(tx, key) {
@@ -16533,6 +16982,7 @@ function createApp() {
     console.info("Testzugang aktiv: POST /api/demo/session");
     app.route("/demo", demoRoutes(demoKey));
   }
+  app.route("/v1/guest", guestRoutes());
   const v1 = new Hono2();
   v1.use("*", requireAuth);
   v1.get("/me", async (c) => {
@@ -16801,6 +17251,67 @@ function createApp() {
     );
     return c.json(media, 201);
   });
+  v1.post("/projects/:id/tasks/:taskId/dispute", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = external_exports.object({ accept: external_exports.boolean() }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: "Sag bitte, welcher Termin gelten soll." });
+    }
+    const schedule = await withUserTx(
+      c.get("claims"),
+      async (tx) => {
+        if (parsed.data.accept) {
+          const anderer = await counterDatesOf(tx, projectId, taskId);
+          if (anderer !== null) {
+            const proposal = await buildProposal(tx, projectId, taskId, {
+              earliestStart: anderer
+            });
+            await stampChangeEffect(tx, proposal.preview.effectWorkdays);
+          }
+        }
+        await resolveDispute(tx, projectId, taskId, parsed.data.accept);
+        await recomputeProject(tx, projectId);
+        if (parsed.data.accept) await confirmAccepted(tx, projectId, taskId);
+        return loadSchedule(tx, projectId);
+      },
+      // Wer einen Gegenvorschlag übernimmt, tut es, weil das Unternehmen gerade
+      // nicht kann. Das ist der Grund, und er steht im Eintrag. `confirmationFrom`
+      // sorgt dafür, dass der übernommene Termin dem Unternehmen zugeschrieben
+      // wird und nicht dem Bauherrn, der ihn eingetragen hat.
+      parsed.data.accept ? { changeReason: "kapazitaet", confirmationFrom: "counterparty" } : {}
+    );
+    return c.json(schedule);
+  });
+  v1.get("/projects/:id/guest-links", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const links = await withUserTx(c.get("claims"), (tx) => listGuestLinks(tx, projectId));
+    return c.json({ links });
+  });
+  v1.post("/projects/:id/guest-links", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = guestLinkCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen f\xFCr einen Link noch nicht.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const created = await withUserTx(
+      c.get("claims"),
+      (tx) => createGuestLink(tx, projectId, parsed.data, originOf(c.req.url, c.req.header("origin")))
+    );
+    return c.json(created, 201);
+  });
+  v1.delete("/projects/:id/guest-links/:linkId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const linkId = parseId(c.req.param("linkId"));
+    const links = await withUserTx(
+      c.get("claims"),
+      (tx) => revokeGuestLink(tx, projectId, linkId)
+    );
+    return c.json({ links });
+  });
   v1.get("/projects/:id/photo-prompts", async (c) => {
     const projectId = parseId(c.req.param("id"));
     const roh = c.req.query("on");
@@ -16843,6 +17354,101 @@ function createApp() {
     );
   });
   return app;
+}
+function guestRoutes() {
+  const guest = new Hono2();
+  const mitSitzung = async (c, token, run, options = {}) => withGuestTx(
+    hashGuestToken(token),
+    async (tx) => {
+      const session = await openGuestSession(tx, {
+        // Weder Adresse noch Kennung im Klartext, nur ein Streuwert
+        // (Abschnitt 6.5). Er beantwortet „derselbe Link, plötzlich von
+        // woanders" und sonst nichts.
+        ipHash: traceHash(
+          c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? c.req.header("x-real-ip")
+        ),
+        userAgentHash: traceHash(c.req.header("user-agent"))
+      });
+      return run(tx, session);
+    },
+    options
+  );
+  guest.post("/open", async (c) => {
+    const parsed = guestOpenRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: "Dieser Link ist unvollst\xE4ndig." });
+    }
+    const view = await mitSitzung(c, parsed.data.token, async (tx, session) => {
+      await introduceGuest(tx, parsed.data.name, parsed.data.company);
+      return loadGuestView(tx, session);
+    });
+    return c.json(view);
+  });
+  guest.post("/tasks/:taskId/confirm", async (c) => {
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = guestConfirmRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(400, { message: "Dieser Link ist unvollst\xE4ndig." });
+    }
+    const view = await mitSitzung(
+      c,
+      parsed.data.token,
+      (tx, session) => confirmTask(tx, session, taskId)
+    );
+    return c.json(view);
+  });
+  guest.post("/tasks/:taskId/counter", async (c) => {
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = guestCounterRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "F\xFCr einen anderen Termin brauchen wir Beginn und Ende.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const view = await mitSitzung(
+      c,
+      parsed.data.token,
+      (tx, session) => counterProposeTask(tx, session, taskId, parsed.data),
+      {
+        // Ohne Grund wäre der Gegenvorschlag in der Historie eine Zahl ohne
+        // Erklärung. `kapazitaet` ist die ehrliche Voreinstellung: Wer einen
+        // anderen Termin nennt, kann meistens gerade nicht.
+        changeReason: parsed.data.reason ?? "kapazitaet",
+        ...parsed.data.note === void 0 ? {} : { changeReasonText: parsed.data.note }
+      }
+    );
+    return c.json(view);
+  });
+  guest.post("/tasks/:taskId/progress", async (c) => {
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = guestProgressRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: "Diese Meldung k\xF6nnen wir nicht deuten." });
+    }
+    const view = await mitSitzung(
+      c,
+      parsed.data.token,
+      (tx, session) => reportProgress(tx, session, taskId, parsed.data)
+    );
+    return c.json(view);
+  });
+  return guest;
+}
+function originOf(requestUrl, originHeader) {
+  if (originHeader !== void 0 && originHeader !== "") return originHeader.replace(/\/+$/, "");
+  try {
+    return new URL(requestUrl).origin;
+  } catch {
+    return "";
+  }
+}
+async function counterDatesOf(tx, projectId, taskId) {
+  const result = await tx.query(
+    "select counter_start from task where id = $1 and project_id = $2",
+    [taskId, projectId]
+  );
+  return result.rows[0]?.counter_start ?? null;
 }
 function toProjectSummary(row) {
   return {
@@ -16900,9 +17506,13 @@ async function loadTasks(tx, projectId) {
             t.sort_order, t.is_milestone, t.is_wait, t.duration_days, t.duration_unit,
             t.current_start, t.current_end, t.baseline_start, t.baseline_end,
             t.earliest_start, t.actual_start, t.actual_end, t.status, t.confirmation,
+            t.confirmed_at, cf.display_name as confirmed_by,
+            t.counter_start, t.counter_end, t.counter_note, cb.display_name as counter_by,
             t.total_float_days, t.is_critical, t.guide_card_id
      from task t
      left join trade tr on tr.id = t.trade_id
+     left join project_member cf on cf.id = t.confirmed_by
+     left join project_member cb on cb.id = t.counter_by
      where t.project_id = $1
      order by t.sort_order, t.current_start`,
     [projectId]
@@ -16927,6 +17537,12 @@ async function loadTasks(tx, projectId) {
     actualEnd: row.actual_end,
     status: row.status,
     confirmation: row.confirmation,
+    confirmedAt: row.confirmed_at,
+    confirmedBy: row.confirmed_by,
+    counterStart: row.counter_start,
+    counterEnd: row.counter_end,
+    counterNote: row.counter_note,
+    counterBy: row.counter_by,
     totalFloatDays: row.total_float_days,
     isCritical: row.is_critical,
     guideCardId: row.guide_card_id

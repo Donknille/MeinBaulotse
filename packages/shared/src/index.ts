@@ -254,6 +254,20 @@ export const scheduledTask = z.object({
   actualEnd: isoDate.nullable(),
   status: taskStatus,
   confirmation: confirmationLevel,
+  /** Wann und von wem abgestimmt — „Abgestimmt am 12.05." braucht beides. */
+  confirmedAt: z.string().nullable(),
+  confirmedBy: z.string().nullable(),
+  /**
+   * Der abweichende Termin der Gegenseite (Abschnitt 3.4, `disputed`).
+   *
+   * Er steht **neben** dem eingetragenen, nicht an seiner Stelle. Genau das
+   * ist der Unterschied zwischen „zwei Angaben" und „der GU hat den Termin
+   * geändert": Solange beide dastehen, entscheidet der Bauherr, welcher gilt.
+   */
+  counterStart: isoDate.nullable(),
+  counterEnd: isoDate.nullable(),
+  counterNote: z.string().nullable(),
+  counterBy: z.string().nullable(),
   totalFloatDays: z.number().int().nullable(),
   isCritical: z.boolean(),
 });
@@ -936,4 +950,161 @@ export function weatherStoppedWork(weather: WeatherObservation | null): string |
     return 'Ab etwa 60 km/h Böen wird der Kranbetrieb eingestellt.';
   }
   return null;
+}
+
+// -- Abstimmung ohne Konto ---------------------------------------------------
+//
+// Abschnitt 5.5. Die ganze Ansicht ist ein Satz und drei Knöpfe:
+//
+//     Für den Innenputz ist der 12.–21.05. eingetragen. Passt das?
+//     [ Passt ]   [ Anderer Termin ]   [ Antworten ]
+//
+// Wer sie benutzt, steht auf einer Baustelle und hat das Handy in der Hand.
+// Alles, was hier an Feldern steht, muss diesen einen Vorgang überstehen.
+
+export const guestScope = z.enum([
+  'confirm:task',
+  'report:progress',
+  'view:trade',
+  'view:project',
+]);
+export type GuestScope = z.infer<typeof guestScope>;
+
+/** Die fünf Sprachen aus Abschnitt 2.3. */
+export const guestLocale = z.enum(['de', 'pl', 'ro', 'tr', 'en']);
+export type GuestLocale = z.infer<typeof guestLocale>;
+
+export const guestTask = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  tradeName: z.string().nullable(),
+  start: isoDate.nullable(),
+  end: isoDate.nullable(),
+  status: taskStatus,
+  confirmation: confirmationLevel,
+  /** Der abweichende Termin, falls einer im Raum steht. */
+  counterStart: isoDate.nullable(),
+  counterEnd: isoDate.nullable(),
+  counterNote: z.string().nullable(),
+  counterBy: z.string().nullable(),
+  actualStart: isoDate.nullable(),
+  actualEnd: isoDate.nullable(),
+  /** Ob dieser Gast diesen Vorgang gerade bestätigen kann. */
+  canConfirm: z.boolean(),
+});
+export type GuestTask = z.infer<typeof guestTask>;
+
+export const guestView = z.object({
+  projectName: z.string(),
+  /** Adresse der Baustelle, soweit erfasst — sie steht als Überschrift. */
+  siteLine: z.string().nullable(),
+  memberName: z.string().nullable(),
+  company: z.string().nullable(),
+  role: memberRole,
+  locale: guestLocale,
+  scopes: z.array(guestScope),
+  /** Ob Name und Firma noch gefragt werden — nur beim ersten Mal. */
+  needsIntroduction: z.boolean(),
+  expiresAt: z.string(),
+  tasks: z.array(guestTask),
+});
+export type GuestView = z.infer<typeof guestView>;
+
+/** Der Token steckt im Körper, nie in der Adresse (Abschnitt 6.4). */
+const guestToken = z.string().min(20).max(200);
+
+export const guestOpenRequest = z.object({
+  token: guestToken,
+  name: z.string().max(120).optional(),
+  company: z.string().max(120).optional(),
+});
+export type GuestOpenRequest = z.infer<typeof guestOpenRequest>;
+
+export const guestConfirmRequest = z.object({ token: guestToken });
+export type GuestConfirmRequest = z.infer<typeof guestConfirmRequest>;
+
+export const guestCounterRequest = z.object({
+  token: guestToken,
+  start: isoDate,
+  end: isoDate,
+  note: z.string().max(500).optional(),
+  reason: scheduleChangeReason.optional(),
+});
+export type GuestCounterRequest = z.infer<typeof guestCounterRequest>;
+
+export const guestProgressRequest = z.object({
+  token: guestToken,
+  actualStart: isoDate.nullish(),
+  actualEnd: isoDate.nullish(),
+});
+export type GuestProgressRequest = z.infer<typeof guestProgressRequest>;
+
+// -- Gast-Links verwalten (Bauherrenseite) -----------------------------------
+
+export const guestLinkSummary = z.object({
+  id: z.string().uuid(),
+  memberId: z.string().uuid(),
+  displayName: z.string().nullable(),
+  company: z.string().nullable(),
+  role: memberRole,
+  tradeName: z.string().nullable(),
+  scopes: z.array(guestScope),
+  locale: guestLocale,
+  boundEmail: z.string().nullable(),
+  expiresAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+  useCount: z.number().int(),
+  claimedName: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+});
+export type GuestLinkSummary = z.infer<typeof guestLinkSummary>;
+
+export const guestLinkCreateRequest = z.object({
+  role: z.enum(['contractor', 'trade', 'viewer']),
+  displayName: z.string().min(1).max(120),
+  company: z.string().max(120).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().max(40).optional(),
+  tradeCode: z.string().max(40).optional(),
+  scopes: z.array(guestScope).min(1),
+  locale: guestLocale.default('de'),
+  /** Standardablauf 180 Tage (Abschnitt 2.3). */
+  daysValid: z.number().int().min(1).max(730).default(180),
+});
+export type GuestLinkCreateRequest = z.infer<typeof guestLinkCreateRequest>;
+
+export const guestLinkCreated = z.object({
+  link: guestLinkSummary,
+  /**
+   * Der Klartext-Token. Er verlässt den Server **genau einmal**; danach steht
+   * in der Datenbank nur noch sein Hash. Wer ihn verliert, bekommt einen neuen
+   * Link — nicht denselben zurück.
+   */
+  url: z.string(),
+});
+export type GuestLinkCreated = z.infer<typeof guestLinkCreated>;
+
+/**
+ * Was ein Bestätigungsgrad im Klartext heißt (Abschnitt 3.4).
+ *
+ * Die Wortwahl ist die halbe Miete: *abgestimmt* statt quittiert, *zwei
+ * Angaben* statt strittig. Dieselbe Datenlage, ein anderer Ton — und der
+ * entscheidet, ob der Bauherr zum Telefon greift oder zum Anwalt.
+ */
+export function confirmationInPlainWords(
+  level: z.infer<typeof confirmationLevel>,
+  confirmedAt?: string | null,
+): string {
+  switch (level) {
+    case 'self_stated':
+      return 'Von dir eingetragen';
+    case 'counterparty_stated':
+      return 'Vom Unternehmen genannt';
+    case 'mutual':
+      return confirmedAt === undefined || confirmedAt === null
+        ? 'Abgestimmt'
+        : `Abgestimmt am ${confirmedAt.slice(8, 10)}.${confirmedAt.slice(5, 7)}.`;
+    case 'disputed':
+      return 'Zwei Angaben';
+  }
 }

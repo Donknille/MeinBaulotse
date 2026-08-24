@@ -118,6 +118,16 @@ const tasks: ScheduledTaskDto[] = plan.tasks.map((task, index) => {
           : index % 5 === 0
             ? 'counterparty_stated'
             : 'self_stated',
+    confirmedAt: index % 7 === 0 ? '2026-05-12T09:20:00.000Z' : null,
+    confirmedBy: index % 7 === 0 ? 'Jörg Baumeister' : null,
+    // „Zwei Angaben" braucht die zweite Angabe, sonst zeigt der Styleguide
+    // einen Zustand, den es in echt nicht geben kann: Der Trigger
+    // `mbl.guard_confirmation` weist `disputed` ohne Gegenvorschlag ab.
+    counterStart: index % 11 === 0 && index % 7 !== 0 ? scheduled.start : null,
+    counterEnd: index % 11 === 0 && index % 7 !== 0 ? scheduled.end : null,
+    counterNote:
+      index % 11 === 0 && index % 7 !== 0 ? 'Vorgewerk ist noch nicht fertig.' : null,
+    counterBy: index % 11 === 0 && index % 7 !== 0 ? 'Jörg Baumeister' : null,
     totalFloatDays: float.totalFloatDays,
     isCritical: float.isCritical,
     guideCardId: mitKarte.has(task.code)

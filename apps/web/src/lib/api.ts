@@ -14,6 +14,9 @@ import type {
   DiaryEntryCreateRequest,
   DiaryEntryDto,
   DiaryEntryUpdateRequest,
+  GuestLinkCreateRequest,
+  GuestLinkCreated,
+  GuestLinkSummary,
   GuideCardView,
   MediaDto,
   MediaRegisterRequest,
@@ -240,6 +243,36 @@ export const api = {
     }),
 
   media: (projectId: string) => request<{ media: MediaDto[] }>(`/projects/${projectId}/media`),
+
+  // -- Abstimmung -------------------------------------------------------------
+  //
+  // Die Gastseite selbst redet nicht über diesen Zugang — sie hat keine
+  // Anmeldung und schickt ihren Token im Körper (siehe `routes/Guest.tsx`).
+  // Was hier steht, ist die Bauherrenseite: Links ausstellen, zurückziehen und
+  // entscheiden, welcher von zwei Terminen gilt.
+
+  guestLinks: (projectId: string) =>
+    request<{ links: GuestLinkSummary[] }>(`/projects/${projectId}/guest-links`),
+
+  createGuestLink: (projectId: string, wunsch: GuestLinkCreateRequest) =>
+    request<GuestLinkCreated>(`/projects/${projectId}/guest-links`, {
+      method: 'POST',
+      body: JSON.stringify(wunsch),
+    }),
+
+  revokeGuestLink: (projectId: string, linkId: string) =>
+    request<{ links: GuestLinkSummary[] }>(`/projects/${projectId}/guest-links/${linkId}`, {
+      method: 'DELETE',
+    }),
+
+  // Antwortet mit dem neu gerechneten Plan: Den anderen Termin zu übernehmen
+  // ist eine Verschiebung, und die Frage danach ist nie „was steht jetzt in
+  // der Zeile", sondern „sind wir noch im Plan".
+  resolveDispute: (projectId: string, taskId: string, accept: boolean) =>
+    request<ProjectSchedule>(`/projects/${projectId}/tasks/${taskId}/dispute`, {
+      method: 'POST',
+      body: JSON.stringify({ accept }),
+    }),
 
   photoPrompts: (projectId: string, on?: string) =>
     request<{ prompts: PhotoPromptStatus[] }>(

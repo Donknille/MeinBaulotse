@@ -8,6 +8,8 @@ import { DemoLogin } from './routes/DemoLogin';
 import { SignIn } from './routes/SignIn';
 import { Capture } from './routes/Capture';
 import { Diary } from './routes/Diary';
+import { Guest } from './routes/Guest';
+import { GuestLinks } from './routes/GuestLinks';
 import { Onboarding } from './routes/Onboarding';
 import { Plan } from './routes/Plan';
 import { Projects } from './routes/Projects';
@@ -73,6 +75,12 @@ export function App() {
           {/* Der Testzugang muss auch dann erreichbar sein, wenn niemand
               angemeldet ist — er ist ja der Weg hinein. */}
           <Route path="/demo" element={<DemoLogin />} />
+          {/* Die Abstimmungsseite steht außerhalb der Anmeldeprüfung, und das
+              ist ihr ganzer Zweck: „Kein Login, keine App, unter zehn Sekunden
+              erledigt" (Abschnitt 5.5). Ihr Ausweis ist der Token im Fragment
+              der Adresse. Hätte sie eine Anmeldemaske davor, wäre die
+              Rücklaufquote null. */}
+          <Route path="/abstimmung" element={<Guest />} />
           <Route path="/auth/callback" element={<Navigate to="/" replace />} />
           {!ready ? (
             <Route
@@ -92,6 +100,7 @@ export function App() {
                   Baustelle zählt jeder Tipp (Abschnitt 5.4). */}
               <Route path="/projekt/:projectId/erfassen" element={<Capture />} />
               <Route path="/projekt/:projectId/tagebuch" element={<Diary />} />
+              <Route path="/projekt/:projectId/beteiligte" element={<GuestLinks />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}

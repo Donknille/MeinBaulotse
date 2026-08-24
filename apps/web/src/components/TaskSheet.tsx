@@ -55,11 +55,18 @@ export function TaskSheet({
   onClose,
   onSave,
   onPreview,
+  onResolveDispute,
 }: {
   task: ScheduledTaskDto;
   schedule: ProjectSchedule;
   onClose: () => void;
   onSave: (change: TaskUpdateRequest) => Promise<void>;
+  /**
+   * Welcher von zwei Terminen gilt. Fehlt sie, wird „zwei Angaben" nur
+   * angezeigt — so wie im Styleguide, wo es keinen Server gibt, der die Frage
+   * beantworten könnte.
+   */
+  onResolveDispute?: (accept: boolean) => Promise<void>;
   /**
    * Fehlt sie, wird ohne Vorschau gespeichert. Das ist der Zustand vor AP 4
    * und für den Styleguide der richtige — dort gibt es keinen Server, der
@@ -211,6 +218,20 @@ export function TaskSheet({
             <X size={18} aria-hidden />
           </Button>
         </div>
+
+        {/* Zwei Angaben zuerst, vor allem anderen.
+            Wer ein Blatt öffnet, auf dem zwei Termine im Raum stehen, hat
+            genau eine Frage — welcher gilt? Ein Verschiebeformular darüber
+            wäre die Antwort auf eine Frage, die niemand gestellt hat. */}
+        {vorschau === null && task.confirmation === 'disputed' && task.counterStart !== null ? (
+          <ZweiAngaben
+            task={task}
+            referenceYear={referenceYear}
+            busy={busy}
+            darfEntscheiden={schedule.permissions.includes('task.schedule')}
+            onResolve={onResolveDispute}
+          />
+        ) : null}
 
         {vorschau !== null ? (
           <Vorschlag
@@ -531,5 +552,79 @@ function ZeileImVorschlag({
         </span>
       </button>
     </li>
+  );
+}
+
+/**
+ * Zwei Angaben — Abschnitt 3.4.
+ *
+ * Beide Termine stehen nebeneinander, und der Bauherr entscheidet. Genau
+ * dafür überschreibt ein Gegenvorschlag den eingetragenen Termin **nicht**:
+ * Hätte er es getan, hätte das Unternehmen entschieden, und der Bauherr
+ * erführe es aus dem Plan statt aus einem Gespräch.
+ *
+ * Die dritte Möglichkeit steht bewusst nicht als Knopf da: anrufen. Sie ist
+ * die häufigste und die beste, und keine Anwendung sollte so tun, als könne
+ * sie ein Telefonat ersetzen. Der Satz darunter sagt es.
+ */
+function ZweiAngaben({
+  task,
+  referenceYear,
+  busy,
+  darfEntscheiden,
+  onResolve,
+}: {
+  task: ScheduledTaskDto;
+  referenceYear: number;
+  busy: boolean;
+  darfEntscheiden: boolean;
+  onResolve?: (accept: boolean) => Promise<void>;
+}) {
+  return (
+    <section className="mb-5 flex flex-col gap-3 rounded-[var(--radius-card)] bg-soft-amber p-4">
+      <h3 className="text-body font-medium text-charcoal">Zwei Angaben</h3>
+
+      <dl className="flex flex-wrap gap-x-10 gap-y-3">
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-caption text-steel">Im Plan</dt>
+          <dd className="text-body-lg font-medium text-charcoal">
+            {formatRange(task.currentStart, task.currentEnd, referenceYear)}
+          </dd>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-caption text-steel">{task.counterBy ?? 'Die Gegenseite'} nennt</dt>
+          <dd className="text-body-lg font-medium text-tangerine">
+            {formatRange(task.counterStart, task.counterEnd, referenceYear)}
+          </dd>
+        </div>
+      </dl>
+
+      {task.counterNote === null ? null : (
+        <p className="text-body text-charcoal">„{task.counterNote}"</p>
+      )}
+
+      {onResolve === undefined || !darfEntscheiden ? null : (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="md"
+            disabled={busy}
+            onClick={() => void onResolve(true)}
+          >
+            <Check size={16} aria-hidden />
+            Diesen Termin übernehmen
+          </Button>
+          <Button size="md" disabled={busy} onClick={() => void onResolve(false)}>
+            Beim Plan bleiben
+          </Button>
+        </div>
+      )}
+
+      <p className="text-caption text-steel">
+        Übernimmst du den Termin, zieht der Plan nach und beide Seiten sind sich einig. Bleibst du
+        beim Plan, steht er wieder allein da. Meistens ist der dritte Weg der beste: einmal
+        anrufen.
+      </p>
+    </section>
   );
 }

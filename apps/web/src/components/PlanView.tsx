@@ -19,6 +19,7 @@ import {
   GanttChartSquare,
   Images,
   Scale,
+  Users,
 } from 'lucide-react';
 import type {
   DecisionDto,
@@ -47,6 +48,7 @@ export function PlanView({
   onChangeTask,
   onPreviewShift,
   onChangeDecision,
+  onResolveDispute,
   guideCards,
   photoPrompts,
 }: {
@@ -59,6 +61,8 @@ export function PlanView({
   onPreviewShift?: (taskId: string, change: TaskUpdateRequest) => Promise<ShiftPreview>;
   /** Fehlt sie, lässt sich eine Entscheidung ansehen, aber nicht pflegen. */
   onChangeDecision?: (decisionId: string, change: DecisionUpdateRequest) => Promise<void>;
+  /** Fehlt sie, werden zwei Angaben nur gezeigt, nicht aufgelöst. */
+  onResolveDispute?: (taskId: string, accept: boolean) => Promise<void>;
   /** Fehlen sie, führt keine Zeile zur Lotsenkarte. */
   guideCards?: GuideCardHandlers;
 }) {
@@ -114,6 +118,18 @@ export function PlanView({
               <Images size={16} aria-hidden />
               Bautagebuch
             </Link>
+            {/* Der Weg zu den Beteiligten steht neben dem Tagebuch, nicht in
+                einer Einstellungsecke: Wer einen Termin einträgt, will als
+                Nächstes wissen, ob das ausführende Unternehmen ihn kennt. */}
+            {schedule.permissions.includes('member.invite') ? (
+              <Link
+                to={`/projekt/${schedule.project.id}/beteiligte`}
+                className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"
+              >
+                <Users size={16} aria-hidden />
+                Beteiligte
+              </Link>
+            ) : null}
             {/* Der Kameraknopf steht auch hier, nicht nur im Cockpit-Kasten:
                 Der Kasten erscheint nur, wenn gerade etwas zu fotografieren
                 ist. Der Weg zur Kamera muss immer da sein. */}
@@ -265,6 +281,14 @@ export function PlanView({
           {...(onPreviewShift === undefined
             ? {}
             : { onPreview: (change: TaskUpdateRequest) => onPreviewShift(selected.id, change) })}
+          {...(onResolveDispute === undefined
+            ? {}
+            : {
+                onResolveDispute: async (accept: boolean) => {
+                  await onResolveDispute(selected.id, accept);
+                  setSelected(null);
+                },
+              })}
         />
       ) : null}
 
