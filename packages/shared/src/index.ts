@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import { addDays, compareDates, FEDERAL_STATES } from '@meinbaulotse/schedule';
+import { addDays, compareDates, daysBetween, FEDERAL_STATES } from '@meinbaulotse/schedule';
 
 export const isoDate = z
   .string()
@@ -1170,3 +1170,226 @@ export const ASSISTANT_STARTERS: readonly string[] = [
   'Welche Entscheidung ist gerade am dringendsten?',
   'Was bedeutet der Verzug für meinen Endtermin?',
 ];
+
+// -- Mängel, Geld, Vertragsspiegel -------------------------------------------
+//
+// Abschnitt 3.9 und 3.10. Drei Themen, die eine einzige Zeile verbindet:
+// „Freigabe erst möglich, wenn alle referenzierten Vorgänge fertig oder
+// abgenommen sind und kein offener Mangel mit Schwere wesentlich daran hängt."
+
+export const defectSeverity = z.enum(['geringfuegig', 'wesentlich']);
+export type DefectSeverity = z.infer<typeof defectSeverity>;
+
+export const defectStatus = z.enum([
+  'offen',
+  'in_bearbeitung',
+  'behoben_gemeldet',
+  'behoben',
+  'abgelehnt',
+]);
+export type DefectStatus = z.infer<typeof defectStatus>;
+
+export const defectDto = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  description: z.string().nullable(),
+  locationText: z.string().nullable(),
+  severity: defectSeverity,
+  status: defectStatus,
+  taskId: z.string().uuid().nullable(),
+  taskName: z.string().nullable(),
+  tradeName: z.string().nullable(),
+  reportedAt: z.string(),
+  reportedBy: z.string().nullable(),
+  deadline: isoDate.nullable(),
+  escalationLevel: z.number().int(),
+  /** Was jetzt dran wäre — aus der Frist gerechnet, nicht gespeichert. */
+  suggestedEscalation: z.number().int(),
+  resolvedAt: z.string().nullable(),
+  reservedAtHandover: z.boolean(),
+  mediaCount: z.number().int(),
+});
+export type DefectDto = z.infer<typeof defectDto>;
+
+export const defectCreateRequest = z.object({
+  title: z.string().min(3).max(200),
+  description: z.string().max(4000).optional(),
+  locationText: z.string().max(200).optional(),
+  severity: defectSeverity.default('geringfuegig'),
+  taskId: z.string().uuid().nullish(),
+  deadline: isoDate.nullish(),
+});
+export type DefectCreateRequest = z.infer<typeof defectCreateRequest>;
+
+export const defectUpdateRequest = z.object({
+  status: defectStatus.optional(),
+  severity: defectSeverity.optional(),
+  deadline: isoDate.nullish(),
+  escalationLevel: z.number().int().min(0).max(3).optional(),
+  reservedAtHandover: z.boolean().optional(),
+});
+export type DefectUpdateRequest = z.infer<typeof defectUpdateRequest>;
+
+export const paymentStatus = z.enum(['offen', 'faellig', 'freigegeben', 'teilfreigabe', 'bezahlt']);
+export type PaymentStatus = z.infer<typeof paymentStatus>;
+
+/** Was einer vollen Freigabe im Weg steht — mit Namen, nicht als Ja/Nein. */
+export const paymentBlocker = z.object({
+  kind: z.enum(['task', 'defect']),
+  label: z.string(),
+});
+
+export const paymentMilestoneDto = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  triggerText: z.string().nullable(),
+  pct: z.number().nullable(),
+  amountCents: z.number().int(),
+  requiresTaskIds: z.array(z.string().uuid()),
+  requiresTaskNames: z.array(z.string()),
+  isRetention: z.boolean(),
+  invoiceNumber: z.string().nullable(),
+  invoiceDate: isoDate.nullable(),
+  dueDate: isoDate.nullable(),
+  status: paymentStatus,
+  releasedAt: z.string().nullable(),
+  releasedBy: z.string().nullable(),
+  paidAt: isoDate.nullable(),
+  withheldCents: z.number().int(),
+  withheldReason: z.string().nullable(),
+  /** Leer heißt: Diese Rate ließe sich jetzt freigeben. */
+  blockers: z.array(paymentBlocker),
+});
+export type PaymentMilestoneDto = z.infer<typeof paymentMilestoneDto>;
+
+export const paymentUpdateRequest = z.object({
+  status: paymentStatus.optional(),
+  invoiceNumber: z.string().max(80).nullish(),
+  invoiceDate: isoDate.nullish(),
+  dueDate: isoDate.nullish(),
+  paidAt: isoDate.nullish(),
+  withheldCents: z.number().int().min(0).optional(),
+  withheldReason: z.string().max(500).nullish(),
+});
+export type PaymentUpdateRequest = z.infer<typeof paymentUpdateRequest>;
+
+export const contractFinding = z.object({
+  ruleKey: z.string(),
+  severity: z.enum(['hinweis', 'warnung']),
+  message: z.string(),
+  legalReference: z.string().nullable(),
+  dismissedAt: z.string().nullable(),
+});
+export type ContractFinding = z.infer<typeof contractFinding>;
+
+export const contractUpdateRequest = z.object({
+  contractType: contractType.optional(),
+  contractualCompletion: isoDate.nullish(),
+  buildDurationDays: z.number().int().min(0).nullish(),
+  contractSumCents: z.number().int().min(0).nullish(),
+  securityPct: z.number().min(0).max(100).nullish(),
+  contractSignedOn: isoDate.nullish(),
+  buildingDescriptionComplete: z.boolean().nullish(),
+});
+export type ContractUpdateRequest = z.infer<typeof contractUpdateRequest>;
+
+export const financingDto = z.object({
+  loanAmountCents: z.number().int().nullable(),
+  ownFundsCents: z.number().int().nullable(),
+  commitmentRateBp: z.number().int().nullable(),
+  commitmentFreeMonths: z.number().int().nullable(),
+  loanGrantedOn: isoDate.nullable(),
+  bankName: z.string().nullable(),
+});
+export type FinancingDto = z.infer<typeof financingDto>;
+
+export const loanDrawdownDto = z.object({
+  id: z.string().uuid(),
+  amountCents: z.number().int(),
+  requestedAt: isoDate,
+  paidAt: isoDate.nullable(),
+  note: z.string().nullable(),
+});
+export type LoanDrawdownDto = z.infer<typeof loanDrawdownDto>;
+
+export const commitmentInterestDto = z.object({
+  totalCents: z.number().int(),
+  chargeableFrom: isoDate.nullable(),
+  undrawnAtEndCents: z.number().int(),
+  costPerFurtherMonthCents: z.number().int(),
+  /** Was der errechnete Verzug gegenüber dem Vertragstermin zusätzlich kostet. */
+  delayCostCents: z.number().int().nullable(),
+  segments: z.array(
+    z.object({
+      from: isoDate,
+      to: isoDate,
+      undrawnCents: z.number().int(),
+      days: z.number().int(),
+      interestCents: z.number().int(),
+    }),
+  ),
+});
+export type CommitmentInterestDto = z.infer<typeof commitmentInterestDto>;
+
+export const contractMirror = z.object({
+  contractType,
+  contractualCompletion: isoDate.nullable(),
+  buildDurationDays: z.number().int().nullable(),
+  contractSumCents: z.number().int().nullable(),
+  securityPct: z.number().nullable(),
+  contractSignedOn: isoDate.nullable(),
+  buildingDescriptionComplete: z.boolean().nullable(),
+  /** Summe aller Abschläge in Prozent — die Zahl aus § 650m Abs. 1 BGB. */
+  paymentPlanPct: z.number(),
+  changeOrderSumCents: z.number().int(),
+  findings: z.array(contractFinding),
+  payments: z.array(paymentMilestoneDto),
+  financing: financingDto.nullable(),
+  drawdowns: z.array(loanDrawdownDto),
+  interest: commitmentInterestDto.nullable(),
+});
+export type ContractMirror = z.infer<typeof contractMirror>;
+
+/**
+ * Der feste Zusatz an jedem Hinweis (Abschnitt 3.9, letzte Zeile).
+ *
+ * Er steht als Konstante hier und nicht als Textbaustein in fünf Regeln: So
+ * kann keine Regel ihn vergessen, und wer ihn ändert, ändert ihn überall.
+ */
+export const LEGAL_HINT_SUFFIX = 'Hinweis auf eine Gesetzesstelle, keine Rechtsberatung.';
+
+/**
+ * Was als Nächstes zu tun ist, wenn eine Frist zur Mängelbeseitigung läuft.
+ *
+ * Vier Stufen, und jede ist ein Satz statt einer Zahl: „Eskalationsstufe 2"
+ * sagt einem Bauherren nichts, „die Frist ist verstrichen — jetzt schriftlich
+ * eine letzte Nachfrist setzen" sagt ihm alles.
+ */
+export const DEFECT_ESCALATION_STEPS: readonly string[] = [
+  'Gemeldet. Das Unternehmen weiß Bescheid.',
+  'Frist gesetzt. Bis dahin passiert erst einmal nichts weiter.',
+  'Die Frist ist verstrichen. Jetzt schriftlich eine letzte Nachfrist setzen — mit Datum.',
+  'Auch die Nachfrist ist vorbei. Jetzt zählt der Einbehalt, und ein Anwalt ist das Geld wert.',
+];
+
+/**
+ * Welche Stufe die Frist nahelegt.
+ *
+ * Gerechnet, nicht gespeichert: Was der Bauherr tatsächlich getan hat, steht in
+ * `escalationLevel`. Was dran wäre, ergibt sich aus dem Kalender — und die
+ * beiden auseinanderzuhalten ist der Unterschied zwischen einer Erinnerung und
+ * einer Behauptung.
+ */
+export function suggestedEscalation(
+  deadline: string | null,
+  status: DefectStatus,
+  today: string,
+): number {
+  if (status === 'behoben' || status === 'abgelehnt') return 0;
+  if (deadline === null) return 0;
+  if (compareDates(today, deadline) <= 0) return 1;
+  // `daysBetween` aus dem Berechnungskern statt `new Date`: Dieselbe Regel wie
+  // dort — eine Frist, die je nach Zeitzone des Browsers einen Tag früher
+  // verstreicht, ist keine Frist.
+  return daysBetween(deadline, today) > 14 ? 3 : 2;
+}

@@ -53,6 +53,9 @@ const EXPECTED: readonly Expectation[] = [
   // Ohne 0013 gibt es den Lotsen nicht, und die Planansicht fragt seinen
   // Zustand ab, sobald jemand die Seite öffnet.
   { migration: '0013_assistant.sql', table: 'assistant_thread', column: 'member_id' },
+  // Ohne 0014 gibt es weder Mängel noch Zahlungsplan — und `project` fehlt eine
+  // Spalte, die der Vertragsspiegel bei jedem Laden liest.
+  { migration: '0014_defects_money.sql', table: 'project', column: 'build_duration_days' },
 ];
 
 export interface SchemaState {

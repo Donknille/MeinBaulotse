@@ -90,6 +90,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0010_diary.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0011_storage.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0012_guest.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0013_assistant.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0014_defects_money.sql
 ```
 
 **Port 5432, nicht 6543.** Der Transaction-Pooler ist für die laufende
@@ -113,7 +114,7 @@ select
 
 select count(*) filter (where rowsecurity) as mit_rls,
        count(*)                            as tabellen
-from pg_tables where schemaname = 'public';                        -- 25 von 25
+from pg_tables where schemaname = 'public';                        -- 32 von 32
 ```
 
 Die zweite Abfrage ist die wichtigere. Die Zählung oben stimmt auch dann, wenn

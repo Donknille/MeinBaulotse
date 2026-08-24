@@ -18,3 +18,4 @@ export * from './decisions.js';
 export * from './instantiate.js';
 export * from './templates/efh-massiv-unterkellert.js';
 export * from './templates/entscheidungen.js';
+export * from './interest.js';

@@ -8,6 +8,8 @@ import { DemoLogin } from './routes/DemoLogin';
 import { SignIn } from './routes/SignIn';
 import { Assistant } from './routes/Assistant';
 import { Capture } from './routes/Capture';
+import { Contract } from './routes/Contract';
+import { Defects } from './routes/Defects';
 import { Diary } from './routes/Diary';
 import { Guest } from './routes/Guest';
 import { GuestLinks } from './routes/GuestLinks';
@@ -103,6 +105,8 @@ export function App() {
               <Route path="/projekt/:projectId/tagebuch" element={<Diary />} />
               <Route path="/projekt/:projectId/beteiligte" element={<GuestLinks />} />
               <Route path="/projekt/:projectId/lotse" element={<Assistant />} />
+              <Route path="/projekt/:projectId/maengel" element={<Defects />} />
+              <Route path="/projekt/:projectId/vertrag" element={<Contract />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}

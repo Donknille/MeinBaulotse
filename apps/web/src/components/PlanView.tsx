@@ -12,6 +12,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  AlertTriangle,
+  Banknote,
   CalendarDays,
   Camera,
   Check,
@@ -119,6 +121,24 @@ export function PlanView({
               <Images size={16} aria-hidden />
               Bautagebuch
             </Link>
+            <Link
+              to={`/projekt/${schedule.project.id}/maengel`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"
+            >
+              <AlertTriangle size={16} aria-hidden />
+              Mängel
+            </Link>
+            {/* Vertrag und Geld sieht nur, wer den Vertrag pflegen darf: Die
+                Finanzierung ist die private Seite des Bauens. */}
+            {schedule.permissions.includes('contract.write') ? (
+              <Link
+                to={`/projekt/${schedule.project.id}/vertrag`}
+                className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"
+              >
+                <Banknote size={16} aria-hidden />
+                Vertrag und Geld
+              </Link>
+            ) : null}
             <Link
               to={`/projekt/${schedule.project.id}/lotse`}
               className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-button)] px-3 text-body font-medium text-electric-blue transition-colors duration-[var(--motion-micro)] hover:bg-soft-blue"

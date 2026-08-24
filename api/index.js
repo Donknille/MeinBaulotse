@@ -26567,6 +26567,9 @@ function fromEpochDay(epochDay) {
 function addDays(date, days) {
   return fromEpochDay(toEpochDay(date) + days);
 }
+function daysBetween(from, to) {
+  return toEpochDay(to) - toEpochDay(from);
+}
 function compareDates(a, b) {
   const left = toEpochDay(a);
   const right = toEpochDay(b);
@@ -27586,6 +27589,68 @@ var DECISION_TEMPLATES = ROWS2.map((row, index) => ({
   sortOrder: (index + 1) * 10
 }));
 
+// ../../packages/schedule/dist/interest.js
+function days30E360(from, to) {
+  const a = parseIsoDate(from);
+  const b = parseIsoDate(to);
+  return 360 * (b.year - a.year) + 30 * (b.month - a.month) + (Math.min(b.day, 30) - Math.min(a.day, 30));
+}
+function addMonths(date, months) {
+  const { year: year2, month, day: day2 } = parseIsoDate(date);
+  const gesamt = year2 * 12 + (month - 1) + months;
+  const zieljahr = Math.floor(gesamt / 12);
+  const zielmonat = gesamt % 12 + 1;
+  const zieltag = Math.min(day2, daysInMonth(zieljahr, zielmonat));
+  return makeIsoDate(zieljahr, zielmonat, zieltag);
+}
+function commitmentInterest(input) {
+  const zinsbeginn = addMonths(input.grantedOn, Math.max(0, input.freeMonths));
+  const abgerufenBis = (tag2) => input.drawdowns.filter((abruf) => compareDates(abruf.date, tag2) <= 0).reduce((summe2, abruf) => summe2 + abruf.amountCents, 0);
+  const offenAmEnde = Math.max(0, input.loanAmountCents - abgerufenBis(input.until));
+  const monatlich = Math.round(offenAmEnde * input.ratePerYearBp / 1e4 / 12);
+  if (input.loanAmountCents <= 0 || input.ratePerYearBp <= 0 || compareDates(zinsbeginn, input.until) >= 0) {
+    return {
+      totalCents: 0,
+      chargeableFrom: compareDates(zinsbeginn, input.until) >= 0 ? null : zinsbeginn,
+      undrawnAtEndCents: offenAmEnde,
+      segments: [],
+      costPerFurtherMonthCents: monatlich
+    };
+  }
+  const grenzen = [
+    zinsbeginn,
+    ...input.drawdowns.map((abruf) => abruf.date).filter((tag2) => compareDates(tag2, zinsbeginn) > 0 && compareDates(tag2, input.until) < 0),
+    input.until
+  ].slice().sort(compareDates).filter((tag2, index, alle) => index === 0 || alle[index - 1] !== tag2);
+  const segments = [];
+  let summe = 0;
+  for (let index = 0; index < grenzen.length - 1; index += 1) {
+    const von = grenzen[index];
+    const bis = grenzen[index + 1];
+    const offen = Math.max(0, input.loanAmountCents - abgerufenBis(von));
+    const tage = days30E360(von, bis);
+    if (tage <= 0 || offen <= 0)
+      continue;
+    const zins = Math.round(offen * input.ratePerYearBp * tage / 1e4 / 360);
+    summe += zins;
+    segments.push({ from: von, to: bis, undrawnCents: offen, days: tage, interestCents: zins });
+  }
+  return {
+    totalCents: summe,
+    chargeableFrom: zinsbeginn,
+    undrawnAtEndCents: offenAmEnde,
+    segments,
+    costPerFurtherMonthCents: monatlich
+  };
+}
+function delayCostInCommitmentInterest(input, newEnd) {
+  if (compareDates(newEnd, input.until) <= 0)
+    return 0;
+  const bisher = commitmentInterest(input);
+  const danach = commitmentInterest({ ...input, until: newEnd });
+  return danach.totalCents - bisher.totalCents;
+}
+
 // ../../packages/shared/dist/index.js
 var isoDate = external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum im Format JJJJ-MM-TT erwartet");
 var federalState = external_exports.enum(FEDERAL_STATES);
@@ -28225,6 +28290,157 @@ var assistantStatus = external_exports.object({
   /** Anteil des Monatsdeckels, der schon verbraucht ist, in Prozent. */
   budgetUsedPercent: external_exports.number().int()
 });
+var defectSeverity = external_exports.enum(["geringfuegig", "wesentlich"]);
+var defectStatus = external_exports.enum([
+  "offen",
+  "in_bearbeitung",
+  "behoben_gemeldet",
+  "behoben",
+  "abgelehnt"
+]);
+var defectDto = external_exports.object({
+  id: external_exports.string().uuid(),
+  title: external_exports.string(),
+  description: external_exports.string().nullable(),
+  locationText: external_exports.string().nullable(),
+  severity: defectSeverity,
+  status: defectStatus,
+  taskId: external_exports.string().uuid().nullable(),
+  taskName: external_exports.string().nullable(),
+  tradeName: external_exports.string().nullable(),
+  reportedAt: external_exports.string(),
+  reportedBy: external_exports.string().nullable(),
+  deadline: isoDate.nullable(),
+  escalationLevel: external_exports.number().int(),
+  /** Was jetzt dran wäre — aus der Frist gerechnet, nicht gespeichert. */
+  suggestedEscalation: external_exports.number().int(),
+  resolvedAt: external_exports.string().nullable(),
+  reservedAtHandover: external_exports.boolean(),
+  mediaCount: external_exports.number().int()
+});
+var defectCreateRequest = external_exports.object({
+  title: external_exports.string().min(3).max(200),
+  description: external_exports.string().max(4e3).optional(),
+  locationText: external_exports.string().max(200).optional(),
+  severity: defectSeverity.default("geringfuegig"),
+  taskId: external_exports.string().uuid().nullish(),
+  deadline: isoDate.nullish()
+});
+var defectUpdateRequest = external_exports.object({
+  status: defectStatus.optional(),
+  severity: defectSeverity.optional(),
+  deadline: isoDate.nullish(),
+  escalationLevel: external_exports.number().int().min(0).max(3).optional(),
+  reservedAtHandover: external_exports.boolean().optional()
+});
+var paymentStatus = external_exports.enum(["offen", "faellig", "freigegeben", "teilfreigabe", "bezahlt"]);
+var paymentBlocker = external_exports.object({
+  kind: external_exports.enum(["task", "defect"]),
+  label: external_exports.string()
+});
+var paymentMilestoneDto = external_exports.object({
+  id: external_exports.string().uuid(),
+  name: external_exports.string(),
+  triggerText: external_exports.string().nullable(),
+  pct: external_exports.number().nullable(),
+  amountCents: external_exports.number().int(),
+  requiresTaskIds: external_exports.array(external_exports.string().uuid()),
+  requiresTaskNames: external_exports.array(external_exports.string()),
+  isRetention: external_exports.boolean(),
+  invoiceNumber: external_exports.string().nullable(),
+  invoiceDate: isoDate.nullable(),
+  dueDate: isoDate.nullable(),
+  status: paymentStatus,
+  releasedAt: external_exports.string().nullable(),
+  releasedBy: external_exports.string().nullable(),
+  paidAt: isoDate.nullable(),
+  withheldCents: external_exports.number().int(),
+  withheldReason: external_exports.string().nullable(),
+  /** Leer heißt: Diese Rate ließe sich jetzt freigeben. */
+  blockers: external_exports.array(paymentBlocker)
+});
+var paymentUpdateRequest = external_exports.object({
+  status: paymentStatus.optional(),
+  invoiceNumber: external_exports.string().max(80).nullish(),
+  invoiceDate: isoDate.nullish(),
+  dueDate: isoDate.nullish(),
+  paidAt: isoDate.nullish(),
+  withheldCents: external_exports.number().int().min(0).optional(),
+  withheldReason: external_exports.string().max(500).nullish()
+});
+var contractFinding = external_exports.object({
+  ruleKey: external_exports.string(),
+  severity: external_exports.enum(["hinweis", "warnung"]),
+  message: external_exports.string(),
+  legalReference: external_exports.string().nullable(),
+  dismissedAt: external_exports.string().nullable()
+});
+var contractUpdateRequest = external_exports.object({
+  contractType: contractType.optional(),
+  contractualCompletion: isoDate.nullish(),
+  buildDurationDays: external_exports.number().int().min(0).nullish(),
+  contractSumCents: external_exports.number().int().min(0).nullish(),
+  securityPct: external_exports.number().min(0).max(100).nullish(),
+  contractSignedOn: isoDate.nullish(),
+  buildingDescriptionComplete: external_exports.boolean().nullish()
+});
+var financingDto = external_exports.object({
+  loanAmountCents: external_exports.number().int().nullable(),
+  ownFundsCents: external_exports.number().int().nullable(),
+  commitmentRateBp: external_exports.number().int().nullable(),
+  commitmentFreeMonths: external_exports.number().int().nullable(),
+  loanGrantedOn: isoDate.nullable(),
+  bankName: external_exports.string().nullable()
+});
+var loanDrawdownDto = external_exports.object({
+  id: external_exports.string().uuid(),
+  amountCents: external_exports.number().int(),
+  requestedAt: isoDate,
+  paidAt: isoDate.nullable(),
+  note: external_exports.string().nullable()
+});
+var commitmentInterestDto = external_exports.object({
+  totalCents: external_exports.number().int(),
+  chargeableFrom: isoDate.nullable(),
+  undrawnAtEndCents: external_exports.number().int(),
+  costPerFurtherMonthCents: external_exports.number().int(),
+  /** Was der errechnete Verzug gegenüber dem Vertragstermin zusätzlich kostet. */
+  delayCostCents: external_exports.number().int().nullable(),
+  segments: external_exports.array(external_exports.object({
+    from: isoDate,
+    to: isoDate,
+    undrawnCents: external_exports.number().int(),
+    days: external_exports.number().int(),
+    interestCents: external_exports.number().int()
+  }))
+});
+var contractMirror = external_exports.object({
+  contractType,
+  contractualCompletion: isoDate.nullable(),
+  buildDurationDays: external_exports.number().int().nullable(),
+  contractSumCents: external_exports.number().int().nullable(),
+  securityPct: external_exports.number().nullable(),
+  contractSignedOn: isoDate.nullable(),
+  buildingDescriptionComplete: external_exports.boolean().nullable(),
+  /** Summe aller Abschläge in Prozent — die Zahl aus § 650m Abs. 1 BGB. */
+  paymentPlanPct: external_exports.number(),
+  changeOrderSumCents: external_exports.number().int(),
+  findings: external_exports.array(contractFinding),
+  payments: external_exports.array(paymentMilestoneDto),
+  financing: financingDto.nullable(),
+  drawdowns: external_exports.array(loanDrawdownDto),
+  interest: commitmentInterestDto.nullable()
+});
+var LEGAL_HINT_SUFFIX = "Hinweis auf eine Gesetzesstelle, keine Rechtsberatung.";
+function suggestedEscalation(deadline, status, today) {
+  if (status === "behoben" || status === "abgelehnt")
+    return 0;
+  if (deadline === null)
+    return 0;
+  if (compareDates(today, deadline) <= 0)
+    return 1;
+  return daysBetween(deadline, today) > 14 ? 3 : 2;
+}
 
 // src/anthropic.ts
 init_sdk();
@@ -29859,6 +30075,538 @@ var requireAuth = createMiddleware(async (c, next) => {
   }
   await next();
 });
+
+// src/defects.ts
+async function listDefects(tx, projectId, today) {
+  const result = await tx.query(
+    `select d.id, d.title, d.description, d.location_text, d.severity::text as severity,
+            d.status::text as status, d.task_id, t.name as task_name, tr.name as trade_name,
+            d.reported_at, rb.display_name as reported_by, d.deadline, d.escalation_level,
+            d.resolved_at, d.reserved_at_handover,
+            (select count(*)::text from media m where m.defect_id = d.id) as media_count
+       from defect d
+       left join task t on t.id = d.task_id
+       left join trade tr on tr.id = d.trade_id
+       left join project_member rb on rb.id = d.reported_by
+      where d.project_id = $1
+      -- Offene zuerst, darunter die wesentlichen, darunter die mit der
+      -- \xE4ltesten Frist. Wer die Liste \xF6ffnet, sieht oben, was dr\xE4ngt.
+      order by (d.status in ('behoben','abgelehnt')),
+               (d.severity = 'geringfuegig'),
+               d.deadline nulls last,
+               d.reported_at`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    locationText: row.location_text,
+    severity: row.severity,
+    status: row.status,
+    taskId: row.task_id,
+    taskName: row.task_name,
+    tradeName: row.trade_name,
+    reportedAt: row.reported_at.toISOString(),
+    reportedBy: row.reported_by,
+    deadline: row.deadline,
+    escalationLevel: row.escalation_level,
+    suggestedEscalation: suggestedEscalation(row.deadline, row.status, today),
+    resolvedAt: row.resolved_at === null ? null : row.resolved_at.toISOString(),
+    reservedAtHandover: row.reserved_at_handover,
+    mediaCount: Number(row.media_count)
+  }));
+}
+async function createDefect(tx, projectId, request, today) {
+  await tx.query(
+    `insert into defect
+         (project_id, task_id, trade_id, title, description, location_text, severity,
+          deadline, reported_by)
+       values ($1, $2, (select trade_id from task where id = $2), $3, $4, $5,
+               $6::mbl.defect_severity, $7::date, mbl.current_member_id($1))`,
+    [
+      projectId,
+      request.taskId ?? null,
+      request.title,
+      request.description ?? null,
+      request.locationText ?? null,
+      request.severity,
+      request.deadline ?? null
+    ]
+  ).catch(uebersetze("In deiner Rolle l\xE4sst sich hier kein Mangel erfassen."));
+  return listDefects(tx, projectId, today);
+}
+async function updateDefect(tx, projectId, defectId, change, today) {
+  const felder = [];
+  const werte = [defectId, projectId];
+  const setze = (spalte, wert, cast = "") => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}${cast}`);
+  };
+  if (change.status !== void 0) setze("status", change.status, "::mbl.defect_status");
+  if (change.severity !== void 0) setze("severity", change.severity, "::mbl.defect_severity");
+  if (change.deadline !== void 0) setze("deadline", change.deadline, "::date");
+  if (change.escalationLevel !== void 0) setze("escalation_level", change.escalationLevel);
+  if (change.reservedAtHandover !== void 0) {
+    setze("reserved_at_handover", change.reservedAtHandover);
+  }
+  if (felder.length === 0) return listDefects(tx, projectId, today);
+  const result = await tx.query(`update defect set ${felder.join(", ")} where id = $1 and project_id = $2`, werte).catch(uebersetze("Das darf deine Rolle an diesem Mangel nicht \xE4ndern."));
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Diesen Mangel gibt es hier nicht." });
+  }
+  return listDefects(tx, projectId, today);
+}
+function uebersetze(fallback) {
+  return (cause) => {
+    const fehler = cause;
+    if (fehler?.code === "42501") {
+      throw new HTTPException(403, { message: fehler.message ?? fallback });
+    }
+    throw cause;
+  };
+}
+
+// src/contract-rules.ts
+function euro(cents) {
+  return `${new Intl.NumberFormat("de-DE").format(Math.round(cents / 100))} \u20AC`;
+}
+function prozent(wert) {
+  return `${wert.toFixed(wert % 1 === 0 ? 0 : 1).replace(".", ",")} %`;
+}
+var REGELN = [
+  {
+    // § 650m Abs. 1 BGB gilt nur für Verbraucherbauverträge. Bei
+    // Einzelgewerken gibt es diese Grenze nicht, und ein Hinweis darauf wäre
+    // schlicht falsch.
+    key: "abschlaege_ueber_90",
+    run: (facts) => {
+      if (facts.contractType !== "verbraucherbauvertrag") return null;
+      if (facts.paymentPlanPct <= 90) return null;
+      return {
+        ruleKey: "abschlaege_ueber_90",
+        severity: "warnung",
+        message: `Der Zahlungsplan summiert sich auf ${prozent(facts.paymentPlanPct)}. \xA7 650m Abs. 1 BGB begrenzt Abschlagszahlungen bei Verbraucherbauvertr\xE4gen auf 90 % der Gesamtverg\xFCtung einschlie\xDFlich Nachtr\xE4gen. ` + LEGAL_HINT_SUFFIX,
+        legalReference: "\xA7 650m Abs. 1 BGB"
+      };
+    }
+  },
+  {
+    key: "sicherheit_fehlt",
+    run: (facts) => {
+      if (facts.contractType !== "verbraucherbauvertrag") return null;
+      if (facts.securityPct !== null && facts.securityPct > 0) return null;
+      const betrag = facts.contractSumCents === null ? "" : ` Das w\xE4ren hier ${euro(Math.round(facts.contractSumCents * 0.05))}.`;
+      return {
+        ruleKey: "sicherheit_fehlt",
+        severity: "warnung",
+        message: `Eine Sicherheit f\xFCr die rechtzeitige Herstellung ohne wesentliche M\xE4ngel ist nicht erfasst. \xA7 650m Abs. 2 BGB sieht 5 % der Gesamtverg\xFCtung bei der ersten Abschlagszahlung vor, auf Verlangen des Unternehmers als Einbehalt.${betrag} ` + LEGAL_HINT_SUFFIX,
+        legalReference: "\xA7 650m Abs. 2 BGB"
+      };
+    }
+  },
+  {
+    key: "nachtraege_ueber_10",
+    run: (facts) => {
+      if (facts.contractSumCents === null || facts.contractSumCents <= 0) return null;
+      if (facts.changeOrderSumCents <= facts.contractSumCents * 0.1) return null;
+      return {
+        ruleKey: "nachtraege_ueber_10",
+        severity: "hinweis",
+        message: `Die Nachtr\xE4ge summieren sich auf ${euro(facts.changeOrderSumCents)} und \xFCbersteigen damit 10 % der urspr\xFCnglichen Verg\xFCtung von ${euro(facts.contractSumCents)}. \xA7 650m Abs. 2 S. 2 BGB sieht dann eine weitere Sicherheit von 5 % des zus\xE4tzlichen Verg\xFCtungsanspruchs vor. ` + LEGAL_HINT_SUFFIX,
+        legalReference: "\xA7 650m Abs. 2 S. 2 BGB"
+      };
+    }
+  },
+  {
+    key: "kein_fertigstellungstermin",
+    run: (facts) => {
+      if (facts.contractualCompletion !== null) return null;
+      if (facts.buildDurationDays !== null && facts.buildDurationDays > 0) return null;
+      return {
+        ruleKey: "kein_fertigstellungstermin",
+        severity: "warnung",
+        message: "Im Vertragsspiegel steht weder ein Fertigstellungstermin noch eine Bauzeitdauer. \xA7 650k Abs. 3 BGB verlangt bei Verbraucherbauvertr\xE4gen verbindliche Angaben hierzu. Ohne einen der beiden Werte l\xE4sst sich au\xDFerdem nicht sagen, ob dein Bau im Plan liegt. " + LEGAL_HINT_SUFFIX,
+        legalReference: "\xA7 650k Abs. 3 BGB"
+      };
+    }
+  },
+  {
+    key: "baubeschreibung_unvollstaendig",
+    run: (facts) => {
+      if (facts.contractType !== "verbraucherbauvertrag") return null;
+      if (facts.buildingDescriptionComplete !== false) return null;
+      return {
+        ruleKey: "baubeschreibung_unvollstaendig",
+        severity: "hinweis",
+        message: "Du hast angegeben, dass die Baubeschreibung Punkte aus Art. 249 \xA7 2 EGBGB nicht enth\xE4lt. Dort steht, was sie mindestens beschreiben muss \u2014 unter anderem Art und Umfang der Leistungen, Geb\xE4udedaten, Baustoffe, die Beschaffenheit der Ver- und Entsorgung sowie den Ausbaustandard. Fehlt etwas, gehen Zweifel bei der Auslegung zu Lasten des Unternehmers. " + LEGAL_HINT_SUFFIX,
+        legalReference: "Art. 249 \xA7 2 EGBGB"
+      };
+    }
+  }
+];
+function runContractChecks(facts) {
+  return REGELN.map((regel) => regel.run(facts)).filter(
+    (befund) => befund !== null
+  );
+}
+var CONTRACT_RULE_KEYS = REGELN.map((regel) => regel.key);
+
+// src/money.ts
+var AUTOMATISCH_ABGERAEUMT = "trifft nicht mehr zu";
+async function ensurePaymentPlan(tx, projectId) {
+  const vorhanden = await tx.query(
+    "select count(*)::text as anzahl from payment_milestone where project_id = $1",
+    [projectId]
+  );
+  if (Number(vorhanden.rows[0].anzahl) > 0) return;
+  const summe = await tx.query(
+    "select contract_sum_cents from project where id = $1",
+    [projectId]
+  );
+  const gesamt = summe.rows[0]?.contract_sum_cents ?? null;
+  if (gesamt === null || gesamt <= 0) return;
+  await tx.query(
+    `insert into payment_milestone
+       (project_id, name, trigger_text, pct, amount_cents, is_retention, sort_order,
+        requires_task_ids)
+     select $1, v.name, v.trigger_text, v.pct,
+            round($2::numeric * v.pct / 100)::bigint, v.is_retention, v.sort_order,
+            coalesce((
+              select array_agg(t.id)
+                from task t
+               where t.project_id = $1 and t.template_task_code = v.task_code
+            ), '{}')
+       from payment_template v
+      order by v.sort_order`,
+    [projectId, gesamt]
+  );
+}
+async function repriceOpenPayments(tx, projectId, gesamt) {
+  await tx.query(
+    `update payment_milestone
+        set amount_cents = round($2::numeric * pct / 100)::bigint
+      where project_id = $1
+        and pct is not null
+        -- Was freigegeben oder bezahlt ist, bleibt stehen. Eine nachtr\xE4glich
+        -- ge\xE4nderte Vertragssumme darf keine Rechnung umschreiben, die schon
+        -- beglichen ist.
+        and status in ('offen', 'faellig')`,
+    [projectId, gesamt]
+  );
+}
+async function loadPayments(tx, projectId) {
+  const result = await tx.query(
+    `select p.*,
+            -- Der Name, sonst die Mailadresse. Eine Anmeldung per Magic Link
+            -- bringt keinen Namen mit, und \u201Efreigegeben von \u2014" ist in einer
+            -- Bauakte die eine Zeile, die man sp\xE4ter br\xE4uchte.
+            coalesce(rb.display_name, rb.email) as released_by,
+            coalesce((select array_agg(t.name order by t.sort_order)
+                        from task t where t.id = any(p.requires_task_ids)), '{}')
+              as requires_task_names,
+            -- Was der Freigabe im Weg steht, kommt aus derselben Funktion, die
+            -- auch der Trigger benutzt. Zwei Fassungen derselben Pr\xFCfung w\xE4ren
+            -- die eine Stelle, an der die Oberfl\xE4che \u201Egeht" sagt und die
+            -- Datenbank \u201Egeht nicht".
+            (select coalesce(jsonb_agg(jsonb_build_object('kind', b.kind, 'label', b.label)), '[]')
+               from mbl.payment_blockers(p.id) b) as blockers
+       from payment_milestone p
+       left join project_member rb on rb.id = p.released_by
+      where p.project_id = $1
+      order by p.sort_order`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    triggerText: row.trigger_text,
+    pct: row.pct === null ? null : Number(row.pct),
+    amountCents: row.amount_cents,
+    requiresTaskIds: row.requires_task_ids,
+    requiresTaskNames: row.requires_task_names ?? [],
+    isRetention: row.is_retention,
+    invoiceNumber: row.invoice_number,
+    invoiceDate: row.invoice_date,
+    dueDate: row.due_date,
+    status: row.status,
+    releasedAt: row.released_at === null ? null : row.released_at.toISOString(),
+    releasedBy: row.released_by,
+    paidAt: row.paid_at,
+    withheldCents: row.withheld_cents,
+    withheldReason: row.withheld_reason,
+    blockers: row.blockers ?? []
+  }));
+}
+async function updatePayment(tx, projectId, paymentId, change) {
+  const felder = [];
+  const werte = [paymentId, projectId];
+  const setze = (spalte, wert, cast = "") => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}${cast}`);
+  };
+  if (change.status !== void 0) setze("status", change.status, "::mbl.payment_status");
+  if (change.invoiceNumber !== void 0) setze("invoice_number", change.invoiceNumber);
+  if (change.invoiceDate !== void 0) setze("invoice_date", change.invoiceDate, "::date");
+  if (change.dueDate !== void 0) setze("due_date", change.dueDate, "::date");
+  if (change.paidAt !== void 0) setze("paid_at", change.paidAt, "::date");
+  if (change.withheldCents !== void 0) setze("withheld_cents", change.withheldCents);
+  if (change.withheldReason !== void 0) setze("withheld_reason", change.withheldReason);
+  if (felder.length === 0) return loadPayments(tx, projectId);
+  const result = await tx.query(
+    `update payment_milestone set ${felder.join(", ")} where id = $1 and project_id = $2`,
+    werte
+  ).catch((cause) => {
+    const fehler = cause;
+    if (fehler?.code === "42501") {
+      throw new HTTPException(409, {
+        message: fehler.message ?? "Diese Rate l\xE4sst sich noch nicht freigeben."
+      });
+    }
+    if (fehler?.code === "23514") {
+      throw new HTTPException(422, {
+        message: "Eine Teilfreigabe braucht einen Betrag und einen Grund. Ohne beides ist sie in einem halben Jahr nicht mehr erkl\xE4rbar."
+      });
+    }
+    throw cause;
+  });
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Diese Rate gibt es hier nicht." });
+  }
+  return loadPayments(tx, projectId);
+}
+async function loadFinancing(tx, projectId) {
+  const result = await tx.query("select * from financing where project_id = $1", [projectId]);
+  const zeile = result.rows[0];
+  if (zeile === void 0) return null;
+  return {
+    loanAmountCents: zeile.loan_amount_cents,
+    ownFundsCents: zeile.own_funds_cents,
+    commitmentRateBp: zeile.commitment_rate_bp,
+    commitmentFreeMonths: zeile.commitment_free_months,
+    loanGrantedOn: zeile.loan_granted_on,
+    bankName: zeile.bank_name
+  };
+}
+async function saveFinancing(tx, projectId, daten) {
+  await tx.query(
+    `insert into financing (project_id, loan_amount_cents, own_funds_cents,
+                            commitment_rate_bp, commitment_free_months, loan_granted_on, bank_name)
+     values ($1, $2, $3, $4, $5, $6::date, $7)
+     on conflict (project_id) do update
+       set loan_amount_cents      = excluded.loan_amount_cents,
+           own_funds_cents        = excluded.own_funds_cents,
+           commitment_rate_bp     = excluded.commitment_rate_bp,
+           commitment_free_months = excluded.commitment_free_months,
+           loan_granted_on        = excluded.loan_granted_on,
+           bank_name              = excluded.bank_name`,
+    [
+      projectId,
+      daten.loanAmountCents,
+      daten.ownFundsCents,
+      daten.commitmentRateBp,
+      daten.commitmentFreeMonths,
+      daten.loanGrantedOn,
+      daten.bankName
+    ]
+  );
+  return loadFinancing(tx, projectId);
+}
+async function loadDrawdowns(tx, projectId) {
+  const result = await tx.query(
+    `select id, amount_cents, requested_at, paid_at, note
+       from loan_drawdown where project_id = $1 order by requested_at`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    amountCents: row.amount_cents,
+    requestedAt: row.requested_at,
+    paidAt: row.paid_at,
+    note: row.note
+  }));
+}
+function interestFor(financing, drawdowns, computedEnd, contractualEnd) {
+  if (financing === null || financing.loanAmountCents === null || financing.loanGrantedOn === null || financing.commitmentRateBp === null) {
+    return null;
+  }
+  const eingabe = {
+    loanAmountCents: financing.loanAmountCents,
+    grantedOn: financing.loanGrantedOn,
+    freeMonths: financing.commitmentFreeMonths ?? 0,
+    ratePerYearBp: financing.commitmentRateBp,
+    // Nur ausgezahlte Abrufe senken die Bereitstellungszinsen. Ein
+    // angeforderter, aber nicht geflossener Abruf kostet weiter.
+    drawdowns: drawdowns.filter((abruf) => abruf.paidAt !== null).map((abruf) => ({ date: abruf.paidAt, amountCents: abruf.amountCents })),
+    until: contractualEnd ?? computedEnd ?? financing.loanGrantedOn
+  };
+  const ergebnis = commitmentInterest(eingabe);
+  const verzugskosten = contractualEnd !== null && computedEnd !== null ? delayCostInCommitmentInterest(eingabe, computedEnd) : null;
+  return {
+    totalCents: ergebnis.totalCents,
+    chargeableFrom: ergebnis.chargeableFrom,
+    undrawnAtEndCents: ergebnis.undrawnAtEndCents,
+    costPerFurtherMonthCents: ergebnis.costPerFurtherMonthCents,
+    delayCostCents: verzugskosten,
+    segments: ergebnis.segments.map((abschnitt) => ({ ...abschnitt }))
+  };
+}
+async function loadFacts(tx, projectId) {
+  const projekt = await tx.query(
+    `select contract_type, contractual_completion, build_duration_days, contract_sum_cents,
+            security_pct, contract_signed_on, building_description_complete
+       from project where id = $1`,
+    [projectId]
+  );
+  if (projekt.rows.length === 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const zeile = projekt.rows[0];
+  const zahlen = await tx.query(
+    `select (select sum(pct) from payment_milestone
+              where project_id = $1 and not is_retention)::text as plan_pct,
+            coalesce((select sum(amount_cents) from change_order
+                       where project_id = $1 and status in ('vereinbart','abgerechnet')), 0)::text
+              as nachtraege`,
+    [projectId]
+  );
+  return {
+    contractType: zeile.contract_type,
+    contractualCompletion: zeile.contractual_completion,
+    buildDurationDays: zeile.build_duration_days,
+    contractSumCents: zeile.contract_sum_cents,
+    securityPct: zeile.security_pct === null ? null : Number(zeile.security_pct),
+    buildingDescriptionComplete: zeile.building_description_complete,
+    paymentPlanPct: Number(zahlen.rows[0]?.plan_pct ?? 0),
+    changeOrderSumCents: Number(zahlen.rows[0]?.nachtraege ?? 0),
+    signedOn: zeile.contract_signed_on
+  };
+}
+async function refreshContractChecks(tx, projectId) {
+  const darf = await tx.query(
+    "select mbl.has_perm($1, 'contract.write') as darf",
+    [projectId]
+  );
+  if (darf.rows[0]?.darf !== true) return loadFindings(tx, projectId);
+  const facts = await loadFacts(tx, projectId);
+  const befunde = runContractChecks(facts);
+  const gefunden = new Set(befunde.map((befund) => befund.ruleKey));
+  for (const befund of befunde) {
+    await tx.query(
+      `insert into contract_check (project_id, rule_key, severity, message, legal_reference)
+       values ($1, $2, $3, $4, $5)
+       on conflict (project_id, rule_key) do update
+         set severity = excluded.severity,
+             message = excluded.message,
+             legal_reference = excluded.legal_reference,
+             -- Zwei Arten von \u201Eweggeklickt", und sie d\xFCrfen nicht dasselbe
+             -- bedeuten: Was die Anwendung abger\xE4umt hat, weil es nicht mehr
+             -- zutraf, kommt zur\xFCck, sobald es wieder zutrifft. Was der
+             -- Bauherr selbst weggeklickt hat, bleibt weg \u2014 sonst w\xE4re jede
+             -- Vertrags\xE4nderung ein Grund, dieselben Hinweise noch einmal
+             -- einzeln zu best\xE4tigen.
+             dismissed_at = case when contract_check.dismissed_reason = $6
+                                 then null else contract_check.dismissed_at end,
+             dismissed_reason = case when contract_check.dismissed_reason = $6
+                                     then null else contract_check.dismissed_reason end`,
+      [
+        projectId,
+        befund.ruleKey,
+        befund.severity,
+        befund.message,
+        befund.legalReference,
+        AUTOMATISCH_ABGERAEUMT
+      ]
+    );
+  }
+  const ueberholt = CONTRACT_RULE_KEYS.filter((key) => !gefunden.has(key));
+  if (ueberholt.length > 0) {
+    await tx.query(
+      `update contract_check set dismissed_at = now(), dismissed_reason = $3
+        where project_id = $1 and rule_key = any($2::text[]) and dismissed_at is null`,
+      [projectId, ueberholt, AUTOMATISCH_ABGERAEUMT]
+    );
+  }
+  return loadFindings(tx, projectId);
+}
+async function loadFindings(tx, projectId) {
+  const result = await tx.query(
+    `select rule_key, severity, message, legal_reference, dismissed_at
+       from contract_check
+      where project_id = $1 and dismissed_at is null
+      order by severity desc, rule_key`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    ruleKey: row.rule_key,
+    severity: row.severity,
+    message: row.message,
+    legalReference: row.legal_reference,
+    dismissedAt: row.dismissed_at === null ? null : row.dismissed_at.toISOString()
+  }));
+}
+async function updateContract(tx, projectId, change) {
+  const felder = [];
+  const werte = [projectId];
+  const setze = (spalte, wert, cast = "") => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}${cast}`);
+  };
+  if (change.contractType !== void 0) {
+    setze("contract_type", change.contractType, "::mbl.contract_type");
+  }
+  if (change.contractualCompletion !== void 0) {
+    setze("contractual_completion", change.contractualCompletion, "::date");
+  }
+  if (change.buildDurationDays !== void 0) {
+    setze("build_duration_days", change.buildDurationDays);
+  }
+  if (change.contractSumCents !== void 0) setze("contract_sum_cents", change.contractSumCents);
+  if (change.securityPct !== void 0) setze("security_pct", change.securityPct);
+  if (change.contractSignedOn !== void 0) {
+    setze("contract_signed_on", change.contractSignedOn, "::date");
+  }
+  if (change.buildingDescriptionComplete !== void 0) {
+    setze("building_description_complete", change.buildingDescriptionComplete);
+  }
+  if (felder.length === 0) return;
+  const result = await tx.query(`update project set ${felder.join(", ")} where id = $1`, werte).catch((cause) => {
+    if (cause?.code === "42501") {
+      throw new HTTPException(403, {
+        message: "Vertragsdaten pflegt der Bauherr. Sprich ihn bitte an."
+      });
+    }
+    throw cause;
+  });
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  if (change.contractSumCents !== void 0 && change.contractSumCents !== null) {
+    await ensurePaymentPlan(tx, projectId);
+    await repriceOpenPayments(tx, projectId, change.contractSumCents);
+  }
+}
+async function loadContractMirror(tx, projectId, computedEnd) {
+  const facts = await loadFacts(tx, projectId);
+  const financing = await loadFinancing(tx, projectId);
+  const drawdowns = await loadDrawdowns(tx, projectId);
+  return {
+    contractType: facts.contractType,
+    contractualCompletion: facts.contractualCompletion,
+    buildDurationDays: facts.buildDurationDays,
+    contractSumCents: facts.contractSumCents,
+    securityPct: facts.securityPct,
+    contractSignedOn: facts.signedOn,
+    buildingDescriptionComplete: facts.buildingDescriptionComplete,
+    paymentPlanPct: facts.paymentPlanPct,
+    changeOrderSumCents: facts.changeOrderSumCents,
+    findings: await loadFindings(tx, projectId),
+    payments: await loadPayments(tx, projectId),
+    financing,
+    drawdowns,
+    interest: interestFor(financing, drawdowns, computedEnd, facts.contractualCompletion)
+  };
+}
 
 // src/decisions.ts
 function toDecision(row) {
@@ -31538,7 +32286,10 @@ var EXPECTED = [
   { migration: "0012_guest.sql", table: "task", column: "counter_start" },
   // Ohne 0013 gibt es den Lotsen nicht, und die Planansicht fragt seinen
   // Zustand ab, sobald jemand die Seite öffnet.
-  { migration: "0013_assistant.sql", table: "assistant_thread", column: "member_id" }
+  { migration: "0013_assistant.sql", table: "assistant_thread", column: "member_id" },
+  // Ohne 0014 gibt es weder Mängel noch Zahlungsplan — und `project` fehlt eine
+  // Spalte, die der Vertragsspiegel bei jedem Laden liest.
+  { migration: "0014_defects_money.sql", table: "project", column: "build_duration_days" }
 ];
 async function checkSchema(tx) {
   if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
@@ -31956,6 +32707,101 @@ function createApp() {
       (tx) => revokeGuestLink(tx, projectId, linkId)
     );
     return c.json({ links });
+  });
+  v1.get("/projects/:id/defects", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const on = c.req.query("on");
+    if (on !== void 0 && !isoDate.safeParse(on).success) {
+      throw new HTTPException(400, { message: "Dieses Datum k\xF6nnen wir nicht deuten." });
+    }
+    const defects = await withUserTx(
+      c.get("claims"),
+      (tx) => listDefects(tx, projectId, on ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10))
+    );
+    return c.json({ defects });
+  });
+  v1.post("/projects/:id/defects", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = defectCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const heute = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const defects = await withUserTx(
+      c.get("claims"),
+      (tx) => createDefect(tx, projectId, parsed.data, heute)
+    );
+    return c.json({ defects }, 201);
+  });
+  v1.patch("/projects/:id/defects/:defectId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const defectId = parseId(c.req.param("defectId"));
+    const parsed = defectUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: "Diese \xC4nderung k\xF6nnen wir nicht deuten." });
+    }
+    const heute = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const defects = await withUserTx(
+      c.get("claims"),
+      (tx) => updateDefect(tx, projectId, defectId, parsed.data, heute)
+    );
+    return c.json({ defects });
+  });
+  v1.get("/projects/:id/contract", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const spiegel = await withUserTx(c.get("claims"), async (tx) => {
+      await refreshContractChecks(tx, projectId);
+      const plan = await loadSchedule(tx, projectId);
+      return loadContractMirror(tx, projectId, plan.computedEnd);
+    });
+    return c.json(spiegel);
+  });
+  v1.patch("/projects/:id/contract", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = contractUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: "Diese Vertragsdaten k\xF6nnen wir nicht deuten." });
+    }
+    const spiegel = await withUserTx(c.get("claims"), async (tx) => {
+      await updateContract(tx, projectId, parsed.data);
+      await refreshContractChecks(tx, projectId);
+      const plan = await loadSchedule(tx, projectId);
+      return loadContractMirror(tx, projectId, plan.computedEnd);
+    });
+    return c.json(spiegel);
+  });
+  v1.patch("/projects/:id/payments/:paymentId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const paymentId = parseId(c.req.param("paymentId"));
+    const parsed = paymentUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: "Diese \xC4nderung k\xF6nnen wir nicht deuten." });
+    }
+    const payments = await withUserTx(
+      c.get("claims"),
+      (tx) => updatePayment(tx, projectId, paymentId, parsed.data)
+    );
+    return c.json({ payments });
+  });
+  v1.put("/projects/:id/financing", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const parsed = financingDto.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: "Diese Finanzierungsdaten k\xF6nnen wir nicht deuten." });
+    }
+    const financing = await withUserTx(
+      c.get("claims"),
+      (tx) => saveFinancing(tx, projectId, parsed.data)
+    );
+    return c.json({ financing, drawdowns: [] });
+  });
+  v1.get("/projects/:id/drawdowns", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const drawdowns = await withUserTx(c.get("claims"), (tx) => loadDrawdowns(tx, projectId));
+    return c.json({ drawdowns });
   });
   v1.get("/projects/:id/assistant", async (c) => {
     const projectId = parseId(c.req.param("id"));

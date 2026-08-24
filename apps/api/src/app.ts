@@ -19,7 +19,12 @@ import {
 import {
   assistantAskRequest,
   checklistUpdateRequest,
+  contractUpdateRequest,
   decisionUpdateRequest,
+  defectCreateRequest,
+  defectUpdateRequest,
+  financingDto,
+  paymentUpdateRequest,
   diaryEntryCreateRequest,
   diaryEntryUpdateRequest,
   guestConfirmRequest,
@@ -40,6 +45,15 @@ import {
 import { anthropicClient, assistantConfigured } from './anthropic.js';
 import { ask, assistantStatusFor, listThreads } from './assistant.js';
 import { requireAuth, type AuthedVariables } from './auth.js';
+import { createDefect, listDefects, updateDefect } from './defects.js';
+import {
+  loadContractMirror,
+  loadDrawdowns,
+  refreshContractChecks,
+  saveFinancing,
+  updateContract,
+  updatePayment,
+} from './money.js';
 import { loadDecisions, updateDecision } from './decisions.js';
 import {
   checkDiaryChain,
@@ -686,6 +700,115 @@ export function createApp(): Hono<App> {
       revokeGuestLink(tx, projectId, linkId),
     );
     return c.json({ links });
+  });
+
+  // -- Mängel -----------------------------------------------------------------
+  //
+  // Der Stichtag kommt aus dem Browser wie bei den Fotoaufträgen: Die
+  // vorgeschlagene Eskalationsstufe hängt am Kalender des Nutzers, nicht am
+  // Serverstandort.
+
+  v1.get('/projects/:id/defects', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const on = c.req.query('on');
+    if (on !== undefined && !isoDate.safeParse(on).success) {
+      throw new HTTPException(400, { message: 'Dieses Datum können wir nicht deuten.' });
+    }
+    const defects = await withUserTx(c.get('claims'), (tx) =>
+      listDefects(tx, projectId, on ?? new Date().toISOString().slice(0, 10)),
+    );
+    return c.json({ defects });
+  });
+
+  v1.post('/projects/:id/defects', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = defectCreateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+    const heute = new Date().toISOString().slice(0, 10);
+    const defects = await withUserTx(c.get('claims'), (tx) =>
+      createDefect(tx, projectId, parsed.data, heute),
+    );
+    return c.json({ defects }, 201);
+  });
+
+  v1.patch('/projects/:id/defects/:defectId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const defectId = parseId(c.req.param('defectId'));
+    const parsed = defectUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: 'Diese Änderung können wir nicht deuten.' });
+    }
+    const heute = new Date().toISOString().slice(0, 10);
+    const defects = await withUserTx(c.get('claims'), (tx) =>
+      updateDefect(tx, projectId, defectId, parsed.data, heute),
+    );
+    return c.json({ defects });
+  });
+
+  // -- Vertragsspiegel und Geld ------------------------------------------------
+  //
+  // Eine Ansicht für drei Fragen: Was habe ich vereinbart, was ist fällig, und
+  // was spricht dagegen, es zu zahlen. Die dritte ist die teuerste.
+
+  v1.get('/projects/:id/contract', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const spiegel = await withUserTx(c.get('claims'), async (tx) => {
+      await refreshContractChecks(tx, projectId);
+      const plan = await loadSchedule(tx, projectId);
+      return loadContractMirror(tx, projectId, plan.computedEnd);
+    });
+    return c.json(spiegel);
+  });
+
+  v1.patch('/projects/:id/contract', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = contractUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: 'Diese Vertragsdaten können wir nicht deuten.' });
+    }
+    const spiegel = await withUserTx(c.get('claims'), async (tx) => {
+      await updateContract(tx, projectId, parsed.data);
+      await refreshContractChecks(tx, projectId);
+      const plan = await loadSchedule(tx, projectId);
+      return loadContractMirror(tx, projectId, plan.computedEnd);
+    });
+    return c.json(spiegel);
+  });
+
+  v1.patch('/projects/:id/payments/:paymentId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const paymentId = parseId(c.req.param('paymentId'));
+    const parsed = paymentUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: 'Diese Änderung können wir nicht deuten.' });
+    }
+    const payments = await withUserTx(c.get('claims'), (tx) =>
+      updatePayment(tx, projectId, paymentId, parsed.data),
+    );
+    return c.json({ payments });
+  });
+
+  v1.put('/projects/:id/financing', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const parsed = financingDto.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, { message: 'Diese Finanzierungsdaten können wir nicht deuten.' });
+    }
+    const financing = await withUserTx(c.get('claims'), (tx) =>
+      saveFinancing(tx, projectId, parsed.data),
+    );
+    return c.json({ financing, drawdowns: [] });
+  });
+
+  v1.get('/projects/:id/drawdowns', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const drawdowns = await withUserTx(c.get('claims'), (tx) => loadDrawdowns(tx, projectId));
+    return c.json({ drawdowns });
   });
 
   // -- Frag den Lotsen --------------------------------------------------------

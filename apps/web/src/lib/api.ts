@@ -11,7 +11,15 @@ import type {
   AssistantStatus,
   AssistantThreadDto,
   ChecklistUpdateRequest,
+  ContractMirror,
+  ContractUpdateRequest,
   DecisionDto,
+  DefectCreateRequest,
+  DefectDto,
+  DefectUpdateRequest,
+  FinancingDto,
+  PaymentMilestoneDto,
+  PaymentUpdateRequest,
   DecisionUpdateRequest,
   DiaryChainCheck,
   DiaryEntryCreateRequest,
@@ -246,6 +254,50 @@ export const api = {
     }),
 
   media: (projectId: string) => request<{ media: MediaDto[] }>(`/projects/${projectId}/media`),
+
+  // -- Mängel, Geld, Vertragsspiegel -------------------------------------------
+  //
+  // Der Vertragsspiegel antwortet immer als Ganzes: Prüfhinweise, Zahlungsplan
+  // und Zinsen hängen an denselben Zahlen, und wer eine davon ändert, ändert
+  // fast immer auch die anderen. Drei Abfragen wären drei Gelegenheiten,
+  // Widersprüchliches nebeneinander zu zeigen.
+
+  contract: (projectId: string) => request<ContractMirror>(`/projects/${projectId}/contract`),
+
+  updateContract: (projectId: string, change: ContractUpdateRequest) =>
+    request<ContractMirror>(`/projects/${projectId}/contract`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  updatePayment: (projectId: string, paymentId: string, change: PaymentUpdateRequest) =>
+    request<{ payments: PaymentMilestoneDto[] }>(`/projects/${projectId}/payments/${paymentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  saveFinancing: (projectId: string, financing: FinancingDto) =>
+    request<{ financing: FinancingDto | null }>(`/projects/${projectId}/financing`, {
+      method: 'PUT',
+      body: JSON.stringify(financing),
+    }),
+
+  defects: (projectId: string, on?: string) =>
+    request<{ defects: DefectDto[] }>(
+      `/projects/${projectId}/defects${on === undefined ? '' : `?on=${on}`}`,
+    ),
+
+  createDefect: (projectId: string, defect: DefectCreateRequest) =>
+    request<{ defects: DefectDto[] }>(`/projects/${projectId}/defects`, {
+      method: 'POST',
+      body: JSON.stringify(defect),
+    }),
+
+  updateDefect: (projectId: string, defectId: string, change: DefectUpdateRequest) =>
+    request<{ defects: DefectDto[] }>(`/projects/${projectId}/defects/${defectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
 
   // -- Frag den Lotsen --------------------------------------------------------
   //

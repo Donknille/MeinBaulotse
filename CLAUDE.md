@@ -18,6 +18,8 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 | `apps/web/src/lib/queue.ts` | Offline-Warteschlange der Erfassung. IndexedDB, jeder Schritt wiederholbar |
 | `apps/web/src/routes/Guest.tsx` | Abstimmung ohne Konto. Steht außerhalb der Anmeldeprüfung |
 | `apps/api/src/assistant-guardrails.ts` | Die Leitplanken aus 3.7 als Code, nicht als Bitte an das Modell |
+| `apps/api/src/contract-rules.ts` | Die fünf Prüfregeln aus 3.9. Rein, ohne Datenbank |
+| `packages/schedule/src/interest.ts` | Bereitstellungszinsen. Gehört in den Kern: 30/360 auf Epochentagen, keine Uhr |
 | `supabase/migrations` | Einzige Quelle der Wahrheit für das Datenbankschema |
 | `supabase/local` | Nur lokal: bildet das Supabase-Umfeld im nackten Postgres nach |
 
@@ -89,9 +91,23 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    hat, steht als `context_snapshot` bei der Antwort — ohne das lässt sich eine
    falsche Auskunft nie einordnen.
 
-9. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
+9. **Eine Zahlung ist gesperrt, solange ein wesentlicher Mangel offen ist.**
+   Abschnitt 3.10, und die Sperre steht als Trigger in der Datenbank
+   (`mbl.guard_payment_release`), nicht als Bestätigungsdialog: Eine Sperre,
+   die man mit einem zweiten Klick übergeht, ist keine. Die Oberfläche fragt
+   dieselbe Funktion (`mbl.payment_blockers`) vorher ab und sagt, **was**
+   fehlt — sonst wäre die Sperre eine Falle statt einer Hilfe.
+
+   „Behoben gemeldet" zählt dabei als offen. Sonst könnte das ausführende
+   Unternehmen die Sperre selbst aufheben, indem es „erledigt" sagt.
+
+   Der Ausweg heißt Teilfreigabe unter Vorbehalt und verlangt Betrag **und**
+   Grund: Ein Einbehalt ohne Grund ist in einem halben Jahr nicht mehr
+   erklärbar.
+
+10. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
-10. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
+11. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
    entfernt kein Präfix, deshalb hängt die App selbst unter `/api` und der
    Vite-Proxy schneidet nichts ab. **Fünf** Stellen halten das zusammen:
    `apps/api/src/app.ts` (`basePath`), `apps/web/vite.config.ts` (Proxy ohne
@@ -102,14 +118,14 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Die fünfte ist die unauffälligste und hat am längsten gekostet: Ohne die
    Ausnahme beantwortet der Service Worker **jede** Navigation aus dem
    Zwischenspeicher, auch `/api/health` in der Adresszeile. Die Gegenprobe aus
-   Regel 11 ist dann ausgerechnet dort blind, wo man sie braucht.
+   Regel 12 ist dann ausgerechnet dort blind, wo man sie braucht.
 
    Und `registerType` gehört auf `autoUpdate`. Mit `prompt` wartet der neue
    Service Worker, bis ihn jemand freischaltet — solange kein Modul
    `virtual:pwa-register` importiert, gibt es dieses „jemand" nicht, und
    Auslieferungen erreichen niemanden, während die CI grün meldet.
 
-11. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
+12. **Die Vercel-Function ist ein Bündel, kein Quelltext.** `pnpm build:function`
    macht aus `apps/api/src/vercel.ts` die eingecheckte Datei `api/index.js`,
    die außer Node-Bausteinen nichts mehr importiert. Nach jeder Änderung an
    der API neu erzeugen; die CI prüft es.
@@ -133,7 +149,7 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
    Schema passt zur ausgelieferten Fassung. Ohne den zweiten sieht eine
    fehlende Verbindung aus wie eine leere Datenlage.
 
-12. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
+13. **Eine Migration, die der Code braucht, gehört in `schema-check.ts`.**
    Sonst geht eine Auslieferung live, bevor die Migration eingespielt ist, und
    jede betroffene Ansicht endet in `column … does not exist` — während
    `/api/health/db` fröhlich `ok` meldet, denn die Verbindung stand ja. Genau
