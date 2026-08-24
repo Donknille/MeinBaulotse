@@ -13,6 +13,7 @@ export * from './types.js';
 export * from './graph.js';
 export * from './forward-pass.js';
 export * from './backward-pass.js';
+export * from './propagate.js';
 export * from './decisions.js';
 export * from './instantiate.js';
 export * from './templates/efh-massiv-unterkellert.js';

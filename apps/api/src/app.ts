@@ -21,6 +21,7 @@ import {
   decisionUpdateRequest,
   guideCardFeedbackRequest,
   onboardingRequest,
+  isoDate,
   taskUpdateRequest,
   type PhaseProgress,
   type ProjectSchedule,
@@ -33,6 +34,8 @@ import { demoLoginKey, demoRoutes } from './demo.js';
 import { loadGuideCardView, markGuideCardRead, setChecklistItem } from './guide-cards.js';
 import { createProjectFromAnswers } from './onboarding.js';
 import { recomputeProject } from './scheduling.js';
+import { applyDecoupling, buildProposal, stampChangeEffect } from './shifting.js';
+import { buildWeeklyReport } from './weekly-report.js';
 import { checkSchema } from './schema-check.js';
 
 type App = { Variables: AuthedVariables };
@@ -277,8 +280,21 @@ export function createApp(): Hono<App> {
     const schedule = await withUserTx(
       c.get('claims'),
       async (tx): Promise<ProjectSchedule> => {
-        // Erst die Aussage festhalten, dann neu rechnen. Beides in derselben
-        // Transaktion: Scheitert die Rechnung, gab es auch die Aussage nicht.
+        // Erst rechnen, dann schreiben.
+        //
+        // Die Reihenfolge ist nicht Geschmack: Die Auswirkung auf den
+        // Endtermin muss im Historieneintrag stehen (Abschnitt 3.5, Punkt 7),
+        // und `schedule_change` ist danach nicht mehr änderbar. Wer die
+        // Auswirkung erst hinterher kennt, kennt sie zu spät.
+        const proposal = await buildProposal(tx, projectId, taskId, change);
+        await stampChangeEffect(tx, proposal.preview.effectWorkdays);
+
+        // Entkopplungen zuerst: Sie ändern die Ausgangslage, gegen die
+        // gleich gerechnet wird.
+        await applyDecoupling(tx, projectId, proposal);
+
+        // Dann die Aussage selbst. Alles in derselben Transaktion: Scheitert
+        // die Rechnung, gab es auch die Aussage nicht.
         const felder: string[] = [];
         const werte: unknown[] = [taskId, projectId];
         const setze = (spalte: string, wert: unknown): void => {
@@ -325,6 +341,51 @@ export function createApp(): Hono<App> {
     const projectId = parseId(c.req.param('id'));
     const schedule = await withUserTx(c.get('claims'), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+
+  // Was passiert, wenn ich das tue?
+  //
+  // Dieselbe Rechnung wie beim Ändern, nur ohne zu schreiben. Sie beantwortet
+  // die Frage, die vor jeder Verschiebung steht: Was zieht mit, was kostet es
+  // den Endtermin, welche Entscheidungsfrist wandert.
+  //
+  // Bewusst `POST` und nicht `GET`: Der Körper ist dieselbe Änderung, die
+  // hinterher gesendet wird. Ein `GET` mit Termin und Entkopplungsliste in der
+  // Adresszeile wäre außerdem genau das, was Abschnitt 6.4 verbietet — Daten
+  // eines Bauvorhabens in einer URL.
+  v1.post('/projects/:id/tasks/:taskId/shift-preview', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const taskId = parseId(c.req.param('taskId'));
+    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const preview = await withUserTx(c.get('claims'), async (tx) => {
+      const proposal = await buildProposal(tx, projectId, taskId, parsed.data);
+      return proposal.preview;
+    });
+    return c.json(preview);
+  });
+
+  // -- Wochenbericht ---------------------------------------------------------
+  //
+  // Abschnitt 3.11. `on` erlaubt einen anderen Stichtag als heute — die
+  // Montagsmail wird für den Montag gebaut, auch wenn sie um 06:00 losläuft,
+  // und die Gegenproben brauchen ein festes Datum.
+  v1.get('/projects/:id/weekly-report', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const roh = c.req.query('on');
+    if (roh !== undefined && !isoDate.safeParse(roh).success) {
+      throw new HTTPException(400, { message: 'Dieses Datum können wir nicht deuten.' });
+    }
+    const on = roh ?? new Date().toISOString().slice(0, 10);
+
+    const report = await withUserTx(c.get('claims'), (tx) => buildWeeklyReport(tx, projectId, on));
+    return c.json(report);
   });
 
   // -- Wissensschicht --------------------------------------------------------

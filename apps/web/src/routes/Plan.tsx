@@ -118,6 +118,7 @@ export function Plan() {
           onChangeTask={async (taskId, body) => {
             await change.mutateAsync({ taskId, body });
           }}
+          onPreviewShift={(taskId, body) => api.shiftPreview(projectId!, taskId, body)}
           onChangeDecision={async (decisionId, body) => {
             await changeDecision.mutateAsync({ decisionId, body });
           }}

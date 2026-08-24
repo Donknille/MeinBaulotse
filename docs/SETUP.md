@@ -85,6 +85,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_guide_card.s
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_guide_cards.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0007_decision.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0008_decision_templates.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0009_change_effect.sql
 ```
 
 **Port 5432, nicht 6543.** Der Transaction-Pooler ist für die laufende

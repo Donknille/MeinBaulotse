@@ -84,6 +84,15 @@ export const taskUpdateRequest = z
     status: taskStatus.optional(),
     reason: scheduleChangeReason.optional(),
     reasonText: z.string().trim().max(500).optional(),
+    /**
+     * Vorgänge, die trotz der Verschiebung stehen bleiben sollen
+     * (Abschnitt 3.5, Punkt 6).
+     *
+     * Entkoppeln löscht keine Beziehung. Es schreibt zwei Aussagen fest, die
+     * beide stimmen: Der Vorgang bleibt, wo er ist, und die beiden überlappen
+     * sich jetzt. Was das im Einzelnen heißt, sagt die Vorschau vorher.
+     */
+    decouple: z.array(z.string().uuid()).max(64).optional(),
   })
   .refine(
     (value) =>
@@ -98,6 +107,84 @@ export const taskUpdateRequest = z
     path: ['reason'],
   });
 export type TaskUpdateRequest = z.infer<typeof taskUpdateRequest>;
+
+// -- Verschieben und Fortpflanzung -------------------------------------------
+//
+// Abschnitt 3.5, Punkt 6: Betroffene Folgevorgänge werden als **Vorschlag**
+// angezeigt und sind einzeln entkoppelbar. Deshalb gibt es zwei Wege zur
+// selben Änderung: einen, der nur rechnet, und einen, der schreibt. Beide
+// nehmen denselben Körper entgegen — sonst zeigte die Vorschau etwas anderes,
+// als hinterher passiert.
+
+export const proposedTaskChange = z.object({
+  taskId: z.string().uuid(),
+  name: z.string(),
+  fromStart: isoDate,
+  fromEnd: isoDate,
+  toStart: isoDate,
+  toEnd: isoDate,
+  /** Werktage, um die sich der Anfang verschiebt. Positiv heißt später. */
+  shiftWorkdays: z.number().int(),
+  isCritical: z.boolean(),
+});
+export type ProposedTaskChange = z.infer<typeof proposedTaskChange>;
+
+/** Eine Entscheidungsfrist, die mitwandert. */
+export const proposedDecisionChange = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  fromDueDate: isoDate.nullable(),
+  toDueDate: isoDate.nullable(),
+});
+export type ProposedDecisionChange = z.infer<typeof proposedDecisionChange>;
+
+/**
+ * Was eine Entkopplung in den Daten bedeutet: Die beiden Vorgänge überlappen
+ * sich jetzt. Das steht so in der Vorschau, damit niemand es hinterher als
+ * Fehler entdeckt.
+ */
+export const proposedOverlap = z.object({
+  predecessorName: z.string(),
+  successorName: z.string(),
+  /** Werktage Überlappung. Immer positiv. */
+  workdays: z.number().int(),
+});
+export type ProposedOverlap = z.infer<typeof proposedOverlap>;
+
+export const shiftPreview = z.object({
+  taskId: z.string().uuid(),
+  taskName: z.string(),
+  /** Der ausgelöste Vorgang. `null`, wenn er sich gar nicht bewegt. */
+  trigger: proposedTaskChange.nullable(),
+  affected: z.array(proposedTaskChange),
+  /**
+   * Was auf Wunsch stehen bleibt — mit Namen, nicht nur mit Kennung. Eine
+   * Liste aus Kennungen zwingt die Oberfläche, die Namen anderswo zu suchen,
+   * und der entkoppelte Vorgang steht per Definition nicht mehr in `affected`.
+   */
+  decoupled: z.array(z.object({ taskId: z.string().uuid(), name: z.string() })),
+  decisions: z.array(proposedDecisionChange),
+  overlaps: z.array(proposedOverlap),
+  computedEndBefore: isoDate,
+  computedEndAfter: isoDate,
+  /** Werktage, um die sich der prognostizierte Endtermin verschiebt. */
+  effectWorkdays: z.number().int(),
+});
+export type ShiftPreview = z.infer<typeof shiftPreview>;
+
+/**
+ * Klartext für die Auswirkung einer Verschiebung auf den Endtermin.
+ *
+ * Auch die schlechte Nachricht trägt eine Zahl und keinen Vorwurf (CI 11.4).
+ */
+export function shiftEffectInPlainWords(effectWorkdays: number): string {
+  if (effectWorkdays === 0) return 'Der Endtermin bleibt, wie er ist.';
+  const tage =
+    Math.abs(effectWorkdays) === 1 ? '1 Werktag' : `${Math.abs(effectWorkdays)} Werktage`;
+  return effectWorkdays > 0
+    ? `Der Endtermin verschiebt sich um ${tage} nach hinten.`
+    : `Der Endtermin rückt um ${tage} nach vorn.`;
+}
 
 export const onboardingRequest = z.object({
   /** Frage 0, nicht gezählt: Wie soll das Projekt heißen? */
@@ -261,7 +348,10 @@ export function isDecisionOpen(entry: Pick<DecisionDto, 'status'>): boolean {
 export function decisionInPlainWords(remainingWorkdays: number | null): string {
   if (remainingWorkdays === null) return 'Frist noch nicht berechnet.';
   if (remainingWorkdays < 0) {
-    const tage = Math.abs(remainingWorkdays) === 1 ? 'einem Werktag' : `${Math.abs(remainingWorkdays)} Werktagen`;
+    const tage =
+      Math.abs(remainingWorkdays) === 1
+        ? 'einem Werktag'
+        : `${Math.abs(remainingWorkdays)} Werktagen`;
     return `seit ${tage} offen`;
   }
   if (remainingWorkdays === 0) return 'heute fällig';
@@ -452,6 +542,162 @@ export function isGuideCardDue(
 
 /** Der feste Zusatz aus CI 11.3. Wird nie verkürzt und nie ausgeblendet. */
 export const LEGAL_NOTE = 'Hinweis auf eine Gesetzesstelle, keine Rechtsberatung.';
+
+// -- Wochenbericht -----------------------------------------------------------
+//
+// Abschnitt 3.11. Sechs Blöcke, Montag früh. Die Spezifikation nennt ihn den
+// Retention-Anker, und das ist keine Übertreibung: Es ist die einzige Stelle,
+// an der das Produkt von sich aus etwas sagt, statt darauf zu warten, dass
+// jemand nachsieht.
+
+export const weeklyReportTask = z.object({
+  taskId: z.string().uuid(),
+  name: z.string(),
+  tradeName: z.string().nullable(),
+  start: isoDate,
+  end: isoDate,
+  /** Beginnt der Vorgang in diesem Zeitraum? */
+  starts: z.boolean(),
+  /** Endet er darin? */
+  ends: z.boolean(),
+  /** Die Kurzfassung der Lotsenkarte: ein Satz, nicht der ganze Text. */
+  guideCard: z.object({ id: z.string().uuid(), title: z.string(), summary: z.string() }).nullable(),
+});
+
+export const weeklyReportDecision = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  blocksTaskName: z.string().nullable(),
+  dueDate: isoDate,
+  remainingWorkdays: z.number().int(),
+  isOverdue: z.boolean(),
+});
+
+/** Eine Handlung, nicht ein bewegter Vorgang — siehe `weekly-report.ts`. */
+export const weeklyReportShift = z.object({
+  at: z.string(),
+  reasonCode: z.string().nullable(),
+  reasonText: z.string().nullable(),
+  actorRole: z.string().nullable(),
+  /** Werktage, um die sich der Endtermin dadurch verschoben hat. */
+  effectWorkdays: z.number().int().nullable(),
+  taskNames: z.array(z.string()),
+});
+
+export const weeklyReportPhotoPrompt = z.object({
+  taskId: z.string().uuid(),
+  taskName: z.string(),
+  key: z.string(),
+  what: z.string(),
+  why: z.string().nullable(),
+});
+
+export const weeklyReport = z.object({
+  projectId: z.string().uuid(),
+  projectName: z.string(),
+  /** Der Stichtag, auf den der Bericht blickt. */
+  generatedFor: isoDate,
+  thisWeek: z.array(weeklyReportTask),
+  decisions: z.array(weeklyReportDecision),
+  shifted: z.array(weeklyReportShift),
+  forecast: z.object({
+    contractualEnd: isoDate.nullable(),
+    computedEnd: isoDate.nullable(),
+    deviationWorkdays: z.number().int().nullable(),
+  }),
+  photoPrompts: z.array(weeklyReportPhotoPrompt),
+  /**
+   * Block sechs aus Abschnitt 3.11. Steht offen als „noch nicht da", statt
+   * stillschweigend zu fehlen — ein weggelassener Block sieht aus wie „nichts
+   * zu zahlen".
+   */
+  money: z.object({ available: z.boolean(), note: z.string() }),
+});
+export type WeeklyReport = z.infer<typeof weeklyReport>;
+
+/**
+ * Der Bericht als Fließtext.
+ *
+ * Steht hier und nicht in der Oberfläche, weil ihn zwei Seiten brauchen: die
+ * Cockpit-Ansicht und — sobald ein Mailversand eingerichtet ist — die
+ * Montagsmail. Zwei Fassungen desselben Berichts würden auseinanderlaufen, und
+ * die eine davon läse niemand gegen.
+ *
+ * Bewusst reiner Text: Er ist die Grundlage, aus der eine Mail entsteht, und
+ * er bleibt lesbar, wenn das HTML unterwegs verlorengeht.
+ */
+export function renderWeeklyReportAsText(report: WeeklyReport): string {
+  const zeilen: string[] = [
+    `MeinBaulotse — Wochenbericht für ${report.projectName}`,
+    `Stand ${report.generatedFor}`,
+    '',
+  ];
+
+  const block = (titel: string, inhalt: readonly string[], leer: string): void => {
+    zeilen.push(titel, '-'.repeat(titel.length));
+    zeilen.push(...(inhalt.length === 0 ? [leer] : inhalt));
+    zeilen.push('');
+  };
+
+  block(
+    'Diese Woche auf der Baustelle',
+    report.thisWeek.map((eintrag) => {
+      const wann = eintrag.starts && eintrag.ends ? 'läuft' : eintrag.starts ? 'beginnt' : 'endet';
+      const karte =
+        eintrag.guideCard === null
+          ? ''
+          : `
+    ${eintrag.guideCard.summary}`;
+      return `  ${eintrag.name} (${wann} ${eintrag.starts ? eintrag.start : eintrag.end})${karte}`;
+    }),
+    '  Diese Woche steht nichts an.',
+  );
+
+  block(
+    'Was du entscheiden musst',
+    report.decisions.map(
+      (eintrag) =>
+        `  ${eintrag.title} — ${eintrag.dueDate}, ${decisionInPlainWords(eintrag.remainingWorkdays)}`,
+    ),
+    '  Nichts offen. Alle Fristen sind erledigt oder liegen weiter vorn.',
+  );
+
+  block(
+    'Was sich verschoben hat',
+    report.shifted.map((eintrag) => {
+      const wirkung =
+        eintrag.effectWorkdays === null || eintrag.effectWorkdays === 0
+          ? 'ohne Auswirkung auf den Endtermin'
+          : `${eintrag.effectWorkdays > 0 ? '+' : ''}${eintrag.effectWorkdays} Werktage auf den Endtermin`;
+      const grund = eintrag.reasonCode === null ? 'ohne Grund' : eintrag.reasonCode;
+      return `  ${eintrag.taskNames.join(', ')} — ${grund}, ${wirkung}`;
+    }),
+    '  Seit der letzten Woche hat sich nichts verschoben.',
+  );
+
+  const { forecast } = report;
+  block(
+    'Prognose',
+    [
+      `  Errechnetes Ende: ${forecast.computedEnd ?? 'noch offen'}`,
+      `  Geschuldet:       ${forecast.contractualEnd ?? 'nicht erfasst'}`,
+      forecast.deviationWorkdays === null
+        ? '  Abweichung:       lässt sich ohne Vertragstermin nicht sagen'
+        : `  Abweichung:       ${forecast.deviationWorkdays} Werktage`,
+    ],
+    '',
+  );
+
+  block(
+    'Fotos, die jetzt fällig sind',
+    report.photoPrompts.map((eintrag) => `  ${eintrag.what} (${eintrag.taskName})`),
+    '  Nichts, was diese Woche verdeckt wird.',
+  );
+
+  block('Geld', report.money.available ? [] : [`  ${report.money.note}`], '');
+
+  return zeilen.join('\n');
+}
 
 /** Klartext für den Gesamtpuffer, wie in Abschnitt 3.6 der Spezifikation. */
 export function floatInPlainWords(totalFloatDays: number | null): string {

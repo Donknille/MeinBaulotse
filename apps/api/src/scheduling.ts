@@ -36,8 +36,9 @@ import { syncDecisionDueDates } from './decisions.js';
 
 type Tx = Pick<Transaction, 'query'>;
 
-interface TaskRow {
+export interface TaskRow {
   id: string;
+  name: string;
   duration_days: number;
   duration_unit: 'werktage' | 'kalendertage';
   is_milestone: boolean;
@@ -53,23 +54,26 @@ interface TaskRow {
 }
 
 /**
- * Der Zustand eines Bauvorhabens, so wie ihn der Berechnungskern braucht.
- *
  * `null` aus der Datenbank wird zu `undefined`, weil der Kern zwischen „nicht
  * gesetzt" und „auf null gesetzt" nicht unterscheidet — er kennt nur
  * vorhanden oder nicht.
  */
-async function loadPlan(
-  tx: Tx,
-  projectId: string,
-): Promise<{
+/**
+ * Der Zustand eines Bauvorhabens, wie ihn der Berechnungskern braucht.
+ *
+ * Exportiert, weil die Verschiebevorschau in `shifting.ts` denselben Zustand
+ * liest — nur eben zweimal durchrechnet statt einmal.
+ */
+export interface LoadedPlan {
   rows: TaskRow[];
   tasks: ScheduleTask[];
   dependencies: ScheduleDependency[];
   calendar: Calendar;
   projectStart: string;
   contractualEnd: string | null;
-}> {
+}
+
+export async function loadPlan(tx: Tx, projectId: string): Promise<LoadedPlan> {
   const project = await tx.query<{
     federal_state: FederalState;
     catholic_municipality: boolean;
@@ -88,7 +92,7 @@ async function loadPlan(
   }
 
   const tasks = await tx.query<TaskRow>(
-    `select t.id, t.duration_days, t.duration_unit, t.is_milestone, t.is_wait,
+    `select t.id, t.name, t.duration_days, t.duration_unit, t.is_milestone, t.is_wait,
             tr.code as trade_code, t.earliest_start, t.actual_start, t.actual_end,
             t.current_start, t.current_end, t.total_float_days, t.is_critical
      from task t

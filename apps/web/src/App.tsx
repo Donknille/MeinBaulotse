@@ -9,6 +9,7 @@ import { SignIn } from './routes/SignIn';
 import { Onboarding } from './routes/Onboarding';
 import { Plan } from './routes/Plan';
 import { Projects } from './routes/Projects';
+import { WeeklyReport } from './routes/WeeklyReport';
 import { Styleguide } from './routes/Styleguide';
 
 const queryClient = new QueryClient({
@@ -83,6 +84,7 @@ export function App() {
               <Route path="/" element={<Projects />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/projekt/:projectId" element={<Plan />} />
+              <Route path="/projekt/:projectId/wochenbericht" element={<WeeklyReport />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           )}

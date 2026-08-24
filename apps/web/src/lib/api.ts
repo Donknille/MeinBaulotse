@@ -14,7 +14,9 @@ import type {
   OnboardingRequest,
   ProjectSchedule,
   ProjectSummary,
+  ShiftPreview,
   TaskUpdateRequest,
+  WeeklyReport,
 } from '@meinbaulotse/shared';
 import { clearDemoSession, readDemoSession } from './demo-auth';
 import { supabase } from './supabase';
@@ -149,6 +151,20 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(change),
     }),
+
+  // Dieselbe Änderung, nur ohne zu schreiben: Was zieht mit, was kostet es den
+  // Endtermin, welche Frist wandert. Derselbe Körper wie beim Ändern — eine
+  // Vorschau mit anderen Eingaben wäre keine.
+  shiftPreview: (projectId: string, taskId: string, change: TaskUpdateRequest) =>
+    request<ShiftPreview>(`/projects/${projectId}/tasks/${taskId}/shift-preview`, {
+      method: 'POST',
+      body: JSON.stringify(change),
+    }),
+
+  weeklyReport: (projectId: string, on?: string) =>
+    request<WeeklyReport>(
+      `/projects/${projectId}/weekly-report${on === undefined ? '' : `?on=${on}`}`,
+    ),
 
   // Antwortet mit der Entscheidung, nicht mit dem Plan: Ein Zustandswechsel
   // verschiebt keinen Termin. Erst wenn eine verpasste Entscheidung tatsächlich

@@ -68,10 +68,14 @@ export function startFromEnd(task: ScheduleTask, end: IsoDate, calendar: Calenda
 
 /**
  * Frühester Anfang des Nachfolgers, der sich aus einer einzelnen Abhängigkeit
- * ergibt. Gibt `undefined` zurück, wenn die Beziehung keinen Anfang erzwingt
- * (das kommt bei `FF` vor, wenn die Dauer 0 ist).
+ * ergibt.
+ *
+ * Exportiert, weil die Entkopplung in `propagate.ts` dieselbe Rechnung
+ * rückwärts braucht: Sie sucht den Vorlauf, bei dem die Beziehung einen
+ * Vorgang gerade nicht mehr schiebt. Zwei Auslegungen derselben Beziehung
+ * wären ein Fehler, der erst auffällt, wenn beide auseinanderlaufen.
  */
-function constraintFromDependency(
+export function dependencyConstraint(
   dependency: ScheduleDependency,
   predecessor: ScheduledTask,
   successor: ScheduleTask,
@@ -130,7 +134,7 @@ export function computeSchedule(input: ComputeScheduleInput): ScheduleResult {
     for (const dependency of graph.predecessors.get(id) ?? []) {
       const predecessor = scheduled.get(dependency.predecessorId);
       if (predecessor === undefined) continue;
-      candidates.push(constraintFromDependency(dependency, predecessor, task, calendar));
+      candidates.push(dependencyConstraint(dependency, predecessor, task, calendar));
     }
 
     let start = normalizeStart(task, maxDate(...candidates), calendar);

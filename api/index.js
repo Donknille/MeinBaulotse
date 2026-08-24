@@ -3407,8 +3407,8 @@ var require_split2 = __commonJS({
         self.push(val);
       }
     }
-    function noop(incoming) {
-      return incoming;
+    function noop(incoming2) {
+      return incoming2;
     }
     function split(matcher, mapper, options) {
       matcher = matcher || /\r?\n/;
@@ -5349,9 +5349,9 @@ var Request2 = class extends GlobalRequest {
     super(input, options);
   }
 };
-var newHeadersFromIncoming = (incoming) => {
+var newHeadersFromIncoming = (incoming2) => {
   const headerRecord = [];
-  const rawHeaders = incoming.rawHeaders;
+  const rawHeaders = incoming2.rawHeaders;
   for (let i = 0; i < rawHeaders.length; i += 2) {
     const { [i]: key, [i + 1]: value } = rawHeaders;
     if (key.charCodeAt(0) !== /*:*/
@@ -5362,7 +5362,7 @@ var newHeadersFromIncoming = (incoming) => {
   return new Headers(headerRecord);
 };
 var wrapBodyStream = /* @__PURE__ */ Symbol("wrapBodyStream");
-var newRequestFromIncoming = (method, url, headers, incoming, abortController) => {
+var newRequestFromIncoming = (method, url, headers, incoming2, abortController) => {
   const init = {
     method,
     headers,
@@ -5379,19 +5379,19 @@ var newRequestFromIncoming = (method, url, headers, incoming, abortController) =
     return req;
   }
   if (!(method === "GET" || method === "HEAD")) {
-    if ("rawBody" in incoming && incoming.rawBody instanceof Buffer) {
+    if ("rawBody" in incoming2 && incoming2.rawBody instanceof Buffer) {
       init.body = new ReadableStream({
         start(controller) {
-          controller.enqueue(incoming.rawBody);
+          controller.enqueue(incoming2.rawBody);
           controller.close();
         }
       });
-    } else if (incoming[wrapBodyStream]) {
+    } else if (incoming2[wrapBodyStream]) {
       let reader;
       init.body = new ReadableStream({
         async pull(controller) {
           try {
-            reader ||= import_stream.Readable.toWeb(incoming).getReader();
+            reader ||= import_stream.Readable.toWeb(incoming2).getReader();
             const { done, value } = await reader.read();
             if (done) {
               controller.close();
@@ -5404,7 +5404,7 @@ var newRequestFromIncoming = (method, url, headers, incoming, abortController) =
         }
       });
     } else {
-      init.body = import_stream.Readable.toWeb(incoming);
+      init.body = import_stream.Readable.toWeb(incoming2);
     }
   }
   return new Request2(url, init);
@@ -5480,13 +5480,13 @@ Object.defineProperty(requestPrototype, /* @__PURE__ */ Symbol.for("nodejs.util.
   }
 });
 Object.setPrototypeOf(requestPrototype, Request2.prototype);
-var newRequest = (incoming, defaultHostname) => {
+var newRequest = (incoming2, defaultHostname) => {
   const req = Object.create(requestPrototype);
-  req[incomingKey] = incoming;
-  const incomingUrl = incoming.url || "";
+  req[incomingKey] = incoming2;
+  const incomingUrl = incoming2.url || "";
   if (incomingUrl[0] !== "/" && // short-circuit for performance. most requests are relative URL.
   (incomingUrl.startsWith("http://") || incomingUrl.startsWith("https://"))) {
-    if (incoming instanceof import_http22.Http2ServerRequest) {
+    if (incoming2 instanceof import_http22.Http2ServerRequest) {
       throw new RequestError("Absolute URL for :path is not allowed in HTTP/2");
     }
     try {
@@ -5497,18 +5497,18 @@ var newRequest = (incoming, defaultHostname) => {
     }
     return req;
   }
-  const host = (incoming instanceof import_http22.Http2ServerRequest ? incoming.authority : incoming.headers.host) || defaultHostname;
+  const host = (incoming2 instanceof import_http22.Http2ServerRequest ? incoming2.authority : incoming2.headers.host) || defaultHostname;
   if (!host) {
     throw new RequestError("Missing host header");
   }
   let scheme;
-  if (incoming instanceof import_http22.Http2ServerRequest) {
-    scheme = incoming.scheme;
+  if (incoming2 instanceof import_http22.Http2ServerRequest) {
+    scheme = incoming2.scheme;
     if (!(scheme === "http" || scheme === "https")) {
       throw new RequestError("Unsupported scheme");
     }
   } else {
-    scheme = incoming.socket && incoming.socket.encrypted ? "https" : "http";
+    scheme = incoming2.socket && incoming2.socket.encrypted ? "https" : "http";
   }
   const url = new URL(`${scheme}://${host}${incomingUrl}`);
   if (url.hostname.length !== host.length && url.hostname !== host.replace(/:\d+$/, "")) {
@@ -5668,16 +5668,16 @@ var outgoingEnded = /* @__PURE__ */ Symbol("outgoingEnded");
 var incomingDraining = /* @__PURE__ */ Symbol("incomingDraining");
 var DRAIN_TIMEOUT_MS = 500;
 var MAX_DRAIN_BYTES = 64 * 1024 * 1024;
-var drainIncoming = (incoming) => {
-  const incomingWithDrainState = incoming;
-  if (incoming.destroyed || incomingWithDrainState[incomingDraining]) {
+var drainIncoming = (incoming2) => {
+  const incomingWithDrainState = incoming2;
+  if (incoming2.destroyed || incomingWithDrainState[incomingDraining]) {
     return;
   }
   incomingWithDrainState[incomingDraining] = true;
-  if (incoming instanceof import_http2.Http2ServerRequest) {
+  if (incoming2 instanceof import_http2.Http2ServerRequest) {
     try {
       ;
-      incoming.stream?.close?.(import_http2.constants.NGHTTP2_NO_ERROR);
+      incoming2.stream?.close?.(import_http2.constants.NGHTTP2_NO_ERROR);
     } catch {
     }
     return;
@@ -5685,13 +5685,13 @@ var drainIncoming = (incoming) => {
   let bytesRead = 0;
   const cleanup = () => {
     clearTimeout(timer);
-    incoming.off("data", onData);
-    incoming.off("end", cleanup);
-    incoming.off("error", cleanup);
+    incoming2.off("data", onData);
+    incoming2.off("end", cleanup);
+    incoming2.off("error", cleanup);
   };
   const forceClose = () => {
     cleanup();
-    const socket = incoming.socket;
+    const socket = incoming2.socket;
     if (socket && !socket.destroyed) {
       socket.destroySoon();
     }
@@ -5704,10 +5704,10 @@ var drainIncoming = (incoming) => {
       forceClose();
     }
   };
-  incoming.on("data", onData);
-  incoming.on("end", cleanup);
-  incoming.on("error", cleanup);
-  incoming.resume();
+  incoming2.on("data", onData);
+  incoming2.on("end", cleanup);
+  incoming2.on("error", cleanup);
+  incoming2.resume();
 };
 var handleRequestError = () => new Response(null, {
   status: 400
@@ -5862,25 +5862,25 @@ var getRequestListener = (fetchCallback, options = {}) => {
       value: Response2
     });
   }
-  return async (incoming, outgoing) => {
+  return async (incoming2, outgoing) => {
     let res, req;
     try {
-      req = newRequest(incoming, options.hostname);
-      let incomingEnded = !autoCleanupIncoming || incoming.method === "GET" || incoming.method === "HEAD";
+      req = newRequest(incoming2, options.hostname);
+      let incomingEnded = !autoCleanupIncoming || incoming2.method === "GET" || incoming2.method === "HEAD";
       if (!incomingEnded) {
         ;
-        incoming[wrapBodyStream] = true;
-        incoming.on("end", () => {
+        incoming2[wrapBodyStream] = true;
+        incoming2.on("end", () => {
           incomingEnded = true;
         });
-        if (incoming instanceof import_http2.Http2ServerRequest) {
+        if (incoming2 instanceof import_http2.Http2ServerRequest) {
           ;
           outgoing[outgoingEnded] = () => {
             if (!incomingEnded) {
               setTimeout(() => {
                 if (!incomingEnded) {
                   setTimeout(() => {
-                    drainIncoming(incoming);
+                    drainIncoming(incoming2);
                   });
                 }
               });
@@ -5889,15 +5889,15 @@ var getRequestListener = (fetchCallback, options = {}) => {
         }
         outgoing.on("finish", () => {
           if (!incomingEnded) {
-            drainIncoming(incoming);
+            drainIncoming(incoming2);
           }
         });
       }
       outgoing.on("close", () => {
         const abortController = req[abortControllerKey];
         if (abortController) {
-          if (incoming.errored) {
-            req[abortControllerKey].abort(incoming.errored.toString());
+          if (incoming2.errored) {
+            req[abortControllerKey].abort(incoming2.errored.toString());
           } else if (!outgoing.writableFinished) {
             req[abortControllerKey].abort("Client connection prematurely closed.");
           }
@@ -5906,13 +5906,13 @@ var getRequestListener = (fetchCallback, options = {}) => {
           setTimeout(() => {
             if (!incomingEnded) {
               setTimeout(() => {
-                drainIncoming(incoming);
+                drainIncoming(incoming2);
               });
             }
           });
         }
       });
-      res = fetchCallback(req, { incoming, outgoing });
+      res = fetchCallback(req, { incoming: incoming2, outgoing });
       if (cacheKey in res) {
         return responseViaCache(res, outgoing);
       }
@@ -8935,8 +8935,8 @@ var ZodType = class {
   or(option) {
     return ZodUnion.create([this, option], this._def);
   }
-  and(incoming) {
-    return ZodIntersection.create(this, incoming, this._def);
+  and(incoming2) {
+    return ZodIntersection.create(this, incoming2, this._def);
   }
   transform(transform) {
     return new ZodEffects({
@@ -12663,7 +12663,7 @@ function startFromEnd(task, end, calendar) {
     return addDays(end, -(task.durationDays - 1));
   return workdayOffset(end, -(task.durationDays - 1), calendar, task.tradeCode);
 }
-function constraintFromDependency(dependency, predecessor, successor, calendar) {
+function dependencyConstraint(dependency, predecessor, successor, calendar) {
   const type = dependency.type ?? "FS";
   const lag = dependency.lagDays ?? 0;
   const lagInCalendarDays = dependency.lagUnit === "kalendertage";
@@ -12706,7 +12706,7 @@ function computeSchedule(input) {
       const predecessor = scheduled.get(dependency.predecessorId);
       if (predecessor === void 0)
         continue;
-      candidates.push(constraintFromDependency(dependency, predecessor, task, calendar));
+      candidates.push(dependencyConstraint(dependency, predecessor, task, calendar));
     }
     let start = normalizeStart(task, maxDate(...candidates), calendar);
     let end = endFromStart(task, start, calendar);
@@ -12814,6 +12814,143 @@ function criticalPath(input) {
   return { floats, critical, targetEnd, deviationWorkdays };
 }
 
+// ../../packages/schedule/dist/propagate.js
+var MAX_ROUNDS = 8;
+var MAX_LAG_STEPS = 400;
+function keyOf(dependency) {
+  return `${dependency.predecessorId}\u2192${dependency.successorId}\u2192${dependency.type ?? "FS"}`;
+}
+function proposeShift(input) {
+  const { tasks, changed, dependencies, calendar, projectStart, triggerTaskId } = input;
+  const decouple = [...new Set(input.decouple ?? [])];
+  const before = computeSchedule({ tasks, dependencies, calendar, projectStart });
+  const keepStart = /* @__PURE__ */ new Map();
+  for (const taskId of decouple) {
+    const bisher = before.tasks.get(taskId);
+    if (bisher !== void 0)
+      keepStart.set(taskId, bisher.start);
+  }
+  let lagByKey = /* @__PURE__ */ new Map();
+  let pinned = /* @__PURE__ */ new Map();
+  let after = computeWith(changed, dependencies, lagByKey, pinned, calendar, projectStart);
+  for (let round = 0; round < MAX_ROUNDS && keepStart.size > 0; round += 1) {
+    const nextLags = new Map(lagByKey);
+    const nextPins = new Map(pinned);
+    let veraendert = false;
+    for (const [taskId, bleibtAm] of keepStart) {
+      const jetzt = after.tasks.get(taskId);
+      if (jetzt === void 0)
+        continue;
+      if (nextPins.get(taskId) !== bleibtAm) {
+        nextPins.set(taskId, bleibtAm);
+        veraendert = true;
+      }
+      if (compareDates(jetzt.start, bleibtAm) <= 0)
+        continue;
+      const successorTask = taskById(changed, taskId);
+      if (successorTask === void 0)
+        continue;
+      for (const dependency of incoming(dependencies, taskId)) {
+        const predecessor = after.tasks.get(dependency.predecessorId);
+        if (predecessor === void 0)
+          continue;
+        const aktuellerLag = nextLags.get(keyOf(dependency)) ?? dependency.lagDays ?? 0;
+        const gesenkt = lowerLagUntilReached(dependency, aktuellerLag, predecessor, successorTask, bleibtAm, calendar);
+        if (gesenkt !== aktuellerLag) {
+          nextLags.set(keyOf(dependency), gesenkt);
+          veraendert = true;
+        }
+      }
+    }
+    if (!veraendert)
+      break;
+    lagByKey = nextLags;
+    pinned = nextPins;
+    after = computeWith(changed, dependencies, lagByKey, pinned, calendar, projectStart);
+  }
+  const trigger = changeOf(triggerTaskId, before, after, calendar);
+  const affected = [];
+  for (const task of changed) {
+    if (task.id === triggerTaskId)
+      continue;
+    const eintrag = changeOf(task.id, before, after, calendar);
+    if (eintrag !== null)
+      affected.push(eintrag);
+  }
+  const lagAdjustments = [];
+  for (const dependency of dependencies) {
+    const neu = lagByKey.get(keyOf(dependency));
+    const alt = dependency.lagDays ?? 0;
+    if (neu === void 0 || neu === alt)
+      continue;
+    lagAdjustments.push({
+      predecessorId: dependency.predecessorId,
+      successorId: dependency.successorId,
+      type: dependency.type ?? "FS",
+      fromLagDays: alt,
+      toLagDays: neu
+    });
+  }
+  return {
+    trigger,
+    affected,
+    decoupled: [...keepStart.keys()],
+    lagAdjustments,
+    pinnedStarts: [...pinned].map(([taskId, earliestStart]) => ({ taskId, earliestStart })),
+    projectEndBefore: before.projectEnd,
+    projectEndAfter: after.projectEnd,
+    effectWorkdays: workdayDifference(before.projectEnd, after.projectEnd, calendar),
+    after
+  };
+}
+function taskById(tasks, id) {
+  return tasks.find((task) => task.id === id);
+}
+function incoming(dependencies, successorId) {
+  return dependencies.filter((dependency) => dependency.successorId === successorId);
+}
+function computeWith(tasks, dependencies, lagByKey, pinned, calendar, projectStart) {
+  return computeSchedule({
+    tasks: tasks.map((task) => {
+      const halt = pinned.get(task.id);
+      return halt === void 0 ? task : { ...task, earliestStart: halt };
+    }),
+    dependencies: dependencies.map((dependency) => {
+      const lag = lagByKey.get(keyOf(dependency));
+      return lag === void 0 ? dependency : { ...dependency, lagDays: lag };
+    }),
+    calendar,
+    projectStart
+  });
+}
+function lowerLagUntilReached(dependency, currentLag, predecessor, successor, keepStart, calendar) {
+  const erreicht = (lag2) => compareDates(dependencyConstraint({ ...dependency, lagDays: lag2 }, predecessor, successor, calendar), keepStart) <= 0;
+  if (erreicht(currentLag))
+    return currentLag;
+  const zuViel = workdayDifference(keepStart, dependencyConstraint({ ...dependency, lagDays: currentLag }, predecessor, successor, calendar), calendar);
+  let lag = currentLag - Math.max(zuViel, 1);
+  for (let schritt = 0; schritt < MAX_LAG_STEPS && !erreicht(lag); schritt += 1) {
+    lag -= 1;
+  }
+  return lag;
+}
+function changeOf(taskId, before, after, calendar) {
+  const vorher = before.tasks.get(taskId);
+  const nachher = after.tasks.get(taskId);
+  if (vorher === void 0 || nachher === void 0)
+    return null;
+  if (vorher.start === nachher.start && vorher.end === nachher.end)
+    return null;
+  return {
+    taskId,
+    fromStart: vorher.start,
+    fromEnd: vorher.end,
+    toStart: nachher.start,
+    toEnd: nachher.end,
+    shiftWorkdays: workdayDifference(vorher.start, nachher.start, calendar)
+  };
+}
+
 // ../../packages/schedule/dist/decisions.js
 function decisionDueDate(decision2, taskStart, calendar) {
   if (decision2.leadTimeUnit === "kalendertage") {
@@ -12837,11 +12974,11 @@ function edgeKey(edge) {
   return `${edge.predecessorCode}\u2192${edge.successorCode}|${edge.type}`;
 }
 function contract(edges, removedCode) {
-  const incoming = edges.filter((edge) => edge.successorCode === removedCode);
+  const incoming2 = edges.filter((edge) => edge.successorCode === removedCode);
   const outgoing = edges.filter((edge) => edge.predecessorCode === removedCode);
   const remaining = edges.filter((edge) => edge.predecessorCode !== removedCode && edge.successorCode !== removedCode);
   const bridged = [];
-  for (const before of incoming) {
+  for (const before of incoming2) {
     for (const after of outgoing) {
       if (before.predecessorCode === after.successorCode)
         continue;
@@ -13237,10 +13374,61 @@ var taskUpdateRequest = external_exports.object({
   actualEnd: isoDate.nullable().optional(),
   status: taskStatus.optional(),
   reason: scheduleChangeReason.optional(),
-  reasonText: external_exports.string().trim().max(500).optional()
+  reasonText: external_exports.string().trim().max(500).optional(),
+  /**
+   * Vorgänge, die trotz der Verschiebung stehen bleiben sollen
+   * (Abschnitt 3.5, Punkt 6).
+   *
+   * Entkoppeln löscht keine Beziehung. Es schreibt zwei Aussagen fest, die
+   * beide stimmen: Der Vorgang bleibt, wo er ist, und die beiden überlappen
+   * sich jetzt. Was das im Einzelnen heißt, sagt die Vorschau vorher.
+   */
+  decouple: external_exports.array(external_exports.string().uuid()).max(64).optional()
 }).refine((value) => value.earliestStart !== void 0 || value.actualStart !== void 0 || value.actualEnd !== void 0 || value.status !== void 0, { message: "Es gibt nichts zu \xE4ndern." }).refine((value) => value.earliestStart === void 0 || value.reason !== void 0, {
   message: "F\xFCr eine Verschiebung brauchen wir den Grund.",
   path: ["reason"]
+});
+var proposedTaskChange = external_exports.object({
+  taskId: external_exports.string().uuid(),
+  name: external_exports.string(),
+  fromStart: isoDate,
+  fromEnd: isoDate,
+  toStart: isoDate,
+  toEnd: isoDate,
+  /** Werktage, um die sich der Anfang verschiebt. Positiv heißt später. */
+  shiftWorkdays: external_exports.number().int(),
+  isCritical: external_exports.boolean()
+});
+var proposedDecisionChange = external_exports.object({
+  id: external_exports.string().uuid(),
+  title: external_exports.string(),
+  fromDueDate: isoDate.nullable(),
+  toDueDate: isoDate.nullable()
+});
+var proposedOverlap = external_exports.object({
+  predecessorName: external_exports.string(),
+  successorName: external_exports.string(),
+  /** Werktage Überlappung. Immer positiv. */
+  workdays: external_exports.number().int()
+});
+var shiftPreview = external_exports.object({
+  taskId: external_exports.string().uuid(),
+  taskName: external_exports.string(),
+  /** Der ausgelöste Vorgang. `null`, wenn er sich gar nicht bewegt. */
+  trigger: proposedTaskChange.nullable(),
+  affected: external_exports.array(proposedTaskChange),
+  /**
+   * Was auf Wunsch stehen bleibt — mit Namen, nicht nur mit Kennung. Eine
+   * Liste aus Kennungen zwingt die Oberfläche, die Namen anderswo zu suchen,
+   * und der entkoppelte Vorgang steht per Definition nicht mehr in `affected`.
+   */
+  decoupled: external_exports.array(external_exports.object({ taskId: external_exports.string().uuid(), name: external_exports.string() })),
+  decisions: external_exports.array(proposedDecisionChange),
+  overlaps: external_exports.array(proposedOverlap),
+  computedEndBefore: isoDate,
+  computedEndAfter: isoDate,
+  /** Werktage, um die sich der prognostizierte Endtermin verschiebt. */
+  effectWorkdays: external_exports.number().int()
 });
 var onboardingRequest = external_exports.object({
   /** Frage 0, nicht gezählt: Wie soll das Projekt heißen? */
@@ -13467,6 +13655,64 @@ var guideCardFeedbackRequest = external_exports.object({
 var checklistUpdateRequest = external_exports.object({
   isDone: external_exports.boolean(),
   note: external_exports.string().trim().max(500).nullable().optional()
+});
+var weeklyReportTask = external_exports.object({
+  taskId: external_exports.string().uuid(),
+  name: external_exports.string(),
+  tradeName: external_exports.string().nullable(),
+  start: isoDate,
+  end: isoDate,
+  /** Beginnt der Vorgang in diesem Zeitraum? */
+  starts: external_exports.boolean(),
+  /** Endet er darin? */
+  ends: external_exports.boolean(),
+  /** Die Kurzfassung der Lotsenkarte: ein Satz, nicht der ganze Text. */
+  guideCard: external_exports.object({ id: external_exports.string().uuid(), title: external_exports.string(), summary: external_exports.string() }).nullable()
+});
+var weeklyReportDecision = external_exports.object({
+  id: external_exports.string().uuid(),
+  title: external_exports.string(),
+  blocksTaskName: external_exports.string().nullable(),
+  dueDate: isoDate,
+  remainingWorkdays: external_exports.number().int(),
+  isOverdue: external_exports.boolean()
+});
+var weeklyReportShift = external_exports.object({
+  at: external_exports.string(),
+  reasonCode: external_exports.string().nullable(),
+  reasonText: external_exports.string().nullable(),
+  actorRole: external_exports.string().nullable(),
+  /** Werktage, um die sich der Endtermin dadurch verschoben hat. */
+  effectWorkdays: external_exports.number().int().nullable(),
+  taskNames: external_exports.array(external_exports.string())
+});
+var weeklyReportPhotoPrompt = external_exports.object({
+  taskId: external_exports.string().uuid(),
+  taskName: external_exports.string(),
+  key: external_exports.string(),
+  what: external_exports.string(),
+  why: external_exports.string().nullable()
+});
+var weeklyReport = external_exports.object({
+  projectId: external_exports.string().uuid(),
+  projectName: external_exports.string(),
+  /** Der Stichtag, auf den der Bericht blickt. */
+  generatedFor: isoDate,
+  thisWeek: external_exports.array(weeklyReportTask),
+  decisions: external_exports.array(weeklyReportDecision),
+  shifted: external_exports.array(weeklyReportShift),
+  forecast: external_exports.object({
+    contractualEnd: isoDate.nullable(),
+    computedEnd: isoDate.nullable(),
+    deviationWorkdays: external_exports.number().int().nullable()
+  }),
+  photoPrompts: external_exports.array(weeklyReportPhotoPrompt),
+  /**
+   * Block sechs aus Abschnitt 3.11. Steht offen als „noch nicht da", statt
+   * stillschweigend zu fehlen — ein weggelassener Block sieht aus wie „nichts
+   * zu zahlen".
+   */
+  money: external_exports.object({ available: external_exports.boolean(), note: external_exports.string() })
 });
 
 // ../../node_modules/hono/dist/helper/factory/index.js
@@ -15315,7 +15561,7 @@ async function loadPlan(tx, projectId) {
     throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
   }
   const tasks = await tx.query(
-    `select t.id, t.duration_days, t.duration_unit, t.is_milestone, t.is_wait,
+    `select t.id, t.name, t.duration_days, t.duration_unit, t.is_milestone, t.is_wait,
             tr.code as trade_code, t.earliest_start, t.actual_start, t.actual_end,
             t.current_start, t.current_end, t.total_float_days, t.is_critical
      from task t
@@ -15411,6 +15657,300 @@ async function recomputeProject(tx, projectId) {
     computedEnd: schedule.projectEnd,
     deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays
   };
+}
+
+// src/shifting.ts
+function withChange(tasks, taskId, change) {
+  return tasks.map((task) => {
+    if (task.id !== taskId) return task;
+    const next = { ...task };
+    if (change.earliestStart !== void 0) {
+      if (change.earliestStart === null) delete next.earliestStart;
+      else next.earliestStart = change.earliestStart;
+    }
+    if (change.actualStart !== void 0) {
+      if (change.actualStart === null) delete next.actualStart;
+      else next.actualStart = change.actualStart;
+    }
+    if (change.actualEnd !== void 0) {
+      if (change.actualEnd === null) delete next.actualEnd;
+      else next.actualEnd = change.actualEnd;
+    }
+    return next;
+  });
+}
+async function loadDecisionRows(tx, projectId) {
+  const result = await tx.query(
+    `select id, title, blocks_task_id, lead_time_days, lead_time_unit, due_date
+       from decision where project_id = $1 and blocks_task_id is not null`,
+    [projectId]
+  );
+  return result.rows;
+}
+async function buildProposal(tx, projectId, taskId, change) {
+  const plan = await loadPlan(tx, projectId);
+  const betroffen = plan.rows.find((row) => row.id === taskId);
+  if (betroffen === void 0) {
+    throw new HTTPException(404, {
+      message: "Diesen Vorgang gibt es in deinem Bauvorhaben nicht."
+    });
+  }
+  const core = proposeShift({
+    tasks: plan.tasks,
+    changed: withChange(plan.tasks, taskId, change),
+    dependencies: plan.dependencies,
+    calendar: plan.calendar,
+    projectStart: plan.projectStart,
+    triggerTaskId: taskId,
+    ...change.decouple === void 0 ? {} : { decouple: change.decouple }
+  });
+  const nameOf = new Map(plan.rows.map((row) => [row.id, row.name]));
+  const criticalOf = new Map(plan.rows.map((row) => [row.id, row.is_critical]));
+  const benenne = (eintrag) => ({
+    taskId: eintrag.taskId,
+    name: nameOf.get(eintrag.taskId) ?? "Vorgang",
+    fromStart: eintrag.fromStart,
+    fromEnd: eintrag.fromEnd,
+    toStart: eintrag.toStart,
+    toEnd: eintrag.toEnd,
+    shiftWorkdays: eintrag.shiftWorkdays,
+    isCritical: criticalOf.get(eintrag.taskId) ?? false
+  });
+  const entscheidungen = await loadDecisionRows(tx, projectId);
+  const decisions = entscheidungen.map((row) => {
+    const nachher = core.after.tasks.get(row.blocks_task_id);
+    const neu = nachher === void 0 ? null : decisionDueDate(
+      {
+        id: row.id,
+        blocksTaskId: row.blocks_task_id,
+        leadTimeDays: row.lead_time_days,
+        leadTimeUnit: row.lead_time_unit
+      },
+      nachher.start,
+      plan.calendar
+    );
+    return { id: row.id, title: row.title, fromDueDate: row.due_date, toDueDate: neu };
+  }).filter((eintrag) => eintrag.fromDueDate !== eintrag.toDueDate);
+  const overlaps = core.lagAdjustments.map((eintrag) => ({
+    predecessorName: nameOf.get(eintrag.predecessorId) ?? "Vorgang",
+    successorName: nameOf.get(eintrag.successorId) ?? "Vorgang",
+    workdays: Math.abs(eintrag.toLagDays)
+  }));
+  return {
+    plan,
+    core,
+    preview: {
+      taskId,
+      taskName: betroffen.name,
+      trigger: core.trigger === null ? null : benenne(core.trigger),
+      affected: core.affected.map(benenne),
+      decoupled: core.decoupled.map((taskId2) => ({
+        taskId: taskId2,
+        name: nameOf.get(taskId2) ?? "Vorgang"
+      })),
+      decisions,
+      overlaps,
+      computedEndBefore: core.projectEndBefore,
+      computedEndAfter: core.projectEndAfter,
+      effectWorkdays: core.effectWorkdays
+    }
+  };
+}
+async function stampChangeEffect(tx, effectWorkdays) {
+  await tx.query("select set_config($1, $2, true)", [
+    "app.change_effect_days",
+    String(effectWorkdays)
+  ]);
+}
+async function applyDecoupling(tx, projectId, proposal) {
+  const { core } = proposal;
+  if (core.decoupled.length === 0) return;
+  for (const { taskId, earliestStart } of core.pinnedStarts) {
+    await tx.query("update task set earliest_start = $3 where id = $1 and project_id = $2", [
+      taskId,
+      projectId,
+      earliestStart
+    ]);
+  }
+  for (const anpassung of core.lagAdjustments) {
+    const result = await tx.query(
+      `update dependency
+          set lag_days = $4
+        where project_id = $1 and predecessor_id = $2 and successor_id = $3`,
+      [projectId, anpassung.predecessorId, anpassung.successorId, anpassung.toLagDays]
+    );
+    if (result.rowCount === 0) continue;
+    await tx.query(
+      `insert into schedule_change
+         (project_id, task_id, field, old_value, new_value,
+          actor_member_id, actor_role, actor_channel, reason_code, reason_text)
+       values ($1, $2, 'dependency_lag', to_jsonb($3::int), to_jsonb($4::int),
+               mbl.current_member_id($1), mbl.member_role($1), mbl.actor_channel(),
+               'planungsaenderung', $5)`,
+      [
+        projectId,
+        anpassung.successorId,
+        anpassung.fromLagDays,
+        anpassung.toLagDays,
+        `Entkoppelt: \xFCberlappt jetzt mit dem Vorg\xE4nger.`
+      ]
+    );
+  }
+}
+
+// src/weekly-report.ts
+var REPORT_WINDOW_DAYS = 7;
+function firstSentence(text) {
+  const treffer = /^[\s\S]*?[.!?](?=\s|$)/.exec(text.trim());
+  return (treffer === null ? text.trim() : treffer[0]).trim();
+}
+async function buildWeeklyReport(tx, projectId, on) {
+  const project = await tx.query(
+    `select p.id, p.name, p.federal_state, p.catholic_municipality, p.contractual_completion
+       from project p
+       join project_member m on m.project_id = p.id
+         and m.user_id = mbl.current_user_id()
+         and m.revoked_at is null
+      where p.id = $1`,
+    [projectId]
+  );
+  const kopf = project.rows[0];
+  if (kopf === void 0) {
+    throw new HTTPException(404, { message: "Dieses Bauvorhaben gibt es nicht." });
+  }
+  const calendar = {
+    federalState: kopf.federal_state,
+    catholicMunicipality: kopf.catholic_municipality
+  };
+  const bis = addDays(on, REPORT_WINDOW_DAYS);
+  const seit = addDays(on, -REPORT_WINDOW_DAYS);
+  return {
+    projectId: kopf.id,
+    projectName: kopf.name,
+    generatedFor: on,
+    thisWeek: await loadThisWeek(tx, projectId, on, bis),
+    decisions: await loadDecisions2(tx, projectId, on, calendar),
+    shifted: await loadShifts(tx, projectId, seit),
+    forecast: await loadForecast(tx, projectId, kopf.contractual_completion, calendar),
+    photoPrompts: await loadPhotoPrompts(tx, projectId, on, bis),
+    // Block sechs aus Abschnitt 3.11. Zahlungsmeilensteine kommen mit AP 8;
+    // bis dahin steht hier offen, dass er fehlt, statt ihn wegzulassen — ein
+    // stillschweigend fehlender Block sieht aus wie „nichts zu zahlen".
+    money: {
+      available: false,
+      note: "Zahlungen und Abrufe kommen mit dem Vertragsspiegel. Bis dahin beh\xE4ltst du sie selbst im Blick."
+    }
+  };
+}
+async function loadThisWeek(tx, projectId, on, bis) {
+  const result = await tx.query(
+    `select t.id, t.name, tr.name as trade_name, t.current_start, t.current_end,
+            (t.current_start between $2 and $3) as starts,
+            (t.current_end   between $2 and $3) as ends,
+            c.id as guide_card_id, c.title as guide_card_title, c.whats_happening
+       from task t
+       left join trade tr on tr.id = t.trade_id
+       left join guide_card c on c.id = t.guide_card_id
+      where t.project_id = $1
+        and t.status <> 'entfallen'
+        and (t.current_start between $2 and $3 or t.current_end between $2 and $3)
+      order by t.current_start, t.sort_order`,
+    [projectId, on, bis]
+  );
+  return result.rows.map((row) => ({
+    taskId: row.id,
+    name: row.name,
+    tradeName: row.trade_name,
+    start: row.current_start,
+    end: row.current_end,
+    starts: row.starts,
+    ends: row.ends,
+    guideCard: row.guide_card_id === null || row.whats_happening === null ? null : {
+      id: row.guide_card_id,
+      title: row.guide_card_title ?? "",
+      summary: firstSentence(row.whats_happening)
+    }
+  }));
+}
+async function loadDecisions2(tx, projectId, on, calendar) {
+  const result = await tx.query(
+    `select d.id, d.title, d.due_date, t.name as task_name
+       from decision d
+       left join task t on t.id = d.blocks_task_id
+      where d.project_id = $1
+        and d.status in ('offen','in_bemusterung')
+        and d.due_date is not null
+      order by d.due_date`,
+    [projectId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    blocksTaskName: row.task_name,
+    dueDate: row.due_date,
+    remainingWorkdays: workdayDifference(on, row.due_date, calendar),
+    isOverdue: compareDates(row.due_date, on) < 0
+  }));
+}
+async function loadShifts(tx, projectId, seit) {
+  const result = await tx.query(
+    `select sc.created_at as at, sc.reason_code, sc.reason_text, sc.actor_role,
+            max(sc.effect_days_on_completion) as effect_days,
+            array_agg(distinct t.name) as task_names
+       from schedule_change sc
+       join task t on t.id = sc.task_id
+      where sc.project_id = $1
+        and sc.created_at >= $2::date
+        and sc.field = 'current_start'
+        and sc.reason_code is distinct from 'planinitialisierung'
+      group by sc.created_at, sc.reason_code, sc.reason_text, sc.actor_role
+      order by sc.created_at desc
+      limit 10`,
+    [projectId, seit]
+  );
+  return result.rows.map((row) => ({
+    at: row.at,
+    reasonCode: row.reason_code,
+    reasonText: row.reason_text,
+    actorRole: row.actor_role,
+    effectWorkdays: row.effect_days,
+    taskNames: row.task_names
+  }));
+}
+async function loadForecast(tx, projectId, contractualEnd, calendar) {
+  const result = await tx.query(
+    "select max(current_end)::text as computed_end from task where project_id = $1",
+    [projectId]
+  );
+  const computedEnd = result.rows[0]?.computed_end ?? null;
+  return {
+    contractualEnd,
+    computedEnd,
+    deviationWorkdays: contractualEnd === null || computedEnd === null ? null : workdayDifference(contractualEnd, computedEnd, calendar)
+  };
+}
+async function loadPhotoPrompts(tx, projectId, on, bis) {
+  const result = await tx.query(
+    `select t.id as task_id, t.name as task_name, c.photo_prompts
+       from task t
+       join guide_card c on c.id = t.guide_card_id
+      where t.project_id = $1
+        and t.status <> 'entfallen'
+        and jsonb_array_length(c.photo_prompts) > 0
+        and t.current_start <= $3
+        and t.current_end >= $2
+      order by t.current_start, t.sort_order`,
+    [projectId, on, bis]
+  );
+  return result.rows.flatMap(
+    (row) => row.photo_prompts.map((prompt) => ({
+      taskId: row.task_id,
+      taskName: row.task_name,
+      key: prompt.key,
+      what: prompt.what,
+      why: prompt.why
+    }))
+  );
 }
 
 // src/schema-check.ts
@@ -15588,6 +16128,9 @@ function createApp() {
     const schedule = await withUserTx(
       c.get("claims"),
       async (tx) => {
+        const proposal = await buildProposal(tx, projectId, taskId, change);
+        await stampChangeEffect(tx, proposal.preview.effectWorkdays);
+        await applyDecoupling(tx, projectId, proposal);
         const felder = [];
         const werte = [taskId, projectId];
         const setze = (spalte, wert) => {
@@ -15623,6 +16166,32 @@ function createApp() {
     const projectId = parseId(c.req.param("id"));
     const schedule = await withUserTx(c.get("claims"), (tx) => loadSchedule(tx, projectId));
     return c.json(schedule);
+  });
+  v1.post("/projects/:id/tasks/:taskId/shift-preview", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const taskId = parseId(c.req.param("taskId"));
+    const parsed = taskUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const preview = await withUserTx(c.get("claims"), async (tx) => {
+      const proposal = await buildProposal(tx, projectId, taskId, parsed.data);
+      return proposal.preview;
+    });
+    return c.json(preview);
+  });
+  v1.get("/projects/:id/weekly-report", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const roh = c.req.query("on");
+    if (roh !== void 0 && !isoDate.safeParse(roh).success) {
+      throw new HTTPException(400, { message: "Dieses Datum k\xF6nnen wir nicht deuten." });
+    }
+    const on = roh ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const report = await withUserTx(c.get("claims"), (tx) => buildWeeklyReport(tx, projectId, on));
+    return c.json(report);
   });
   v1.get("/projects/:id/tasks/:taskId/guide-card", async (c) => {
     const projectId = parseId(c.req.param("id"));

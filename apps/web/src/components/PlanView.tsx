@@ -16,6 +16,7 @@ import type {
   DecisionUpdateRequest,
   ProjectSchedule,
   ScheduledTaskDto,
+  ShiftPreview,
   TaskUpdateRequest,
 } from '@meinbaulotse/shared';
 import { decisionInPlainWords, isDecisionOpen } from '@meinbaulotse/shared';
@@ -26,6 +27,7 @@ import { Timeline } from './Timeline';
 import { TaskSheet } from './TaskSheet';
 import { GuideCardSheet, type GuideCardHandlers } from './GuideCard';
 import { DecisionSheet, DECISION_STATUS_LABEL } from './DecisionSheet';
+import { WeeklyReportLink } from '../routes/WeeklyReport';
 import { formatDate } from '../lib/format';
 import { calendarOf, remainingWorkdays, urgencyOf } from '../lib/decisions';
 import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
@@ -33,12 +35,15 @@ import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
 export function PlanView({
   schedule,
   onChangeTask,
+  onPreviewShift,
   onChangeDecision,
   guideCards,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
   onChangeTask?: (taskId: string, change: TaskUpdateRequest) => Promise<void>;
+  /** Fehlt sie, wird ohne Vorschau verschoben. */
+  onPreviewShift?: (taskId: string, change: TaskUpdateRequest) => Promise<ShiftPreview>;
   /** Fehlt sie, lässt sich eine Entscheidung ansehen, aber nicht pflegen. */
   onChangeDecision?: (decisionId: string, change: DecisionUpdateRequest) => Promise<void>;
   /** Fehlen sie, führt keine Zeile zur Lotsenkarte. */
@@ -81,6 +86,11 @@ export function PlanView({
           {...(guideCards === undefined ? {} : { onGuideCard: setGuideCardTask })}
           onDecision={setDecision}
         />
+
+        {/* Der Wochenbericht steht direkt unter dem Cockpit: Er beantwortet
+            dieselben Fragen, nur zusammengefasst und für einen Blick pro
+            Woche statt für einen pro Tag. */}
+        {onChangeTask !== undefined ? <WeeklyReportLink projectId={schedule.project.id} /> : null}
       </header>
 
       {/* Die Zeitachse erst ab 768 px. Mobil bleibt die Liste die Grundansicht
@@ -217,6 +227,9 @@ export function PlanView({
           schedule={schedule}
           onClose={() => setSelected(null)}
           onSave={(change) => onChangeTask(selected.id, change)}
+          {...(onPreviewShift === undefined
+            ? {}
+            : { onPreview: (change: TaskUpdateRequest) => onPreviewShift(selected.id, change) })}
         />
       ) : null}
 
