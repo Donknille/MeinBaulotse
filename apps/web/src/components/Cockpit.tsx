@@ -9,6 +9,8 @@
  *   Was kommt?       →  die nächsten Vorgänge, im Klartext „in vier Tagen"
  *   Was solltest du
  *   dazu wissen?     →  die Lotsenkarten, die gerade in den Blick rücken
+ *   Was musst du
+ *   entscheiden?     →  offene Entscheidungen nach Frist
  *   Was klemmt?      →  was verschoben ist und was das kostet
  *
  * Die Reihenfolge ist inhaltlich begründet und laut CI 10.2 nicht
@@ -25,18 +27,19 @@
  * schaut zu und muss entscheiden. Beide sehen denselben Bau, aber nicht
  * dieselbe Aufforderung.
  *
- * Was noch fehlt und deshalb hier nicht steht: Entscheidungsfristen (AP 3) und
- * die Erfassung der Fotoaufträge (AP 5). Die Aufträge selbst stehen auf der
- * Lotsenkarte; ein Kameraknopf im Cockpit, der nichts öffnet, wäre ein
- * Versprechen, das die Anwendung nicht hält.
+ * Was noch fehlt und deshalb hier nicht steht: die Erfassung der Fotoaufträge
+ * (AP 5). Die Aufträge selbst stehen auf der Lotsenkarte; ein Kameraknopf im
+ * Cockpit, der nichts öffnet, wäre ein Versprechen, das die Anwendung nicht
+ * hält.
  */
 
-import { ArrowRight, BookOpen, Check, CircleDot, Flag, TriangleAlert } from 'lucide-react';
-import type { ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
-import { guideCardTiming, isGuideCardDue } from '@meinbaulotse/shared';
+import { ArrowRight, BookOpen, Check, CircleDot, Flag, Scale, TriangleAlert } from 'lucide-react';
+import type { DecisionDto, ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
+import { decisionInPlainWords, guideCardTiming, isGuideCardDue } from '@meinbaulotse/shared';
 import { Card } from './ui';
 import { GuideCardButton, PhaseBar } from './schedule';
 import { formatDate, formatRange } from '../lib/format';
+import { calendarOf, pendingDecisions, remainingWorkdays, urgencyOf } from '../lib/decisions';
 import { inTagen, istHeute, meldungOffen, progressOf, todayIso, zaehle } from '../lib/progress';
 
 const MAX_ZEILEN = 4;
@@ -46,11 +49,13 @@ export function Cockpit({
   currentPhase,
   onSelect,
   onGuideCard,
+  onDecision,
 }: {
   schedule: ProjectSchedule;
   currentPhase: string | undefined;
   onSelect?: (task: ScheduledTaskDto) => void;
   onGuideCard?: (task: ScheduledTaskDto) => void;
+  onDecision?: (decision: DecisionDto) => void;
 }) {
   const today = todayIso();
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
@@ -79,6 +84,13 @@ export function Cockpit({
   const wissen = schedule.tasks
     .filter((task) => task.guideCardId !== null && isGuideCardDue(task, today))
     .sort((a, b) => (a.currentStart ?? '').localeCompare(b.currentStart ?? ''));
+
+  // Was zu entscheiden ist, sieht nur, wer entscheiden darf. Für den
+  // Generalunternehmer wäre „du musst entscheiden" eine Aufforderung ins Leere
+  // — die Entscheidung gehört dem Bauherrn (Abschnitt 2.2).
+  const kalender = calendarOf(schedule.project);
+  const darfEntscheiden = schedule.permissions.includes('decision.write');
+  const anstehend = pendingDecisions(schedule.decisions, kalender, today);
 
   // Was Aufmerksamkeit braucht, unterscheidet sich nach Rolle — und nur hier.
   const offeneMeldungen = schedule.tasks.filter((task) => meldungOffen(task, today));
@@ -230,7 +242,37 @@ export function Cockpit({
         </Abschnitt>
       ) : null}
 
-      {/* 4. Was du tun musst.
+      {/* 4. Was du entscheiden musst.
+             Steht vor „das solltest du melden" und vor allem vor dem, was
+             schiefgeht: Eine Entscheidung ist das Einzige in dieser Ansicht,
+             das nur der Bauherr selbst erledigen kann. */}
+      {darfEntscheiden && anstehend.length > 0 && onDecision !== undefined ? (
+        <Abschnitt
+          titel="Du musst entscheiden"
+          icon={<Scale size={18} className="text-tangerine" aria-hidden />}
+          hinweis={
+            anstehend.some(
+              (entscheidung) => urgencyOf(entscheidung, kalender, today) === 'verstrichen',
+            )
+              ? 'Bei der obersten ist die Frist verstrichen. Je später sie fällt, desto wahrscheinlicher wandert der Vorgang mit.'
+              : undefined
+          }
+        >
+          <ul className="flex flex-col">
+            {anstehend.slice(0, MAX_ZEILEN).map((entscheidung) => (
+              <EntscheidungsZeile
+                key={entscheidung.id}
+                decision={entscheidung}
+                rest={remainingWorkdays(entscheidung, kalender, today)}
+                dringlichkeit={urgencyOf(entscheidung, kalender, today)}
+                onSelect={onDecision}
+              />
+            ))}
+          </ul>
+        </Abschnitt>
+      ) : null}
+
+      {/* 5. Was du tun musst.
              Hier, und nur hier, unterscheiden sich die Rollen: Der GU fuehrt
              aus und schuldet die Meldung; der Bauherr schaut zu und kann sie
              nicht abgeben. Ein Kasten „das solltest du melden" waere fuer ihn
@@ -278,7 +320,7 @@ export function Cockpit({
         </Abschnitt>
       ) : null}
 
-      {/* 5. Erst zum Schluss, was schiefgeht. */}
+      {/* 6. Erst zum Schluss, was schiefgeht. */}
       {verschoben.length > 0 ? (
         <Abschnitt
           titel="Verschoben"
@@ -399,6 +441,53 @@ function wissensAnlass(task: ScheduledTaskDto, today: string): string {
   if (timing === 'laeuft') return 'läuft gerade';
   if (timing === 'abschluss') return 'zum Abschluss';
   return task.currentStart === null ? 'steht an' : inTagen(task.currentStart, today);
+}
+
+/**
+ * Eine Entscheidung im Cockpit: links die Restlaufzeit, rechts worum es geht.
+ *
+ * Die Farbe trägt die Dringlichkeit, nicht ein Ausrufezeichen. Rot ist
+ * rationiert (CI 3.4) und steht hier nur, wenn die Frist wirklich verstrichen
+ * ist; alles davor ist Tangerine, also „kümmer dich drum".
+ */
+function EntscheidungsZeile({
+  decision,
+  rest,
+  dringlichkeit,
+  onSelect,
+}: {
+  decision: DecisionDto;
+  rest: number | null;
+  dringlichkeit: 'offen' | 'knapp' | 'verstrichen' | 'erledigt';
+  onSelect: (decision: DecisionDto) => void;
+}) {
+  const farbe =
+    dringlichkeit === 'verstrichen'
+      ? 'text-alarm-red'
+      : dringlichkeit === 'knapp'
+        ? 'text-tangerine'
+        : 'text-steel';
+  return (
+    <li className="border-b border-ash last:border-b-0">
+      <button
+        type="button"
+        onClick={() => onSelect(decision)}
+        className="flex min-h-11 w-full flex-col gap-0.5 py-2.5 text-left transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist sm:flex-row sm:items-baseline sm:gap-3"
+      >
+        <span className={`text-body font-medium sm:min-w-[9rem] ${farbe}`}>
+          {decisionInPlainWords(rest)}
+        </span>
+        <span className="flex flex-wrap items-baseline gap-x-2 text-body-lg font-medium text-charcoal">
+          {decision.title}
+          {decision.blocksTaskName !== null ? (
+            <span className="text-caption font-normal text-steel">
+              vor {decision.blocksTaskName}
+            </span>
+          ) : null}
+        </span>
+      </button>
+    </li>
+  );
 }
 
 function Kennzahl({

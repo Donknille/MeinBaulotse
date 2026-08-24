@@ -424,6 +424,141 @@ describe('Die Wissensschicht hängt an den Vorgängen', () => {
   });
 });
 
+describe('Eine Entscheidung gehört dem Bauherrn', () => {
+  /**
+   * Die Stelle, an der es interessant wird: Der Generalunternehmer verschiebt
+   * einen Vorgang, und die Anwendung rechnet die Entscheidungsfristen neu. Er
+   * darf die Entscheidung aber nicht pflegen. Ohne die Trennung stünde die
+   * Anwendung vor der Wahl, entweder veraltete Fristen anzuzeigen oder dem GU
+   * Schreibrechte auf Entscheidungen zu geben.
+   */
+  async function anlegen(): Promise<string> {
+    return withAdminTx(async (tx) => {
+      const result = await tx.query<{ id: string }>(
+        `insert into decision
+           (project_id, title, blocks_task_id, lead_time_days, due_date)
+         values ($1, 'Fliesen: Auswahl und Verlegemuster', $2, 40, date '2026-07-15')
+         returning id`,
+        [fixture.projectId, fixture.tileTaskId],
+      );
+      return result.rows[0]!.id;
+    });
+  }
+
+  async function dueDateOf(id: string): Promise<string | null> {
+    return withAdminTx(async (tx) => {
+      const result = await tx.query<{ due_date: string | null }>(
+        'select due_date::text from decision where id = $1',
+        [id],
+      );
+      return result.rows[0]!.due_date;
+    });
+  }
+
+  const alsRolle = <T>(
+    role: 'contractor' | 'viewer' | 'expert',
+    run: Parameters<typeof withUserTx<T>>[1],
+  ): Promise<T> => withUserTx({ sub: fixture.actors[role].userId }, run);
+
+  it('lässt den Generalunternehmer die Frist nachziehen', async () => {
+    const id = await anlegen();
+    await alsRolle('contractor', async (tx) =>
+      tx.query('update decision set due_date = $2::date where id = $1', [id, '2026-07-29']),
+    );
+
+    expect(await dueDateOf(id)).toBe('2026-07-29');
+  });
+
+  it('lässt ihn den Zustand aber nicht ändern', async () => {
+    const id = await anlegen();
+    await expect(
+      alsRolle('contractor', async (tx) =>
+        tx.query("update decision set status = 'entschieden' where id = $1", [id]),
+      ),
+    ).rejects.toThrow(/pflegt der Bauherr/i);
+  });
+
+  it('lässt ihn auch die Notiz nicht ändern', async () => {
+    const id = await anlegen();
+    await expect(
+      alsRolle('contractor', async (tx) =>
+        tx.query("update decision set decided_note = 'in meinem Namen' where id = $1", [id]),
+      ),
+    ).rejects.toThrow(/pflegt der Bauherr/i);
+  });
+
+  it('lässt den Mitleser überhaupt nichts ändern', async () => {
+    const id = await anlegen();
+    const vorher = await dueDateOf(id);
+
+    // Kein Fehler, sondern kein Treffer: Die Policy filtert die Zeile aus der
+    // Änderungsmenge, statt sie abzulehnen. Für den Mitleser ist das Ergebnis
+    // dasselbe, und die API macht daraus einen 404 — ob es diese Entscheidung
+    // gibt, geht ihn in dieser Rolle nichts an.
+    const betroffen = await alsRolle('viewer', async (tx) => {
+      const result = await tx.query('update decision set due_date = $2::date where id = $1', [
+        id,
+        '2026-07-01',
+      ]);
+      return result.rowCount;
+    });
+
+    expect(betroffen).toBe(0);
+    expect(await dueDateOf(id)).toBe(vorher);
+  });
+
+  it('stempelt das Datum, sobald die Entscheidung getroffen ist', async () => {
+    const id = await anlegen();
+    await asOwner(async (tx) =>
+      tx.query("update decision set status = 'entschieden' where id = $1", [id]),
+    );
+
+    const nachher = await withAdminTx(async (tx) => {
+      const result = await tx.query<{ decided_at: string | null }>(
+        'select decided_at from decision where id = $1',
+        [id],
+      );
+      return result.rows[0]!.decided_at;
+    });
+    expect(nachher).not.toBeNull();
+  });
+
+  it('räumt das Datum wieder ab, wenn der Zustand zurückgenommen wird', async () => {
+    const id = await anlegen();
+    await asOwner(async (tx) =>
+      tx.query("update decision set status = 'beauftragt' where id = $1", [id]),
+    );
+    await asOwner(async (tx) =>
+      tx.query("update decision set status = 'offen' where id = $1", [id]),
+    );
+
+    const nachher = await withAdminTx(async (tx) => {
+      const result = await tx.query<{ decided_at: string | null }>(
+        'select decided_at from decision where id = $1',
+        [id],
+      );
+      return result.rows[0]!.decided_at;
+    });
+    // Sonst stünde da „entschieden am 3. Juli" bei einer Entscheidung, die
+    // wieder offen ist — und das ist keine Auskunft, sondern eine falsche.
+    expect(nachher).toBeNull();
+  });
+
+  it('kennt die vierzehn Vorlagen aus Abschnitt 7.3', async () => {
+    const vorlagen = await withAdminTx(async (tx) => {
+      const result = await tx.query<{ anzahl: string; ohne_hilfe: string }>(
+        `select count(*)::text as anzahl,
+                count(*) filter (where help = '{}'::jsonb)::text as ohne_hilfe
+           from decision_template`,
+      );
+      return result.rows[0]!;
+    });
+    expect(Number(vorlagen.anzahl)).toBe(14);
+    // Eine Frist ohne Entscheidungshilfe ist eine Aufforderung ohne Auskunft.
+    expect(Number(vorlagen.ohne_hilfe)).toBe(0);
+  });
+});
+
 describe('Prüfregeln des Schemas', () => {
   it('erzwingt bei Meilensteinen die Dauer 0', async () => {
     await expect(

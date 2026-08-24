@@ -550,7 +550,8 @@ export function Styleguide() {
           Dieselbe Ansicht wie im Projekt, mit fester Datenlage: Baustart 01.04.2026 in Bayern,
           geschuldet der 30.09.2026. Erzeugt aus der Ablaufvorlage und dem Berechnungskern, nicht
           von Hand geschrieben. Die Lotsenkarte ist überall dieselbe Beispielkarte — hier zählt der
-          Weg dorthin, nicht der Inhalt.
+          Weg dorthin, nicht der Inhalt. Entscheidungen lassen sich hier ansehen, aber nicht
+          pflegen: Das ist die Ansicht, die auch der Generalunternehmer bekommt.
         </p>
         <div className="flex flex-col gap-10 rounded-[var(--radius-large)] border border-ash p-6">
           <PlanView schedule={PLAN_FIXTURE} guideCards={demoGuideCards} />

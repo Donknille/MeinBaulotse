@@ -75,10 +75,11 @@ jobs:
         run: |
           pnpm --filter @meinbaulotse/db seed:generate
           pnpm --filter @meinbaulotse/db cards:generate
+          pnpm --filter @meinbaulotse/db decisions:generate
           pnpm --filter @meinbaulotse/db build:db-setup
           pnpm --filter @meinbaulotse/web fixture
           pnpm build:function
-          git diff --exit-code -- supabase/migrations/0003_seed.sql supabase/migrations/0006_guide_cards.sql docs/db-setup.sql apps/web/src/routes/plan-fixture.ts api/index.js \
+          git diff --exit-code -- supabase/migrations/0003_seed.sql supabase/migrations/0006_guide_cards.sql supabase/migrations/0008_decision_templates.sql docs/db-setup.sql apps/web/src/routes/plan-fixture.ts api/index.js \
             || (echo "::error::Erzeugte Dateien weichen von ihren Quellen ab. Bitte die Generatoren laufen lassen und das Ergebnis einchecken." && exit 1)
 
       - name: Web bauen

@@ -17,6 +17,7 @@
     "reset": "tsx scripts/reset.ts",
     "seed:generate": "tsx scripts/generate-seed.ts",
     "cards:generate": "tsx scripts/generate-guide-cards.ts",
+    "decisions:generate": "tsx scripts/generate-decisions.ts",
     "test": "vitest run",
     "build:db-setup": "tsx scripts/build-db-setup.ts"
   },

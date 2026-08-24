@@ -83,6 +83,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_seed.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_task_constraint.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_guide_card.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_guide_cards.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0007_decision.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0008_decision_templates.sql
 ```
 
 **Port 5432, nicht 6543.** Der Transaction-Pooler ist für die laufende
@@ -286,18 +288,19 @@ Ohne diesen Schritt greift die im CI vorgesehene Ersatzwahl: Inter in Gewicht
 
 ---
 
-## 5. Wenn du Stammdaten oder Lotsenkarten änderst
+## 5. Wenn du Stammdaten, Lotsenkarten oder Entscheidungsvorlagen änderst
 
-Vier Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
+Fünf Dateien werden erzeugt und dürfen nicht von Hand bearbeitet werden:
 
 | Datei | Quelle | Befehl |
 |---|---|---|
 | `supabase/migrations/0003_seed.sql` | Ablaufvorlage und Rechtematrix | `pnpm --filter @meinbaulotse/db seed:generate` |
 | `supabase/migrations/0006_guide_cards.sql` | `content/lotsenkarten/*.md` | `pnpm --filter @meinbaulotse/db cards:generate` |
+| `supabase/migrations/0008_decision_templates.sql` | `packages/schedule/src/templates/entscheidungen.ts` | `pnpm --filter @meinbaulotse/db decisions:generate` |
 | `docs/db-setup.sql` | alle Migrationen | `pnpm --filter @meinbaulotse/db build:db-setup` |
 | `apps/web/src/routes/plan-fixture.ts` | Ablaufvorlage und Berechnungskern | `pnpm --filter @meinbaulotse/web fixture` |
 
-Die Pipeline prüft, dass alle vier zu ihren Quellen passen. **Wer eine Migration
+Die Pipeline prüft, dass alle fünf zu ihren Quellen passen. **Wer eine Migration
 ändert, muss `db-setup.sql` neu erzeugen** — sonst spielt der nächste jemand
 ein veraltetes Schema ein.
 

@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 import {
   computeSchedule,
   criticalPath,
+  DECISION_TEMPLATES,
+  decisionDueDate,
   EFH_MASSIV_UNTERKELLERT,
   instantiateTemplate,
   PHASES,
@@ -21,7 +23,12 @@ import {
   type Calendar,
 } from '@meinbaulotse/schedule';
 import { permissionsOf } from '@meinbaulotse/db';
-import type { PhaseProgress, ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
+import type {
+  DecisionDto,
+  PhaseProgress,
+  ProjectSchedule,
+  ScheduledTaskDto,
+} from '@meinbaulotse/shared';
 
 const PLANNED_START = '2026-04-01';
 const CONTRACTUAL_END = '2026-09-30';
@@ -133,6 +140,54 @@ const phases: PhaseProgress[] = PHASES.map((phase) => {
   };
 });
 
+/**
+ * Die Entscheidungen entstehen aus denselben Vorlagen wie im Betrieb, nur ohne
+ * Datenbank. Zwei stehen bewusst nicht mehr auf „offen" — sonst zeigte der
+ * Styleguide nur einen einzigen Zustand von fünfen.
+ */
+const startByCode = new Map(
+  plan.tasks.map((task) => [task.code, schedule.tasks.get(task.id)!.start]),
+);
+const taskIdByCode = new Map(tasks.map((task, index) => [plan.tasks[index]!.code, task.id]));
+const taskNameByCode = new Map(plan.tasks.map((task) => [task.code, task.name]));
+
+const decisions: DecisionDto[] = DECISION_TEMPLATES.filter((template) =>
+  startByCode.has(template.blocksTaskCode),
+)
+  .map((template, index) => {
+    const start = startByCode.get(template.blocksTaskCode)!;
+    const status: DecisionDto['status'] =
+      index === 0 ? 'beauftragt' : index === 1 ? 'in_bemusterung' : 'offen';
+    return {
+      id: `00000000-0000-4000-8000-${String(index + 500).padStart(12, '0')}`,
+      templateKey: template.key,
+      title: template.title,
+      description: template.description,
+      reason: template.reason,
+      help: template.help,
+      blocksTaskId: taskIdByCode.get(template.blocksTaskCode) ?? null,
+      blocksTaskName: taskNameByCode.get(template.blocksTaskCode) ?? null,
+      blocksTaskStart: start,
+      leadTimeDays: template.leadTimeDays,
+      leadTimeUnit: template.leadTimeUnit,
+      dueDate: decisionDueDate(
+        {
+          id: template.key,
+          blocksTaskId: template.blocksTaskCode,
+          leadTimeDays: template.leadTimeDays,
+          leadTimeUnit: template.leadTimeUnit,
+        },
+        start,
+        calendar,
+      ),
+      status,
+      decidedAt: status === 'beauftragt' ? '2026-03-02T09:00:00.000Z' : null,
+      decidedNote: null,
+      estimatedCostCents: null,
+    };
+  })
+  .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
+
 const fixture: ProjectSchedule = {
   project: {
     id: '00000000-0000-4000-8000-000000000001',
@@ -140,6 +195,7 @@ const fixture: ProjectSchedule = {
     federalState: 'BY',
     buildType: 'efh_massiv',
     contractType: 'verbraucherbauvertrag',
+    catholicMunicipality: false,
     hasBasement: true,
     plannedStart: PLANNED_START,
     contractualCompletion: CONTRACTUAL_END,
@@ -150,6 +206,7 @@ const fixture: ProjectSchedule = {
   permissions: [...permissionsOf('owner')],
   phases,
   tasks,
+  decisions,
   computedEnd: schedule.projectEnd,
   contractualEnd: CONTRACTUAL_END,
   deviationWorkdays: floats.deviationWorkdays,
@@ -170,5 +227,6 @@ console.log(
   `Vorschau geschrieben: ${target}\n` +
     `  ${tasks.length} Vorgänge, Ende ${schedule.projectEnd}, ` +
     `Abweichung ${floats.deviationWorkdays} Werktage,\n` +
-    `  ${tasks.filter((task) => task.guideCardId !== null).length} davon mit Lotsenkarte.`,
+    `  ${tasks.filter((task) => task.guideCardId !== null).length} davon mit Lotsenkarte,\n` +
+    `  ${decisions.length} Entscheidungen.`,
 );

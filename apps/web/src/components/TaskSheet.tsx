@@ -24,6 +24,7 @@ import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@mein
 import { Button, Field, Select, TextInput } from './ui';
 import { ApiError } from '../lib/api';
 import { formatDate, formatRange, STATUS_LABEL } from '../lib/format';
+import { calendarOf, overdueDecisionFor } from '../lib/decisions';
 
 /** Dieselben Werte wie `mbl.schedule_change_reason`, in der Sprache der Baustelle. */
 const REASONS = [
@@ -57,8 +58,21 @@ export function TaskSheet({
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
   const titleId = useId();
 
+  // Steht zu diesem Vorgang eine Frist offen, die verstrichen ist, ist der
+  // Grund für eine Verschiebung wahrscheinlich genau die — und genau das
+  // verlangt die Abnahme von AP 3: Eine überfällige Entscheidung wird „als
+  // möglicher Verzugsgrund angeboten". Angeboten, nicht behauptet: Die Auswahl
+  // bleibt änderbar.
+  const offeneEntscheidung = overdueDecisionFor(
+    task.id,
+    schedule.decisions,
+    calendarOf(schedule.project),
+  );
+
   const [earliestStart, setEarliestStart] = useState(task.earliestStart ?? '');
-  const [reason, setReason] = useState<string>('lieferzeit');
+  const [reason, setReason] = useState<string>(
+    offeneEntscheidung === null ? 'lieferzeit' : 'bauherren_entscheidung',
+  );
   const [reasonText, setReasonText] = useState('');
   const [status, setStatus] = useState<string>(task.status);
   const [actualStart, setActualStart] = useState(task.actualStart ?? '');
@@ -188,7 +202,14 @@ export function TaskSheet({
 
               {earliestStart !== (task.earliestStart ?? '') ? (
                 <>
-                  <Field label="Grund" hint="Steht später in der Historie neben der Verschiebung.">
+                  <Field
+                    label="Grund"
+                    hint={
+                      offeneEntscheidung === null
+                        ? 'Steht später in der Historie neben der Verschiebung.'
+                        : `Die Frist für \u201E${offeneEntscheidung.title}\u201C ist verstrichen. Deshalb steht der Grund schon da; du kannst ihn ändern.`
+                    }
+                  >
                     <Select value={reason} onChange={(event) => setReason(event.target.value)}>
                       {REASONS.map(([wert, text]) => (
                         <option key={wert} value={wert}>

@@ -10,30 +10,44 @@
  */
 
 import { useState } from 'react';
-import { CalendarDays, Check, ChevronDown, GanttChartSquare } from 'lucide-react';
-import type { ProjectSchedule, ScheduledTaskDto, TaskUpdateRequest } from '@meinbaulotse/shared';
+import { CalendarDays, Check, ChevronDown, GanttChartSquare, Scale } from 'lucide-react';
+import type {
+  DecisionDto,
+  DecisionUpdateRequest,
+  ProjectSchedule,
+  ScheduledTaskDto,
+  TaskUpdateRequest,
+} from '@meinbaulotse/shared';
+import { decisionInPlainWords, isDecisionOpen } from '@meinbaulotse/shared';
 import { Card, Pill, SectionPill } from './ui';
 import { TaskRow } from './schedule';
 import { Cockpit } from './Cockpit';
 import { Timeline } from './Timeline';
 import { TaskSheet } from './TaskSheet';
 import { GuideCardSheet, type GuideCardHandlers } from './GuideCard';
+import { DecisionSheet, DECISION_STATUS_LABEL } from './DecisionSheet';
 import { formatDate } from '../lib/format';
+import { calendarOf, remainingWorkdays, urgencyOf } from '../lib/decisions';
 import { abilitiesOf, ROLE_DESCRIPTION, ROLE_LABEL } from '../lib/roles';
 
 export function PlanView({
   schedule,
   onChangeTask,
+  onChangeDecision,
   guideCards,
 }: {
   schedule: ProjectSchedule;
   /** Fehlt sie, ist die Ansicht nur zum Lesen — so wie im Styleguide. */
   onChangeTask?: (taskId: string, change: TaskUpdateRequest) => Promise<void>;
+  /** Fehlt sie, lässt sich eine Entscheidung ansehen, aber nicht pflegen. */
+  onChangeDecision?: (decisionId: string, change: DecisionUpdateRequest) => Promise<void>;
   /** Fehlen sie, führt keine Zeile zur Lotsenkarte. */
   guideCards?: GuideCardHandlers;
 }) {
   const [selected, setSelected] = useState<ScheduledTaskDto | null>(null);
   const [guideCardTask, setGuideCardTask] = useState<ScheduledTaskDto | null>(null);
+  const [decision, setDecision] = useState<DecisionDto | null>(null);
+  const calendar = calendarOf(schedule.project);
   const referenceYear = Number(schedule.project.plannedStart.slice(0, 4));
   const currentPhase = currentPhaseKey(schedule);
   const byPhase = schedule.phases.filter((phase) => phase.taskCount > 0);
@@ -65,6 +79,7 @@ export function PlanView({
           currentPhase={currentPhase}
           {...(onChangeTask === undefined ? {} : { onSelect: setSelected })}
           {...(guideCards === undefined ? {} : { onGuideCard: setGuideCardTask })}
+          onDecision={setDecision}
         />
       </header>
 
@@ -121,6 +136,61 @@ export function PlanView({
           })}
         </div>
       </details>
+      {/* Alle Entscheidungen, auch die erledigten. Das Cockpit zeigt nur, was
+          jetzt ansteht; wer den Überblick will, klappt hier auf. */}
+      {schedule.decisions.length > 0 ? (
+        <details className="group flex flex-col gap-8">
+          <summary className="cursor-pointer list-none">
+            <SectionPill tone="amber" icon={<Scale size={18} />}>
+              Alle Entscheidungen · {schedule.decisions.filter(isDecisionOpen).length} offen von{' '}
+              {schedule.decisions.length}
+              <ChevronDown
+                size={16}
+                className="ml-1 transition-transform duration-[var(--motion-micro)] group-open:rotate-180"
+                aria-hidden
+              />
+            </SectionPill>
+          </summary>
+          <Card className="mt-6 py-0">
+            <ul>
+              {schedule.decisions.map((entry) => {
+                const dringlichkeit = urgencyOf(entry, calendar);
+                return (
+                  <li key={entry.id} className="border-b border-ash last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => setDecision(entry)}
+                      className="flex min-h-11 w-full flex-col gap-0.5 py-3 text-left transition-colors duration-[var(--motion-micro)] hover:bg-paper-mist sm:flex-row sm:items-baseline sm:gap-3"
+                    >
+                      <span
+                        className={`text-body sm:min-w-[11rem] ${
+                          dringlichkeit === 'verstrichen'
+                            ? 'text-alarm-red'
+                            : dringlichkeit === 'knapp'
+                              ? 'text-tangerine'
+                              : 'text-steel'
+                        }`}
+                      >
+                        {entry.dueDate === null ? 'ohne Frist' : formatDate(entry.dueDate)}
+                        {isDecisionOpen(entry)
+                          ? ` · ${decisionInPlainWords(remainingWorkdays(entry, calendar))}`
+                          : ''}
+                      </span>
+                      <span className="flex flex-wrap items-baseline gap-x-2 text-body-lg font-medium text-charcoal">
+                        {entry.title}
+                        <span className="text-caption font-normal text-steel">
+                          {DECISION_STATUS_LABEL[entry.status]}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        </details>
+      ) : null}
+
       {/* Die Rechte stehen weiterhin da, nur nicht mehr als Erstes: dreizehn
           Zeilen „was du darfst" beantworten keine der Fragen, mit denen jemand
           die Anwendung öffnet. Wer wissen will, was seine Rolle bedeutet,
@@ -147,6 +217,20 @@ export function PlanView({
           schedule={schedule}
           onClose={() => setSelected(null)}
           onSave={(change) => onChangeTask(selected.id, change)}
+        />
+      ) : null}
+
+      {decision !== null ? (
+        <DecisionSheet
+          decision={decision}
+          calendar={calendar}
+          canWrite={
+            onChangeDecision !== undefined && schedule.permissions.includes('decision.write')
+          }
+          onClose={() => setDecision(null)}
+          onSave={async (change) => {
+            await onChangeDecision!(decision.id, change);
+          }}
         />
       ) : null}
 

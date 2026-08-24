@@ -12814,6 +12814,14 @@ function criticalPath(input) {
   return { floats, critical, targetEnd, deviationWorkdays };
 }
 
+// ../../packages/schedule/dist/decisions.js
+function decisionDueDate(decision2, taskStart, calendar) {
+  if (decision2.leadTimeUnit === "kalendertage") {
+    return addDays(taskStart, -decision2.leadTimeDays);
+  }
+  return workdayOffset(taskStart, -decision2.leadTimeDays, calendar);
+}
+
 // ../../packages/schedule/dist/instantiate.js
 function isIncluded(task, options) {
   switch (task.includeWhen) {
@@ -12997,6 +13005,197 @@ var DEPENDENCIES = Object.entries(PREDECESSORS).flatMap(([successorCode, predece
   lagUnit: "werktage"
 })));
 
+// ../../packages/schedule/dist/templates/entscheidungen.js
+var ROWS2 = [
+  {
+    key: "versicherungen",
+    title: "Bauherrenhaftpflicht und Bauleistungsversicherung",
+    blocksTaskCode: "t03",
+    leadTimeDays: 10,
+    reason: "Beides muss stehen, bevor die erste Maschine anr\xFCckt.",
+    description: "Zwei Versicherungen f\xFCr die Bauzeit: eine f\xFCr Sch\xE4den, die von deiner Baustelle ausgehen, und eine f\xFCr Sch\xE4den am Bau selbst.",
+    help: {
+      whatItIsAbout: "Als Bauherr haftest du f\xFCr das, was auf deinem Grundst\xFCck passiert, auch ohne eigenes Verschulden. Die Bauleistungsversicherung deckt dagegen Sch\xE4den am entstehenden Geb\xE4ude, etwa durch Sturm, Diebstahl oder Vandalismus.",
+      whatDistinguishes: "Der Umfang und die Ausschl\xFCsse. Pr\xFCfe, ob Eigenleistung, Helfer, Erdarbeiten und die Bauzeitverl\xE4ngerung mitversichert sind. Manche Vertr\xE4ge des Generalunternehmers enthalten die Bauleistungsversicherung bereits.",
+      whatPeopleRegret: "Zu sp\xE4t abgeschlossen. Ein Sturmschaden am offenen Rohbau kostet f\xFCnfstellig, und der Vertrag muss vor dem Ereignis bestanden haben."
+    }
+  },
+  {
+    key: "bauhelfer_bg_bau",
+    title: "Bauhelfer bei der BG Bau anmelden",
+    blocksTaskCode: "t03",
+    leadTimeDays: 5,
+    reason: "Gesetzliche Pflicht, sobald jemand unentgeltlich mithilft.",
+    description: "Wer beim Bau mithilft, ist gesetzlich unfallversichert. Die Anmeldung bei der Berufsgenossenschaft ist deine Aufgabe, nicht die der Helfer.",
+    help: {
+      whatItIsAbout: "Jede helfende Hand auf deiner Baustelle ist \xFCber die BG Bau unfallversichert, auch Freunde und Verwandte. Du musst das Bauvorhaben und die geleisteten Stunden melden.",
+      whatDistinguishes: "Nichts, das ist keine Wahl. Die Frage ist nur, ob du Eigenleistung planst und wie viele Stunden es werden.",
+      whatPeopleRegret: "Gar nicht angemeldet. Passiert etwas, steht ein Bu\xDFgeld im Raum, und der Versicherungsschutz f\xFCr den Verletzten ist die kleinere Sorge."
+    }
+  },
+  {
+    key: "dachziegel",
+    title: "Dachziegel: Modell und Farbe",
+    blocksTaskCode: "t17",
+    leadTimeDays: 20,
+    reason: "Lieferzeit; einzelne Modelle und Farben sind saisonal knapp.",
+    description: "Material, Form und Farbe der Dacheindeckung. Die Wahl bindet sich an die Dachneigung und h\xE4ufig an Vorgaben aus dem Bebauungsplan.",
+    help: {
+      whatItIsAbout: "Die Eindeckung ist die sichtbarste Fl\xE4che deines Hauses und die, an die vierzig Jahre lang niemand mehr herankommt.",
+      whatDistinguishes: "Material und Oberfl\xE4che. Tonziegel, Betonstein und Schiefer unterscheiden sich in Gewicht, Preis und Mindestneigung. Engobierte und glasierte Oberfl\xE4chen bleiben l\xE4nger sauber als unbehandelte.",
+      whatPeopleRegret: "Die Farbe nach einem Musterst\xFCck in der Hand ausgesucht statt an einer bezogenen Fl\xE4che im Freien. Auf dem Dach wirkt sie anders."
+    }
+  },
+  {
+    key: "fassade",
+    title: "Fassade: Putz oder Klinker, Farbton",
+    blocksTaskCode: "t17",
+    leadTimeDays: 25,
+    reason: "Bestimmt die Ger\xFCststandzeit und damit den Ablauf am Bau.",
+    description: "Wie die Au\xDFenwand aussieht und aus was sie besteht. Die Entscheidung wirkt auf Kosten, Pflegeaufwand und den Bauablauf.",
+    help: {
+      whatItIsAbout: "Die \xE4u\xDFere Schicht der Au\xDFenwand. Sie sch\xFCtzt die D\xE4mmung und bestimmt, wie oft du in zwanzig Jahren ein Ger\xFCst brauchst.",
+      whatDistinguishes: "Putz ist g\xFCnstiger und in jedem Farbton m\xF6glich, muss aber irgendwann gestrichen werden. Klinker kostet deutlich mehr, h\xE4lt daf\xFCr ohne Anstrich und braucht mehr Wandst\xE4rke.",
+      whatPeopleRegret: "Einen sehr hellen oder sehr dunklen Farbton gew\xE4hlt. Hell zeigt jeden Ablauf unter der Fensterbank, dunkel heizt sich auf und bleicht aus."
+    }
+  },
+  {
+    key: "fenster",
+    title: "Fenster: Farbe, Verglasung, Rollladen, Griffe",
+    blocksTaskCode: "t18",
+    leadTimeDays: 60,
+    reason: "Fenster werden auf Ma\xDF gefertigt; die Lieferzeit ist die l\xE4ngste im Bau.",
+    description: "Rahmenmaterial, Farbe innen und au\xDFen, Glasaufbau, Beschl\xE4ge, Rolll\xE4den und Einbruchhemmung. Die l\xE4ngste Vorlaufzeit im ganzen Ablauf.",
+    help: {
+      whatItIsAbout: "Fenster sind Ma\xDFanfertigungen. Ab der Bestellung vergehen Wochen bis Monate, und in dieser Zeit \xE4ndert sich nichts mehr daran.",
+      whatDistinguishes: "Rahmenmaterial und Glasaufbau. Kunststoff, Holz und Aluminium unterscheiden sich in Pflege, Preis und Lebensdauer. Beim Glas entscheidet der Aufbau \xFCber W\xE4rmeschutz, Schallschutz und Sonnenschutz. Bei der Einbruchhemmung ist RC2 der \xFCbliche Standard f\xFCr Wohnh\xE4user.",
+      whatPeopleRegret: "Am Sonnenschutz gespart und an der Einbruchhemmung. Beides l\xE4sst sich nachr\xFCsten, kostet dann aber ein Vielfaches der Mehrkosten beim Einbau."
+    }
+  },
+  {
+    key: "elektroplanung",
+    title: "Elektroplanung: Steckdosen, Schalter, Netzwerk",
+    blocksTaskCode: "t20",
+    leadTimeDays: 15,
+    reason: "Nach dem Schlitzen ist jede \xC4nderung ein Nachtrag.",
+    description: "Wo Steckdosen, Schalter, Leuchtenausl\xE4sse und Netzwerkdosen sitzen, und welche Leerrohre f\xFCr sp\xE4ter eingezogen werden.",
+    help: {
+      whatItIsAbout: "Der Plan, nach dem der Elektriker die W\xE4nde schlitzt. Was darin nicht steht, sitzt sp\xE4ter nicht in der Wand.",
+      whatDistinguishes: "Vor allem die Anzahl. Die \xFCbliche Ausstattung ist ein Mindestma\xDF, kein Vorschlag f\xFCr dein Leben. Geh mit den geplanten M\xF6beln durch jeden Raum.",
+      whatPeopleRegret: "Zu wenige Steckdosen neben dem Bett, in der K\xFCche und am Arbeitsplatz. Und fehlende Leerrohre f\xFCr Photovoltaik, Wallbox und Au\xDFensteckdose."
+    }
+  },
+  {
+    key: "kuechenplanung",
+    title: "K\xFCchenplanung mit Anschlusspunkten",
+    blocksTaskCode: "t20",
+    leadTimeDays: 20,
+    reason: "Starkstrom, Wasser und Abluft m\xFCssen vor der Rohinstallation feststehen.",
+    description: "Der K\xFCchengrundriss mit allen Anschl\xFCssen: Strom, Starkstrom, Wasser, Abwasser, Abluft oder Umluft.",
+    help: {
+      whatItIsAbout: "Nicht die Fronten und nicht die Arbeitsplatte, sondern wo Ger\xE4te und Sp\xFCle stehen. Danach richten sich die Leitungen.",
+      whatDistinguishes: "Vor allem Kochfeld und Dunstabzug. Ein Induktionsfeld braucht Starkstrom, eine Abluftanlage einen Mauerdurchbruch nach au\xDFen, eine Umluftanlage nicht.",
+      whatPeopleRegret: "Die K\xFCche erst nach der Rohinstallation geplant. Dann liegt der Wasseranschluss zwei Meter neben der Sp\xFCle, und die Steckdose f\xFCr den Backofen an der falschen Wand."
+    }
+  },
+  {
+    key: "heizsystem",
+    title: "Heizsystem und W\xE4rmepumpe final",
+    blocksTaskCode: "t21",
+    leadTimeDays: 40,
+    reason: "Lieferzeit der Ger\xE4te und Fristen im F\xF6rderantrag.",
+    description: "Welcher W\xE4rmeerzeuger eingebaut wird, wie er ausgelegt ist und ob eine F\xF6rderung beantragt wird.",
+    help: {
+      whatItIsAbout: "Die Anlage, die dein Haus die n\xE4chsten zwanzig Jahre heizt, und die Grundlage f\xFCr den F\xF6rderantrag.",
+      whatDistinguishes: "Die W\xE4rmequelle und die Auslegung. Luft und Erdreich unterscheiden sich in Erschlie\xDFungskosten und Jahresarbeitszahl. Wichtiger als das Fabrikat ist, dass die Auslegung auf einer Heizlastberechnung beruht und nicht auf einer Faustformel.",
+      whatPeopleRegret: "Eine zu gro\xDF ausgelegte Anlage. Sie taktet, verschlei\xDFt schneller und verbraucht mehr als eine passend gerechnete."
+    }
+  },
+  {
+    key: "sanitaerobjekte",
+    title: "Sanit\xE4robjekte und Vorwandpositionen",
+    blocksTaskCode: "t21",
+    leadTimeDays: 20,
+    reason: "Die Position der Objekte bestimmt die Rohinstallation.",
+    description: "Welche Objekte in Bad und G\xE4ste-WC kommen und wo genau sie h\xE4ngen. Die H\xF6hen entscheiden \xFCber zehn Jahre Nutzung.",
+    help: {
+      whatItIsAbout: "Nicht die Armaturen, sondern die Positionen. Wo das WC h\xE4ngt, wo die Dusche anf\xE4ngt, auf welcher H\xF6he das Waschbecken sitzt.",
+      whatDistinguishes: "Bodengleiche Dusche oder Wanne, Wandh\xE4ngend oder stehend, Unterputz- oder Aufputzarmatur. Unterputz sieht ruhiger aus und ist im Wartungsfall aufwendiger.",
+      whatPeopleRegret: "Standardh\xF6hen \xFCbernommen, ohne sich davorzustellen. Ein Waschbecken auf 85 cm ist f\xFCr 1,60 m und 1,95 m nicht dasselbe."
+    }
+  },
+  {
+    key: "bodenbelag",
+    title: "Bodenbelag und Aufbauh\xF6he",
+    blocksTaskCode: "t26",
+    leadTimeDays: 15,
+    reason: "Die Aufbauh\xF6he bestimmt die Dicke des Estrichs.",
+    description: "Welcher Belag in welchen Raum kommt. Aus der Aufbauh\xF6he ergibt sich, wie dick der Estrich eingebracht wird.",
+    help: {
+      whatItIsAbout: "Jeder Belag braucht unterschiedlich viel Platz. Der Estrich wird darauf abgestimmt und ist danach nicht mehr zu \xE4ndern.",
+      whatDistinguishes: "Aufbauh\xF6he, W\xE4rmeleitf\xE4higkeit und Pflege. Fliesen leiten die Fu\xDFbodenheizung am besten, Parkett f\xFChlt sich w\xE4rmer an, Vinyl ist unempfindlich und d\xFCnn.",
+      whatPeopleRegret: "Die Entscheidung dem Estrichleger \xFCberlassen. Passt die Aufbauh\xF6he nicht, schleifen sp\xE4ter die T\xFCren oder es entsteht eine Schwelle."
+    }
+  },
+  {
+    key: "fliesen",
+    title: "Fliesen: Auswahl und Verlegemuster",
+    blocksTaskCode: "t28",
+    leadTimeDays: 40,
+    reason: "Lieferzeit. Der h\xE4ufigste Grund f\xFCr Verzug im Innenausbau.",
+    description: "Format, Farbe, Oberfl\xE4che und Verlegemuster f\xFCr Bad, G\xE4ste-WC und gegebenenfalls weitere R\xE4ume.",
+    help: {
+      whatItIsAbout: "Die Fliesen und die Art, wie sie liegen. Beides muss vor dem Beginn der Fliesenarbeiten geliefert und gepr\xFCft sein.",
+      whatDistinguishes: "Format und Oberfl\xE4che. Gro\xDFe Formate wirken ruhiger und brauchen einen ebeneren Untergrund. Bei der Rutschhemmung gilt: In der bodengleichen Dusche ist eine matte Oberfl\xE4che kein Nachteil.",
+      whatPeopleRegret: "Zu sp\xE4t ausgesucht. Bei Fliesen sind acht Wochen Lieferzeit nichts Ungew\xF6hnliches, und eine Nachbestellung aus einer anderen Charge weicht im Farbton ab."
+    }
+  },
+  {
+    key: "innentueren",
+    title: "Innent\xFCren: Modell, Zargen, Beschl\xE4ge",
+    blocksTaskCode: "t29",
+    leadTimeDays: 50,
+    reason: "Lange Lieferzeiten, besonders bei abweichenden Ma\xDFen.",
+    description: "T\xFCrbl\xE4tter, Zargen, B\xE4nder und Dr\xFCcker. Bei Sonderma\xDFen und Sonderfarben verl\xE4ngert sich die Lieferzeit deutlich.",
+    help: {
+      whatItIsAbout: "Alle Innent\xFCren zusammen. Sie werden als Satz bestellt und auf die fertige Wandst\xE4rke abgestimmt.",
+      whatDistinguishes: "Oberfl\xE4che und Aufbau. R\xF6hrenspan ist leicht und g\xFCnstig, Vollspan schwerer und leiser. F\xFCr Bad und Hauswirtschaftsraum lohnt der Blick auf die Feuchtebest\xE4ndigkeit.",
+      whatPeopleRegret: "Die T\xFCrh\xF6he nicht mitgedacht. Durchgehende T\xFCren bis zur Decke wirken gro\xDFz\xFCgig, sind aber ein Sonderma\xDF mit eigener Lieferzeit."
+    }
+  },
+  {
+    key: "treppe",
+    title: "Treppe: Material und Gel\xE4nder",
+    blocksTaskCode: "t32",
+    leadTimeDays: 50,
+    reason: "Aufma\xDF erst nach dem Rohbau m\xF6glich, danach Fertigung.",
+    description: "Material, Bauart und Gel\xE4nder der Innentreppe. Das Aufma\xDF erfolgt am fertigen Rohbau, die Fertigung dauert Wochen.",
+    help: {
+      whatItIsAbout: "Die Treppe wird f\xFCr dein Haus gebaut, nicht gekauft. Zwischen Aufma\xDF und Einbau liegen mehrere Wochen.",
+      whatDistinguishes: "Bauart und Material. Eine aufgesattelte Holztreppe, eine Betontreppe mit Belag und eine Faltwerktreppe unterscheiden sich in Preis, Schall\xFCbertragung und Platzbedarf.",
+      whatPeopleRegret: "Den Schallschutz \xFCbersehen. Eine Treppe, die im Schlafzimmer darunter zu h\xF6ren ist, l\xE4sst sich nachtr\xE4glich kaum entkoppeln."
+    }
+  },
+  {
+    key: "aussenanlagen",
+    title: "Au\xDFenanlagen: Zufahrt, Terrasse, Zaun",
+    blocksTaskCode: "t35",
+    leadTimeDays: 25,
+    reason: "Materialbestellung und Abstimmung mit der Entw\xE4sserung.",
+    description: "Zufahrt, Wege, Terrasse, Einfriedung und wohin das Regenwasser l\xE4uft.",
+    help: {
+      whatItIsAbout: "Alles au\xDFerhalb des Hauses. H\xE4ufig der Posten, der im Budget zuletzt drankommt und dann fehlt.",
+      whatDistinguishes: "Versickerungsf\xE4hig oder versiegelt. Manche Gemeinden koppeln die Niederschlagswassergeb\xFChr an die versiegelte Fl\xE4che, und der Bebauungsplan kann Vorgaben machen.",
+      whatPeopleRegret: "Leerrohre f\xFCr Au\xDFenbeleuchtung, Tor und Gartensteckdose nicht mit eingegraben. Danach ist die Zufahrt gepflastert."
+    }
+  }
+];
+var DECISION_TEMPLATES = ROWS2.map((row, index) => ({
+  ...row,
+  leadTimeUnit: "werktage",
+  sortOrder: (index + 1) * 10
+}));
+
 // ../../packages/shared/dist/index.js
 var isoDate = external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum im Format JJJJ-MM-TT erwartet");
 var federalState = external_exports.enum(FEDERAL_STATES);
@@ -13065,6 +13264,12 @@ var projectSummary = external_exports.object({
   id: external_exports.string().uuid(),
   name: external_exports.string(),
   federalState,
+  /**
+   * Überwiegend katholische Gemeinde. Steht hier, weil die Oberfläche mit
+   * demselben Feiertagskalender rechnen muss wie der Server — sonst zeigt sie
+   * „noch 4 Werktage", wo die API 3 gerechnet hat.
+   */
+  catholicMunicipality: external_exports.boolean(),
   buildType,
   contractType,
   hasBasement: external_exports.boolean(),
@@ -13112,6 +13317,44 @@ var phaseProgress = external_exports.object({
   firstStart: isoDate.nullable(),
   lastEnd: isoDate.nullable()
 });
+var decisionStatus = external_exports.enum([
+  "offen",
+  "in_bemusterung",
+  "entschieden",
+  "beauftragt",
+  "hinfaellig"
+]);
+var decisionHelp = external_exports.object({
+  whatItIsAbout: external_exports.string().optional(),
+  whatDistinguishes: external_exports.string().optional(),
+  whatPeopleRegret: external_exports.string().optional()
+});
+var decision = external_exports.object({
+  id: external_exports.string().uuid(),
+  templateKey: external_exports.string().nullable(),
+  title: external_exports.string(),
+  description: external_exports.string().nullable(),
+  /** Warum die Vorlaufzeit so lang ist. Ohne den Grund ist eine Frist eine Behauptung. */
+  reason: external_exports.string().nullable(),
+  help: decisionHelp,
+  blocksTaskId: external_exports.string().uuid().nullable(),
+  blocksTaskName: external_exports.string().nullable(),
+  /** Beginn des blockierten Vorgangs — die Bezugsgröße der Frist. */
+  blocksTaskStart: isoDate.nullable(),
+  leadTimeDays: external_exports.number().int(),
+  leadTimeUnit: durationUnit,
+  /** Gerechnet, nie von Hand gesetzt. `null`, solange der Vorgang keinen Termin hat. */
+  dueDate: isoDate.nullable(),
+  status: decisionStatus,
+  decidedAt: external_exports.string().nullable(),
+  decidedNote: external_exports.string().nullable(),
+  estimatedCostCents: external_exports.number().int().nullable()
+});
+var decisionUpdateRequest = external_exports.object({
+  status: decisionStatus.optional(),
+  decidedNote: external_exports.string().trim().max(1e3).nullable().optional(),
+  estimatedCostCents: external_exports.number().int().min(0).nullable().optional()
+}).refine((value) => value.status !== void 0 || value.decidedNote !== void 0 || value.estimatedCostCents !== void 0, { message: "Es gibt nichts zu \xE4ndern." });
 var projectSchedule = external_exports.object({
   project: projectSummary,
   /**
@@ -13125,6 +13368,14 @@ var projectSchedule = external_exports.object({
   permissions: external_exports.array(external_exports.string()),
   phases: external_exports.array(phaseProgress),
   tasks: external_exports.array(scheduledTask),
+  /**
+   * Die Entscheidungen dieses Bauvorhabens, nach Frist sortiert.
+   *
+   * Anders als die Lotsenkarten kommen sie vollständig mit: Es sind vierzehn
+   * kurze Datensätze, und das Cockpit braucht sie sofort — „was du entscheiden
+   * musst" ist keine Ansicht, die man erst öffnet.
+   */
+  decisions: external_exports.array(decision),
   /** Errechnetes Ende aus der Vorwärtsrechnung. */
   computedEnd: isoDate.nullable(),
   /** Vertraglich geschuldetes Ende, sofern erfasst. */
@@ -14455,6 +14706,156 @@ var requireAuth = createMiddleware(async (c, next) => {
   await next();
 });
 
+// src/decisions.ts
+function toDecision(row) {
+  return {
+    id: row.id,
+    templateKey: row.template_key,
+    title: row.title,
+    description: row.description,
+    reason: row.reason,
+    help: row.help,
+    blocksTaskId: row.blocks_task_id,
+    blocksTaskName: row.blocks_task_name,
+    blocksTaskStart: row.blocks_task_start,
+    leadTimeDays: row.lead_time_days,
+    leadTimeUnit: row.lead_time_unit,
+    dueDate: row.due_date,
+    status: row.status,
+    decidedAt: row.decided_at,
+    decidedNote: row.decided_note,
+    // `bigint` kommt als Zeichenkette aus dem Treiber. Beträge in Cent bleiben
+    // weit unter der sicheren Ganzzahlgrenze, deshalb ist die Umwandlung hier
+    // unbedenklich.
+    estimatedCostCents: row.estimated_cost_cents === null ? null : Number(row.estimated_cost_cents)
+  };
+}
+async function loadDecisions(tx, projectId) {
+  const result = await tx.query(
+    `select d.id, d.template_key, d.title, d.description, d.reason, d.help,
+            d.blocks_task_id, t.name as blocks_task_name, t.current_start as blocks_task_start,
+            d.lead_time_days, d.lead_time_unit, d.due_date, d.status,
+            d.decided_at, d.decided_note, d.estimated_cost_cents
+       from decision d
+       left join task t on t.id = d.blocks_task_id
+      where d.project_id = $1
+      order by d.due_date asc nulls last, d.title`,
+    [projectId]
+  );
+  return result.rows.map(toDecision);
+}
+async function createDecisionsFromTemplates(tx, projectId, taskIdByCode, startByCode, calendar) {
+  const templates = await tx.query(
+    `select key, title, blocks_task_code, lead_time_days, lead_time_unit,
+            reason, description, help
+       from decision_template order by sort_order`
+  );
+  let angelegt = 0;
+  for (const template of templates.rows) {
+    const taskId = taskIdByCode.get(template.blocks_task_code);
+    if (taskId === void 0) continue;
+    const start = startByCode.get(template.blocks_task_code);
+    const dueDate = start === void 0 ? null : decisionDueDate(
+      {
+        id: template.key,
+        blocksTaskId: taskId,
+        leadTimeDays: template.lead_time_days,
+        leadTimeUnit: template.lead_time_unit
+      },
+      start,
+      calendar
+    );
+    await tx.query(
+      `insert into decision
+         (project_id, template_key, title, description, reason, help,
+          blocks_task_id, lead_time_days, lead_time_unit, due_date)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        projectId,
+        template.key,
+        template.title,
+        template.description,
+        template.reason,
+        JSON.stringify(template.help),
+        taskId,
+        template.lead_time_days,
+        template.lead_time_unit,
+        dueDate
+      ]
+    );
+    angelegt += 1;
+  }
+  return angelegt;
+}
+async function syncDecisionDueDates(tx, projectId, calendar, startByTaskId) {
+  const result = await tx.query(
+    `select id, blocks_task_id, lead_time_days, lead_time_unit, due_date
+       from decision where project_id = $1`,
+    [projectId]
+  );
+  let verschoben = 0;
+  for (const row of result.rows) {
+    const start = row.blocks_task_id === null ? void 0 : startByTaskId.get(row.blocks_task_id);
+    const next = start === void 0 ? null : decisionDueDate(
+      {
+        id: row.id,
+        blocksTaskId: row.blocks_task_id,
+        leadTimeDays: row.lead_time_days,
+        leadTimeUnit: row.lead_time_unit
+      },
+      start,
+      calendar
+    );
+    if (row.due_date === next) continue;
+    await tx.query("update decision set due_date = $2 where id = $1", [row.id, next]);
+    verschoben += 1;
+  }
+  return verschoben;
+}
+async function updateDecision(tx, projectId, decisionId, change) {
+  const felder = [];
+  const werte = [decisionId, projectId];
+  const setze = (spalte, wert) => {
+    werte.push(wert);
+    felder.push(`${spalte} = $${werte.length}`);
+  };
+  if (change.status !== void 0) setze("status", change.status);
+  if (change.decidedNote !== void 0) setze("decided_note", change.decidedNote);
+  if (change.estimatedCostCents !== void 0) {
+    setze("estimated_cost_cents", change.estimatedCostCents);
+  }
+  let result;
+  try {
+    result = await tx.query(
+      `update decision set ${felder.join(", ")} where id = $1 and project_id = $2`,
+      werte
+    );
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && cause.code === "42501") {
+      throw new HTTPException(403, {
+        message: "Entscheidungen pflegt der Bauherr. Du kannst sie sehen, aber nicht \xE4ndern."
+      });
+    }
+    throw cause;
+  }
+  if (result.rowCount === 0) {
+    throw new HTTPException(404, {
+      message: "Diese Entscheidung gibt es in deinem Bauvorhaben nicht."
+    });
+  }
+  const geladen = await tx.query(
+    `select d.id, d.template_key, d.title, d.description, d.reason, d.help,
+            d.blocks_task_id, t.name as blocks_task_name, t.current_start as blocks_task_start,
+            d.lead_time_days, d.lead_time_unit, d.due_date, d.status,
+            d.decided_at, d.decided_note, d.estimated_cost_cents
+       from decision d
+       left join task t on t.id = d.blocks_task_id
+      where d.id = $1`,
+    [decisionId]
+  );
+  return toDecision(geladen.rows[0]);
+}
+
 // src/demo.ts
 var import_node_crypto6 = require("node:crypto");
 var DEMO_IDENTITIES = {
@@ -14870,6 +15271,13 @@ async function createProjectFromAnswers(tx, claims, answers) {
     );
   }
   const guideCardCount = await linkGuideCards(tx, projectId);
+  const decisionCount = await createDecisionsFromTemplates(
+    tx,
+    projectId,
+    idByCode,
+    new Map(plan.tasks.map((task) => [task.code, schedule.tasks.get(task.id).start])),
+    calendar
+  );
   await tx.query(
     `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
      values ($1, 'app', 'project.created', 'project', $1, $2)`,
@@ -14879,7 +15287,8 @@ async function createProjectFromAnswers(tx, claims, answers) {
         template: template.key,
         hasBasement: answers.hasBasement,
         taskCount: plan.tasks.length,
-        guideCardCount
+        guideCardCount,
+        decisionCount
       })
     ]
   );
@@ -14888,6 +15297,7 @@ async function createProjectFromAnswers(tx, claims, answers) {
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
     guideCardCount,
+    decisionCount,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: answers.contractualCompletion === void 0 ? null : floats.deviationWorkdays
   };
@@ -14989,8 +15399,15 @@ async function recomputeProject(tx, projectId) {
       [row.id, scheduled.start, scheduled.end, nextFloat, nextCritical]
     );
   }
+  const movedDecisions = await syncDecisionDueDates(
+    tx,
+    projectId,
+    plan.calendar,
+    new Map([...schedule.tasks].map(([id, task]) => [id, task.start]))
+  );
   return {
     movedTasks,
+    movedDecisions,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays
   };
@@ -15003,7 +15420,12 @@ var EXPECTED = [
   // `relation "guide_card" does not exist`. Die Inhalte selbst (0006) stehen
   // hier bewusst nicht: Fehlen sie, gibt es keine Karten, aber die Anwendung
   // läuft. Das ist eine leere Datenlage, kein kaputtes Schema.
-  { migration: "0005_guide_card.sql", table: "guide_card", column: "key" }
+  { migration: "0005_guide_card.sql", table: "guide_card", column: "key" },
+  // Ohne die Entscheidungen endet jede Planansicht in
+  // `relation "decision" does not exist` — sie hängen im Plan mit drin. Die
+  // Vorlagen (0008) stehen hier wieder nicht: Fehlen sie, entstehen beim
+  // Anlegen eines Bauvorhabens keine Entscheidungen, aber nichts bricht.
+  { migration: "0007_decision.sql", table: "decision", column: "due_date" }
 ];
 async function checkSchema(tx) {
   if (EXPECTED.length === 0) return { current: true, missingMigrations: [] };
@@ -15130,8 +15552,8 @@ function createApp() {
   v1.get("/me/projects", async (c) => {
     const projects = await withUserTx(c.get("claims"), async (tx) => {
       const result = await tx.query(
-        `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-                p.has_basement, p.planned_start, p.contractual_completion,
+        `select p.id, p.name, p.federal_state, p.catholic_municipality, p.build_type,
+                p.contract_type, p.has_basement, p.planned_start, p.contractual_completion,
                 m.role
          from project p
          join project_member m on m.project_id = p.id
@@ -15254,6 +15676,22 @@ function createApp() {
     );
     return c.json(view);
   });
+  v1.patch("/projects/:id/decisions/:decisionId", async (c) => {
+    const projectId = parseId(c.req.param("id"));
+    const decisionId = parseId(c.req.param("decisionId"));
+    const parsed = decisionUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: "Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.",
+        cause: parsed.error.flatten()
+      });
+    }
+    const entscheidung = await withUserTx(
+      c.get("claims"),
+      (tx) => updateDecision(tx, projectId, decisionId, parsed.data)
+    );
+    return c.json(entscheidung);
+  });
   app.route("/v1", v1);
   app.notFound((c) => c.json({ error: "Diese Adresse gibt es nicht." }, 404));
   app.onError((error, c) => {
@@ -15290,6 +15728,7 @@ function toProjectSummary(row) {
     id: row.id,
     name: row.name,
     federalState: row.federal_state,
+    catholicMunicipality: row.catholic_municipality,
     buildType: row.build_type,
     contractType: row.contract_type,
     hasBasement: row.has_basement,
@@ -15307,8 +15746,8 @@ function parseId(raw2) {
 }
 async function loadProject(tx, projectId) {
   const result = await tx.query(
-    `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-            p.has_basement, p.planned_start, p.contractual_completion, m.role
+    `select p.id, p.name, p.federal_state, p.catholic_municipality, p.build_type,
+            p.contract_type, p.has_basement, p.planned_start, p.contractual_completion, m.role
      from project p
      join project_member m on m.project_id = p.id
        and m.user_id = mbl.current_user_id()
@@ -15377,6 +15816,7 @@ async function loadSchedule(tx, projectId) {
   const permissions = await loadPermissions(tx, projectId);
   const tasks = await loadTasks(tx, projectId);
   const phases = await loadPhases(tx, projectId);
+  const decisions = await loadDecisions(tx, projectId);
   const ends = tasks.map((task) => task.currentEnd).filter((end) => end !== null);
   const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => a > b ? a : b);
   let deviationWorkdays = null;
@@ -15393,6 +15833,7 @@ async function loadSchedule(tx, projectId) {
     permissions,
     phases,
     tasks,
+    decisions,
     computedEnd,
     contractualEnd: project.contractualCompletion,
     deviationWorkdays

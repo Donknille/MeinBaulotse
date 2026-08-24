@@ -19,6 +19,7 @@ import {
 } from '@meinbaulotse/schedule';
 import type { JwtClaims, Transaction } from '@meinbaulotse/db';
 import type { OnboardingRequest } from '@meinbaulotse/shared';
+import { createDecisionsFromTemplates } from './decisions.js';
 import { linkGuideCards } from './guide-cards.js';
 
 /**
@@ -98,6 +99,8 @@ export interface OnboardingResult {
   dependencyCount: number;
   /** Wie viele Vorgänge eine Lotsenkarte bekommen haben. */
   guideCardCount: number;
+  /** Wie viele Entscheidungen aus den Vorlagen entstanden sind. */
+  decisionCount: number;
   computedEnd: string;
   deviationWorkdays: number | null;
 }
@@ -232,6 +235,18 @@ export async function createProjectFromAnswers(
   // hinterher nicht mehr sagen, welchen Rat er damals bekommen hat.
   const guideCardCount = await linkGuideCards(tx, projectId);
 
+  // Die Entscheidungen entstehen aus denselben Vorgängen, direkt mit ihrer
+  // ersten Frist. Ein Bauherr, der sein Bauvorhaben anlegt, sieht damit
+  // sofort, dass die Fensterbemusterung sechzig Werktage vorher ansteht — und
+  // nicht erst, wenn es zu spät ist.
+  const decisionCount = await createDecisionsFromTemplates(
+    tx,
+    projectId,
+    idByCode,
+    new Map(plan.tasks.map((task) => [task.code, schedule.tasks.get(task.id)!.start])),
+    calendar,
+  );
+
   await tx.query(
     `insert into audit_log (project_id, actor_channel, action, entity_type, entity_id, meta)
      values ($1, 'app', 'project.created', 'project', $1, $2)`,
@@ -242,6 +257,7 @@ export async function createProjectFromAnswers(
         hasBasement: answers.hasBasement,
         taskCount: plan.tasks.length,
         guideCardCount,
+        decisionCount,
       }),
     ],
   );
@@ -251,6 +267,7 @@ export async function createProjectFromAnswers(
     taskCount: plan.tasks.length,
     dependencyCount: plan.dependencies.length,
     guideCardCount,
+    decisionCount,
     computedEnd: schedule.projectEnd,
     deviationWorkdays:
       answers.contractualCompletion === undefined ? null : floats.deviationWorkdays,

@@ -6,7 +6,11 @@ import { PlanView } from '../components/PlanView';
 import type { GuideCardHandlers } from '../components/GuideCard';
 import { TopBar } from '../components/TopBar';
 import { ApiError, api } from '../lib/api';
-import type { TaskUpdateRequest } from '@meinbaulotse/shared';
+import type {
+  DecisionUpdateRequest,
+  ProjectSchedule,
+  TaskUpdateRequest,
+} from '@meinbaulotse/shared';
 
 /** Route: holt den Plan und übergibt ihn an die Darstellung. */
 export function Plan() {
@@ -30,6 +34,26 @@ export function Plan() {
       // Die Liste zeigt Baubeginn und Bundesland — beides kann sich nicht
       // ändern. Der Endtermin steht dort nicht, also gibt es nichts zu
       // erneuern außer diesem einen Plan.
+    },
+  });
+
+  // Die Antwort ist die geänderte Entscheidung, nicht der Plan: Ein
+  // Zustandswechsel verschiebt keinen Termin. Sie wird in den vorhandenen Plan
+  // eingesetzt, damit die Ansicht nicht flackert.
+  const changeDecision = useMutation({
+    mutationFn: ({ decisionId, body }: { decisionId: string; body: DecisionUpdateRequest }) =>
+      api.updateDecision(projectId!, decisionId, body),
+    onSuccess: (entscheidung) => {
+      queryClient.setQueryData(['schedule', projectId], (vorher: ProjectSchedule | undefined) =>
+        vorher === undefined
+          ? vorher
+          : {
+              ...vorher,
+              decisions: vorher.decisions.map((entry) =>
+                entry.id === entscheidung.id ? entscheidung : entry,
+              ),
+            },
+      );
     },
   });
 
@@ -93,6 +117,9 @@ export function Plan() {
           guideCards={guideCards}
           onChangeTask={async (taskId, body) => {
             await change.mutateAsync({ taskId, body });
+          }}
+          onChangeDecision={async (decisionId, body) => {
+            await changeDecision.mutateAsync({ decisionId, body });
           }}
         />
       )}

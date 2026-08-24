@@ -104,6 +104,61 @@ describe('Projektübergreifung', () => {
   });
 });
 
+describe('Entscheidungen bleiben im Projekt', () => {
+  /**
+   * Die Entscheidung eines Bauherrn ist die persönlichste Zeile im ganzen
+   * Datenmodell: Sie sagt, was er sich leisten will und wo er noch schwankt.
+   * Deshalb hier eine eigene Gegenprobe, statt sich auf die allgemeine
+   * Projekttrennung zu verlassen.
+   */
+  let entscheidungId: string;
+
+  beforeAll(async () => {
+    entscheidungId = await withAdminTx(async (tx) => {
+      const result = await tx.query<{ id: string }>(
+        `insert into decision (project_id, title, blocks_task_id, lead_time_days, due_date)
+         values ($1, 'Fliesen: Auswahl und Verlegemuster', $2, 40, date '2026-07-15')
+         returning id`,
+        [eigenes.projectId, eigenes.tileTaskId],
+      );
+      return result.rows[0]!.id;
+    });
+  });
+
+  it('kein Fremder sieht sie', async () => {
+    for (const role of MEMBER_ROLES) {
+      const gesehen = await rowCount(
+        fremdes.actors[role].userId,
+        'select id from decision where id = $1',
+        [entscheidungId],
+      );
+      expect(gesehen, `${role} sieht eine fremde Entscheidung`).toBe(0);
+    }
+  });
+
+  it('jede Rolle im eigenen Projekt sieht sie', async () => {
+    for (const role of MEMBER_ROLES) {
+      const gesehen = await rowCount(
+        eigenes.actors[role].userId,
+        'select id from decision where id = $1',
+        [entscheidungId],
+      );
+      expect(gesehen, `${role} sieht die eigene Entscheidung nicht`).toBe(1);
+    }
+  });
+
+  it('anlegen und löschen dürfen nur owner und co_owner', async () => {
+    for (const role of MEMBER_ROLES) {
+      const darf = await allowed(
+        eigenes.actors[role].userId,
+        `insert into decision (project_id, title, lead_time_days) values ($1, $2, 10)`,
+        [eigenes.projectId, `Probe ${role}`],
+      );
+      expect(darf, `${role} beim Anlegen`).toBe(role === 'owner' || role === 'co_owner');
+    }
+  });
+});
+
 describe('Lesen im eigenen Projekt', () => {
   it('jede Rolle sieht das Projekt', async () => {
     for (const role of MEMBER_ROLES) {

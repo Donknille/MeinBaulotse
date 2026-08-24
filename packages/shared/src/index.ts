@@ -123,6 +123,12 @@ export const projectSummary = z.object({
   id: z.string().uuid(),
   name: z.string(),
   federalState,
+  /**
+   * Überwiegend katholische Gemeinde. Steht hier, weil die Oberfläche mit
+   * demselben Feiertagskalender rechnen muss wie der Server — sonst zeigt sie
+   * „noch 4 Werktage", wo die API 3 gerechnet hat.
+   */
+  catholicMunicipality: z.boolean(),
   buildType,
   contractType,
   hasBasement: z.boolean(),
@@ -176,6 +182,93 @@ export const phaseProgress = z.object({
 });
 export type PhaseProgress = z.infer<typeof phaseProgress>;
 
+// -- Entscheidungen ----------------------------------------------------------
+//
+// Abschnitt 3.2: Jede Bauherren-Entscheidung hängt an einem Vorgang und einer
+// Vorlaufzeit. Verschiebt sich der Vorgang, verschiebt sich die Frist mit.
+//
+// Der Zustandsfluss ist bewusst kurz: offen → in Bemusterung → entschieden →
+// beauftragt. „Hinfällig" steht daneben, nicht dahinter — eine Entscheidung
+// kann sich erledigen, ohne getroffen worden zu sein.
+
+export const decisionStatus = z.enum([
+  'offen',
+  'in_bemusterung',
+  'entschieden',
+  'beauftragt',
+  'hinfaellig',
+]);
+export type DecisionStatus = z.infer<typeof decisionStatus>;
+
+/** Die drei Fragen aus Abschnitt 3.2, einzeln beantwortet statt als Fließtext. */
+export const decisionHelp = z.object({
+  whatItIsAbout: z.string().optional(),
+  whatDistinguishes: z.string().optional(),
+  whatPeopleRegret: z.string().optional(),
+});
+export type DecisionHelpDto = z.infer<typeof decisionHelp>;
+
+export const decision = z.object({
+  id: z.string().uuid(),
+  templateKey: z.string().nullable(),
+  title: z.string(),
+  description: z.string().nullable(),
+  /** Warum die Vorlaufzeit so lang ist. Ohne den Grund ist eine Frist eine Behauptung. */
+  reason: z.string().nullable(),
+  help: decisionHelp,
+  blocksTaskId: z.string().uuid().nullable(),
+  blocksTaskName: z.string().nullable(),
+  /** Beginn des blockierten Vorgangs — die Bezugsgröße der Frist. */
+  blocksTaskStart: isoDate.nullable(),
+  leadTimeDays: z.number().int(),
+  leadTimeUnit: durationUnit,
+  /** Gerechnet, nie von Hand gesetzt. `null`, solange der Vorgang keinen Termin hat. */
+  dueDate: isoDate.nullable(),
+  status: decisionStatus,
+  decidedAt: z.string().nullable(),
+  decidedNote: z.string().nullable(),
+  estimatedCostCents: z.number().int().nullable(),
+});
+export type DecisionDto = z.infer<typeof decision>;
+
+export const decisionUpdateRequest = z
+  .object({
+    status: decisionStatus.optional(),
+    decidedNote: z.string().trim().max(1000).nullable().optional(),
+    estimatedCostCents: z.number().int().min(0).nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.status !== undefined ||
+      value.decidedNote !== undefined ||
+      value.estimatedCostCents !== undefined,
+    { message: 'Es gibt nichts zu ändern.' },
+  );
+export type DecisionUpdateRequest = z.infer<typeof decisionUpdateRequest>;
+
+/** Eine Entscheidung, die noch aussteht. Getroffene zählen nicht mehr mit. */
+export function isDecisionOpen(entry: Pick<DecisionDto, 'status'>): boolean {
+  return entry.status === 'offen' || entry.status === 'in_bemusterung';
+}
+
+/**
+ * Klartext für die Restlaufzeit einer Entscheidungsfrist.
+ *
+ * Wortwahl nach CI 11.2: nicht „überfällig seit 3 Tagen", sondern „seit 3
+ * Werktagen offen". Dieselbe Datenlage, ein anderer Ton — und es stimmt auch
+ * genauer, denn offen ist sie, überfällig wird sie erst durch die Folgen.
+ */
+export function decisionInPlainWords(remainingWorkdays: number | null): string {
+  if (remainingWorkdays === null) return 'Frist noch nicht berechnet.';
+  if (remainingWorkdays < 0) {
+    const tage = Math.abs(remainingWorkdays) === 1 ? 'einem Werktag' : `${Math.abs(remainingWorkdays)} Werktagen`;
+    return `seit ${tage} offen`;
+  }
+  if (remainingWorkdays === 0) return 'heute fällig';
+  if (remainingWorkdays === 1) return 'noch 1 Werktag';
+  return `noch ${remainingWorkdays} Werktage`;
+}
+
 export const projectSchedule = z.object({
   project: projectSummary,
   /**
@@ -189,6 +282,14 @@ export const projectSchedule = z.object({
   permissions: z.array(z.string()),
   phases: z.array(phaseProgress),
   tasks: z.array(scheduledTask),
+  /**
+   * Die Entscheidungen dieses Bauvorhabens, nach Frist sortiert.
+   *
+   * Anders als die Lotsenkarten kommen sie vollständig mit: Es sind vierzehn
+   * kurze Datensätze, und das Cockpit braucht sie sofort — „was du entscheiden
+   * musst" ist keine Ansicht, die man erst öffnet.
+   */
+  decisions: z.array(decision),
   /** Errechnetes Ende aus der Vorwärtsrechnung. */
   computedEnd: isoDate.nullable(),
   /** Vertraglich geschuldetes Ende, sofern erfasst. */

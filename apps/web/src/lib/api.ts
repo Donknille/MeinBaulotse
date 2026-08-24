@@ -8,6 +8,8 @@
 
 import type {
   ChecklistUpdateRequest,
+  DecisionDto,
+  DecisionUpdateRequest,
   GuideCardView,
   OnboardingRequest,
   ProjectSchedule,
@@ -112,6 +114,7 @@ export interface OnboardingResult {
   taskCount: number;
   dependencyCount: number;
   guideCardCount: number;
+  decisionCount: number;
   computedEnd: string;
   deviationWorkdays: number | null;
 }
@@ -143,6 +146,15 @@ export const api = {
   // sondern „sind wir noch im Plan".
   updateTask: (projectId: string, taskId: string, change: TaskUpdateRequest) =>
     request<ProjectSchedule>(`/projects/${projectId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(change),
+    }),
+
+  // Antwortet mit der Entscheidung, nicht mit dem Plan: Ein Zustandswechsel
+  // verschiebt keinen Termin. Erst wenn eine verpasste Entscheidung tatsächlich
+  // zu einer Verschiebung führt, geht das über `updateTask`.
+  updateDecision: (projectId: string, decisionId: string, change: DecisionUpdateRequest) =>
+    request<DecisionDto>(`/projects/${projectId}/decisions/${decisionId}`, {
       method: 'PATCH',
       body: JSON.stringify(change),
     }),

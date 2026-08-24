@@ -45,6 +45,12 @@ Dokumente sind `meinbaulotse-spec.md` (Produkt und Umsetzung) und
 
    Ausgangspunkt sind die Dateien in `content/lotsenkarten`;
    `pnpm cards:generate` macht daraus `0006_guide_cards.sql`.
+
+   Die Entscheidungsvorlagen aus Abschnitt 7.3 liegen dagegen als Datensatz in
+   `packages/schedule/src/templates/entscheidungen.ts` — vierzehn Einträge mit
+   vier kurzen Feldern sind als Tabelle besser zu überblicken als als vierzehn
+   winzige Markdown-Dateien. `pnpm decisions:generate` macht daraus
+   `0008_decision_templates.sql`.
 6. **Der Ton bleibt beruhigend.** Auch schlechte Nachrichten kommen mit einem
    nächsten Schritt. Wortwahl siehe `meinbaulotse-ci.md`, Abschnitt Tonalität.
 7. **Die API hängt unter `/api`, lokal wie im Betrieb.** Der Hono-Adapter
@@ -108,6 +114,7 @@ pnpm db:test        # RLS-Matrix und Invarianten
 pnpm dev            # API und Web parallel
 pnpm build:function # Vercel-Function neu bündeln (nach API-Änderungen)
 pnpm cards:generate # Lotsenkarten aus content/lotsenkarten neu einlesen
+pnpm decisions:generate # Entscheidungsvorlagen aus packages/schedule neu einlesen
 pnpm typecheck && pnpm lint
 ```
 

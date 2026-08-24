@@ -32,6 +32,7 @@ import {
 } from '@meinbaulotse/schedule';
 import { HTTPException } from 'hono/http-exception';
 import type { Transaction } from '@meinbaulotse/db';
+import { syncDecisionDueDates } from './decisions.js';
 
 type Tx = Pick<Transaction, 'query'>;
 
@@ -141,6 +142,8 @@ async function loadPlan(
 export interface Recomputation {
   /** Wie viele Vorgänge sich tatsächlich verschoben haben. */
   movedTasks: number;
+  /** Wie viele Entscheidungsfristen mitgewandert sind. */
+  movedDecisions: number;
   computedEnd: string;
   /** Positiv heißt: später fertig als geschuldet. `null` ohne Vertragstermin. */
   deviationWorkdays: number | null;
@@ -202,8 +205,20 @@ export async function recomputeProject(tx: Tx, projectId: string): Promise<Recom
     );
   }
 
+  // Und jetzt der Schritt, der die Verschiebung für den Bauherren
+  // handlungsrelevant macht (Abschnitt 3.5, Punkt 8): Die Entscheidungsfristen
+  // wandern mit. Ohne ihn wäre eine verschobene Frist erst dann sichtbar, wenn
+  // sie schon verstrichen ist.
+  const movedDecisions = await syncDecisionDueDates(
+    tx,
+    projectId,
+    plan.calendar,
+    new Map([...schedule.tasks].map(([id, task]) => [id, task.start])),
+  );
+
   return {
     movedTasks,
+    movedDecisions,
     computedEnd: schedule.projectEnd,
     deviationWorkdays: plan.contractualEnd === null ? null : floats.deviationWorkdays,
   };

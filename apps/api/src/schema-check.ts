@@ -36,6 +36,11 @@ const EXPECTED: readonly Expectation[] = [
   // hier bewusst nicht: Fehlen sie, gibt es keine Karten, aber die Anwendung
   // läuft. Das ist eine leere Datenlage, kein kaputtes Schema.
   { migration: '0005_guide_card.sql', table: 'guide_card', column: 'key' },
+  // Ohne die Entscheidungen endet jede Planansicht in
+  // `relation "decision" does not exist` — sie hängen im Plan mit drin. Die
+  // Vorlagen (0008) stehen hier wieder nicht: Fehlen sie, entstehen beim
+  // Anlegen eines Bauvorhabens keine Entscheidungen, aber nichts bricht.
+  { migration: '0007_decision.sql', table: 'decision', column: 'due_date' },
 ];
 
 export interface SchemaState {

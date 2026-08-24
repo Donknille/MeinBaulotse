@@ -18,6 +18,7 @@ import {
 } from '@meinbaulotse/schedule';
 import {
   checklistUpdateRequest,
+  decisionUpdateRequest,
   guideCardFeedbackRequest,
   onboardingRequest,
   taskUpdateRequest,
@@ -27,6 +28,7 @@ import {
   type ScheduledTaskDto,
 } from '@meinbaulotse/shared';
 import { requireAuth, type AuthedVariables } from './auth.js';
+import { loadDecisions, updateDecision } from './decisions.js';
 import { demoLoginKey, demoRoutes } from './demo.js';
 import { loadGuideCardView, markGuideCardRead, setChecklistItem } from './guide-cards.js';
 import { createProjectFromAnswers } from './onboarding.js';
@@ -225,8 +227,8 @@ export function createApp(): Hono<App> {
   v1.get('/me/projects', async (c) => {
     const projects = await withUserTx(c.get('claims'), async (tx) => {
       const result = await tx.query<ProjectRow & { role: ProjectSummary['role'] }>(
-        `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-                p.has_basement, p.planned_start, p.contractual_completion,
+        `select p.id, p.name, p.federal_state, p.catholic_municipality, p.build_type,
+                p.contract_type, p.has_basement, p.planned_start, p.contractual_completion,
                 m.role
          from project p
          join project_member m on m.project_id = p.id
@@ -390,6 +392,33 @@ export function createApp(): Hono<App> {
     return c.json(view);
   });
 
+  // -- Entscheidungen --------------------------------------------------------
+  //
+  // Gelesen werden sie mit dem Plan: `GET /projects/:id/schedule` trägt sie
+  // mit. Vierzehn kurze Datensätze rechtfertigen keine zweite Abfrage, und das
+  // Cockpit braucht sie ohnehin sofort.
+  //
+  // Die Antwort auf eine Änderung ist die Entscheidung, nicht der Plan: Ein
+  // Zustandswechsel verschiebt keinen Termin. Erst wenn eine verpasste
+  // Entscheidung tatsächlich zu einer Verschiebung führt, geht das über die
+  // Vorgangsroute — mit `bauherren_entscheidung` als Grund.
+  v1.patch('/projects/:id/decisions/:decisionId', async (c) => {
+    const projectId = parseId(c.req.param('id'));
+    const decisionId = parseId(c.req.param('decisionId'));
+    const parsed = decisionUpdateRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new HTTPException(422, {
+        message: 'Diese Angaben reichen noch nicht. Sieh bitte die markierten Felder durch.',
+        cause: parsed.error.flatten(),
+      });
+    }
+
+    const entscheidung = await withUserTx(c.get('claims'), (tx) =>
+      updateDecision(tx, projectId, decisionId, parsed.data),
+    );
+    return c.json(entscheidung);
+  });
+
   app.route('/v1', v1);
 
   app.notFound((c) => c.json({ error: 'Diese Adresse gibt es nicht.' }, 404));
@@ -437,6 +466,7 @@ interface ProjectRow {
   id: string;
   name: string;
   federal_state: ProjectSummary['federalState'];
+  catholic_municipality: boolean;
   build_type: ProjectSummary['buildType'];
   contract_type: ProjectSummary['contractType'];
   has_basement: boolean;
@@ -450,6 +480,7 @@ function toProjectSummary(row: ProjectRow): ProjectSummary {
     id: row.id,
     name: row.name,
     federalState: row.federal_state,
+    catholicMunicipality: row.catholic_municipality,
     buildType: row.build_type,
     contractType: row.contract_type,
     hasBasement: row.has_basement,
@@ -471,8 +502,8 @@ type Tx = Parameters<Parameters<typeof withUserTx>[1]>[0];
 
 async function loadProject(tx: Tx, projectId: string): Promise<ProjectSummary> {
   const result = await tx.query<ProjectRow>(
-    `select p.id, p.name, p.federal_state, p.build_type, p.contract_type,
-            p.has_basement, p.planned_start, p.contractual_completion, m.role
+    `select p.id, p.name, p.federal_state, p.catholic_municipality, p.build_type,
+            p.contract_type, p.has_basement, p.planned_start, p.contractual_completion, m.role
      from project p
      join project_member m on m.project_id = p.id
        and m.user_id = mbl.current_user_id()
@@ -585,6 +616,7 @@ async function loadSchedule(tx: Tx, projectId: string): Promise<ProjectSchedule>
   const permissions = await loadPermissions(tx, projectId);
   const tasks = await loadTasks(tx, projectId);
   const phases = await loadPhases(tx, projectId);
+  const decisions = await loadDecisions(tx, projectId);
 
   const ends = tasks.map((task) => task.currentEnd).filter((end): end is string => end !== null);
   const computedEnd = ends.length === 0 ? null : ends.reduce((a, b) => (a > b ? a : b));
@@ -607,6 +639,7 @@ async function loadSchedule(tx: Tx, projectId: string): Promise<ProjectSchedule>
     permissions,
     phases,
     tasks,
+    decisions,
     computedEnd,
     contractualEnd: project.contractualCompletion,
     deviationWorkdays,

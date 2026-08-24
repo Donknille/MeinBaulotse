@@ -14,14 +14,23 @@
  * Ab 768 px. Mobil bleibt die Liste die Grundansicht (CI 10.1): Auf einem
  * Telefon ist ein halbes Jahr Bauzeit auf 360 px eine Zumutung, kein Überblick.
  *
- * Was noch fehlt: die Entscheidungsfristen, die laut CI 9.8 als Rauten vor dem
- * zugehörigen Vorgang auf der Achse sitzen. Es gibt sie in der API noch nicht.
+ * Die Entscheidungsfristen sitzen als Rauten **vor** dem zugehörigen Vorgang
+ * auf derselben Zeile (CI 9.8). Der Abstand zwischen Raute und Balkenanfang
+ * ist die Vorlaufzeit — man sieht auf einen Blick, wie lange vorher etwas
+ * feststehen muss, und bei den Fenstern ist dieser Abstand größer als der
+ * ganze Rohbau.
  */
 
 import { Flag } from 'lucide-react';
-import type { PhaseProgress, ProjectSchedule, ScheduledTaskDto } from '@meinbaulotse/shared';
+import type {
+  DecisionDto,
+  PhaseProgress,
+  ProjectSchedule,
+  ScheduledTaskDto,
+} from '@meinbaulotse/shared';
+import { isDecisionOpen } from '@meinbaulotse/shared';
 import { daysInMonth, makeIsoDate, parseIsoDate, toEpochDay } from '@meinbaulotse/schedule';
-import { formatRange } from '../lib/format';
+import { formatDate, formatRange } from '../lib/format';
 import { progressOf } from '../lib/progress';
 
 /** Ein Vorgang ohne Termine hat auf einer Zeitachse nichts zu suchen. */
@@ -129,6 +138,17 @@ export function Timeline({ schedule }: { schedule: ProjectSchedule }) {
   const today = todayIso();
   const months = monthsOf(axis);
   const phases = schedule.phases.filter((phase) => phase.taskCount > 0);
+
+  // Nur die offenen Fristen. Eine getroffene Entscheidung ist keine Marke mehr,
+  // sondern Geschichte — und die Achse wäre mit vierzehn Rauten unlesbar.
+  const fristen = new Map<string, DecisionDto[]>();
+  for (const entscheidung of schedule.decisions) {
+    if (!isDecisionOpen(entscheidung)) continue;
+    if (entscheidung.blocksTaskId === null || entscheidung.dueDate === null) continue;
+    const bisher = fristen.get(entscheidung.blocksTaskId) ?? [];
+    bisher.push(entscheidung);
+    fristen.set(entscheidung.blocksTaskId, bisher);
+  }
   const todayLeft = today >= axis.from && today <= axis.to ? positionOf(axis, today) : null;
 
   return (
@@ -166,7 +186,13 @@ export function Timeline({ schedule }: { schedule: ProjectSchedule }) {
               {schedule.tasks
                 .filter((task) => task.phaseKey === phase.key)
                 .map((task) => (
-                  <TaskBar key={task.id} task={task} axis={axis} />
+                  <TaskBar
+                    key={task.id}
+                    task={task}
+                    axis={axis}
+                    decisions={fristen.get(task.id) ?? []}
+                    today={today}
+                  />
                 ))}
             </div>
           ))}
@@ -228,7 +254,17 @@ function PhaseAxis({ axis, phases }: { axis: Axis; phases: PhaseProgress[] }) {
   );
 }
 
-function TaskBar({ task, axis }: { task: ScheduledTaskDto; axis: Axis }) {
+function TaskBar({
+  task,
+  axis,
+  decisions,
+  today,
+}: {
+  task: ScheduledTaskDto;
+  axis: Axis;
+  decisions: readonly DecisionDto[];
+  today: string;
+}) {
   const current = currentSpan(task);
   const baseline = baselineSpan(task);
   if (current === null) return null;
@@ -256,6 +292,23 @@ function TaskBar({ task, axis }: { task: ScheduledTaskDto; axis: Axis }) {
       </div>
 
       <div className="relative h-6 grow" title={beschriftung}>
+        {/* Die Entscheidungsfristen als Rauten, vor dem Balken (CI 9.8). Rot
+            nur, wenn die Frist wirklich verstrichen ist — Rot ist rationiert. */}
+        {decisions.map((entscheidung) => (
+          <span
+            key={entscheidung.id}
+            title={`${entscheidung.title} · Frist ${formatDate(entscheidung.dueDate)}`}
+            className={`absolute top-[0.55rem] size-2 -translate-x-1/2 rotate-45 ${
+              entscheidung.dueDate! < today ? 'bg-alarm-red' : 'bg-tangerine'
+            }`}
+            style={{ left: `${positionOf(axis, entscheidung.dueDate!)}%` }}
+          >
+            <span className="sr-only">
+              Entscheidung {entscheidung.title}, Frist {formatDate(entscheidung.dueDate)}
+            </span>
+          </span>
+        ))}
+
         {/* Baseline blass darüber. Nur, wenn es sie gibt und sie etwas anderes
             sagt als der Ist-Stand — sonst ist sie stumme Doppelung. */}
         {baseline !== null && (baseline.from !== current.from || baseline.to !== current.to) ? (
@@ -343,6 +396,10 @@ function Legend() {
       <span className="flex items-center gap-2">
         <span className="size-2.5 rotate-45 border border-electric-blue" aria-hidden />
         Meilenstein
+      </span>
+      <span className="flex items-center gap-2">
+        <span className="size-2 rotate-45 bg-tangerine" aria-hidden />
+        Entscheidungsfrist
       </span>
       <span className="flex items-center gap-2">
         <span className="h-3.5 w-px bg-electric-blue" aria-hidden />
