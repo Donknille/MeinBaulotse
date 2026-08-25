@@ -65,7 +65,7 @@ import {
   registerMedia,
   updateDiaryEntry,
 } from './diary.js';
-import { demoLoginKey, demoRoutes } from './demo.js';
+import { demoAccess, demoRoutes } from './demo.js';
 import { loadGuideCardView, markGuideCardRead, setChecklistItem } from './guide-cards.js';
 import {
   confirmAccepted,
@@ -210,13 +210,19 @@ export function createApp(): Hono<App> {
     }
   });
 
-  // Testzugang ohne Mailversand. Ohne eingestellten Schlüssel gibt es diese
-  // Route nicht — sie antwortet dann wie jede unbekannte Adresse mit 404.
-  // Warum das vertretbar ist, steht in `demo.ts`.
-  const demoKey = demoLoginKey();
-  if (demoKey !== null) {
-    console.info('Testzugang aktiv: POST /api/demo/session');
-    app.route('/demo', demoRoutes(demoKey));
+  // Testzugang ohne Mailversand. Ist nichts eingestellt, gibt es diese Route
+  // nicht — sie antwortet dann wie jede unbekannte Adresse mit 404. Die drei
+  // Stellungen der Tür stehen in `demo.ts`.
+  const zugang = demoAccess();
+  if (zugang.mode !== 'zu') {
+    // Die Meldung nennt die Stellung. „Testzugang aktiv" allein hat schon
+    // einmal jemanden glauben lassen, der Schlüssel greife noch.
+    console.info(
+      zugang.mode === 'offen'
+        ? 'Testzugang OFFEN: /api/demo/session ohne Schlüssel. Für den Betrieb DEMO_OPEN entfernen.'
+        : 'Testzugang aktiv, mit Schlüssel: /api/demo/session',
+    );
+    app.route('/demo', demoRoutes(zugang));
   }
 
   // -- Abstimmung ohne Konto -------------------------------------------------

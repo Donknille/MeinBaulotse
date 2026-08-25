@@ -14,10 +14,12 @@
  *
  * ---
  *
- * **Warum die Türen verschwinden können.** Der Testzugang hängt an
- * `DEMO_LOGIN_KEY`. Ist er nicht gesetzt, gibt es die Route `/api/demo/*` gar
- * nicht — dann wäre eine Tür zu einem Raum, den es nicht gibt. Die Seite fragt
- * das einmal nach und blendet die Knöpfe erst danach ein.
+ * **Warum die Türen verschwinden können.** Den Testzugang gibt es nur, wenn die
+ * Umgebung ihn einschaltet (`DEMO_OPEN` oder `DEMO_LOGIN_KEY`, siehe
+ * `apps/api/src/demo.ts`). Sonst gibt es die Route `/api/demo/*` gar nicht —
+ * dann wäre eine Tür zu einem Raum, den es nicht gibt. Die Seite fragt das
+ * einmal nach und blendet die Knöpfe erst danach ein. Dieselbe Antwort sagt
+ * auch, ob die Tür offen ist oder einen Schlüssel verlangt.
  *
  * Sie **wartet** dabei nicht: Erst rendern, dann nachfragen. Die Lehre steht in
  * `DemoLogin.tsx` — eine Seite, die auf eine Antwort wartet, bleibt bei „Einen
@@ -110,7 +112,8 @@ const RUNDGANG: readonly { titel: string; text: string }[] = [
 export function Landing() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [offen, setOffen] = useState(false);
+  // `null` heißt „noch nicht gefragt oder es gibt sie nicht".
+  const [tuer, setTuer] = useState<'offen' | 'schluessel' | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
 
@@ -121,8 +124,10 @@ export function Landing() {
   useEffect(() => {
     let abgebrochen = false;
     void fetch('/api/demo/identities', { headers: { accept: 'application/json' } })
-      .then((antwort) => {
-        if (!abgebrochen && antwort.ok) setOffen(true);
+      .then(async (antwort) => {
+        if (abgebrochen || !antwort.ok) return;
+        const body = (await antwort.json().catch(() => null)) as { open?: boolean } | null;
+        setTuer(body?.open === true ? 'offen' : 'schluessel');
       })
       .catch(() => {
         // Kein Testzugang, keine Türen. Das ist im Betrieb der Normalfall.
@@ -133,10 +138,11 @@ export function Landing() {
   }, []);
 
   async function eintreten(role: string): Promise<void> {
-    // Ohne Schlüssel führt der Weg über `/demo`: Dort steht das Feld, in das er
+    // Bei offener Tür wird nichts gefragt — das ist ihr ganzer Sinn. Sonst
+    // führt der Weg ohne Schlüssel über `/demo`: Dort steht das Feld, in das er
     // sich einfügen lässt. Zwei Eingabefelder für dieselbe Sache wären eines zu
     // viel.
-    if (key.trim() === '') {
+    if (tuer !== 'offen' && key.trim() === '') {
       navigate(`/demo?role=${role}`);
       return;
     }
@@ -168,7 +174,7 @@ export function Landing() {
           </p>
         </header>
 
-        {offen ? (
+        {tuer !== null ? (
           <section className="flex flex-col gap-4">
             <div className="flex flex-col gap-1">
               <h2 className="text-subheading font-medium text-charcoal">

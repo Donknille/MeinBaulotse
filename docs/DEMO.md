@@ -196,7 +196,8 @@ die fünfte schaltet den Testzugang frei:
 | `SUPABASE_JWT_SECRET` | Settings → JWT Keys → Legacy JWT Secret |
 | `VITE_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | Settings → API Keys |
-| `DEMO_LOGIN_KEY` | dein Schlüssel, mindestens 16 Zeichen |
+| `DEMO_OPEN` | `1` — Tür offen, ein Klick genügt. **Oder** stattdessen: |
+| `DEMO_LOGIN_KEY` | dein Schlüssel, mindestens 16 Zeichen — Tür verschlossen |
 
 `SUPABASE_JWT_SECRET` ist hier nicht optional: Mit genau diesem Geheimnis
 unterschreibt der Testzugang seine Token, und mit ihm prüft die API sie.
@@ -212,24 +213,36 @@ nicht. Achte aber darauf, dass **Deployment Protection** für Previews
 abgeschaltet ist — sonst steht dein Gast vor der Vercel-Anmeldung statt vor der
 Anwendung.
 
-Willst du unter der Produktionsadresse vorführen, trägst du `DEMO_LOGIN_KEY` in
-*Production* ein. Das ist vertretbar, solange der Schlüssel lang ist und du ihn
-danach wieder entfernst — die drei Riegel unten gelten dort genauso. **Lösch die
-Variable nach der Vorführung und deploye neu**; dann ist die Route wieder weg.
+Willst du unter der Produktionsadresse vorführen, trägst du `DEMO_OPEN` oder
+`DEMO_LOGIN_KEY` in *Production* ein. Beides ist vertretbar, solange in der
+Datenbank nur die Demolage steht — die beiden Riegel unten gelten dort genauso.
+**Lösch die Variable nach der Vorführung und deploye neu**; dann ist die Route
+wieder weg.
+
+Sobald echte Bauvorhaben in derselben Datenbank liegen, gilt das für `DEMO_OPEN`
+nicht mehr: Dann ist die offene Tür eine offene Tür.
 
 ### 4. Anmelden
 
-Ein Link, ein Klick:
+Mit `DEMO_OPEN=1` ist es die nackte Adresse:
+
+```
+https://<deine-adresse>/
+```
+
+Das ist die **Startseite** mit den beiden Türen und dem Rundgang darunter — der
+Link, den man jemandem schickt, der das Produkt zum ersten Mal sieht. Ein Klick
+auf eine Tür, und man ist im Plan.
+
+Mit `DEMO_LOGIN_KEY` statt `DEMO_OPEN` gehört der Schlüssel an den Link:
 
 ```
 https://<deine-adresse>/?key=<DEMO_LOGIN_KEY>
 ```
 
-Das ist die **Startseite** mit den beiden Türen und dem Rundgang darunter — der
-Link, den man jemandem schickt, der das Produkt zum ersten Mal sieht. Ohne
-`?key=` zeigt sie dasselbe, nur führt ein Klick dann auf `/demo` und fragt nach
-dem Schlüssel. Ist `DEMO_LOGIN_KEY` gar nicht gesetzt, verschwinden die beiden
-Türen und es bleibt die Anmeldung per Mail.
+Ohne `?key=` zeigt die Startseite dasselbe, nur führt ein Klick dann auf
+`/demo` und fragt nach dem Schlüssel. Ist keins von beidem gesetzt,
+verschwinden die Türen und es bleibt die Anmeldung per Mail.
 
 Wer direkt vor die zwei Knöpfe will, nimmt weiterhin:
 
@@ -333,19 +346,39 @@ Anmelderoute. Stimmt er nicht, sagt die Seite beim Klick „Dieser
 Zugangsschlüssel stimmt nicht" — bis zur Liste kommt man damit gar nicht.
 Sobald das Token ausgestellt ist, entscheidet allein die RLS, was zu sehen ist.
 
-## Warum das vertretbar ist
+## Die drei Stellungen der Tür
 
-Drei Riegel, nachzulesen in `apps/api/src/demo.ts`:
+Welche gilt, sagt die Umgebung (`apps/api/src/demo.ts`, geprüft in
+`demo.test.ts`):
 
-1. Ohne `DEMO_LOGIN_KEY` wird die Route nicht montiert.
-2. Der Schlüssel muss mitkommen, ist mindestens 16 Zeichen lang und wird
-   zeitkonstant verglichen. Ein kürzerer gilt als nicht gesetzt.
-3. Es gibt genau zwei fest verdrahtete Identitäten. Ein Token auf einen echten
-   Nutzer lässt sich hierüber nicht ausstellen.
+| Umgebung | Stellung | Wer kommt hinein |
+|---|---|---|
+| nichts gesetzt | **zu** | niemand, die Route gibt es nicht |
+| `DEMO_LOGIN_KEY=…` | **verschlossen** | wer den Schlüssel im Link hat |
+| `DEMO_OPEN=1` | **offen** | jeder, der die Adresse kennt |
 
-Das Token sagt nur, *wer* fragt. Was diese Kennung darf, entscheidet
-unverändert die RLS in der Datenbank — der Testzugang hebelt keine einzige
-Policy aus.
+`DEMO_OPEN` ist die ausdrückliche Entscheidung, den Riegel wegzunehmen — für
+die Vorführung, in der ein Schlüssel im Link zwischen dem Zuschauer und dem
+Produkt steht. Beides gesetzt heißt offen: Die ausdrückliche Ansage gewinnt
+gegen die vorsichtigere, denn ein Schlüssel, der nicht mehr greift, ist
+schlimmer als keiner — man hielte ihn für einen Riegel. Als Ja gilt nur, was
+wie eines aussieht; `DEMO_OPEN=0` lässt die Tür zu.
+
+## Warum auch die offene Tür vertretbar ist
+
+Zwei Riegel bleiben in jeder Stellung:
+
+1. Es gibt genau **zwei** fest verdrahtete Identitäten. Ein Token auf einen
+   echten Nutzer lässt sich hierüber nicht ausstellen.
+2. Das Token trägt keine Rechte in sich und läuft nach zwölf Stunden ab. Es
+   sagt nur, *wer* fragt; was diese Kennung darf, entscheidet unverändert die
+   RLS in der Datenbank — der Testzugang hebelt keine einzige Policy aus.
+
+Was die offene Tür trotzdem heißt: Wer die Adresse kennt, sieht und ändert
+alles, was diese beiden Demo-Nutzer sehen und ändern dürfen — und kann selbst
+Bauvorhaben anlegen. Für eine Demolage ist das der Zweck. Stehen echte
+Bauvorhaben in derselben Datenbank, ist `DEMO_OPEN` kein Schalter, sondern ein
+Fehler: Dann gehört der Schlüssel zurück, oder die Tür ganz zu.
 
 ## Rückbau
 

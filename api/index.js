@@ -31598,6 +31598,12 @@ function demoLoginKey() {
   }
   return raw2;
 }
+function demoAccess() {
+  const wunsch = (process.env["DEMO_OPEN"] ?? "").trim().toLowerCase();
+  if (["1", "true", "ja", "offen", "yes"].includes(wunsch)) return { mode: "offen" };
+  const key = demoLoginKey();
+  return key === null ? { mode: "zu" } : { mode: "schluessel", key };
+}
 function keyMatches(expected, given) {
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(given, "utf8");
@@ -31611,11 +31617,12 @@ async function mintDemoToken(identity) {
     demo: true
   }).setProtectedHeader({ alg: "HS256" }).setSubject(identity.userId).setIssuedAt().setExpirationTime(TOKEN_LIFETIME).sign(jwtSecret());
 }
-function demoRoutes(expectedKey) {
+function demoRoutes(access2) {
   const demo = new Hono2();
   demo.get(
     "/identities",
     (c) => c.json({
+      open: access2.mode === "offen",
       identities: DEMO_ROLES.map((role) => ({
         role,
         label: DEMO_IDENTITIES[role].label,
@@ -31626,7 +31633,7 @@ function demoRoutes(expectedKey) {
     })
   );
   async function issue(c, role, key) {
-    if (!keyMatches(expectedKey, typeof key === "string" ? key : "")) {
+    if (access2.mode === "schluessel" && !keyMatches(access2.key, typeof key === "string" ? key : "")) {
       throw new HTTPException(401, {
         message: "Dieser Zugangsschl\xFCssel stimmt nicht. Pr\xFCf bitte den Link."
       });
@@ -32824,10 +32831,12 @@ function createApp() {
       );
     }
   });
-  const demoKey = demoLoginKey();
-  if (demoKey !== null) {
-    console.info("Testzugang aktiv: POST /api/demo/session");
-    app.route("/demo", demoRoutes(demoKey));
+  const zugang = demoAccess();
+  if (zugang.mode !== "zu") {
+    console.info(
+      zugang.mode === "offen" ? "Testzugang OFFEN: /api/demo/session ohne Schl\xFCssel. F\xFCr den Betrieb DEMO_OPEN entfernen." : "Testzugang aktiv, mit Schl\xFCssel: /api/demo/session"
+    );
+    app.route("/demo", demoRoutes(zugang));
   }
   app.route("/v1/guest", guestRoutes());
   const v1 = new Hono2();

@@ -26,7 +26,7 @@ import {
   type JwtClaims,
   type Transaction,
 } from '@meinbaulotse/db';
-import { DEMO_IDENTITIES, demoLoginKey, type DemoIdentity } from '../src/demo.js';
+import { DEMO_IDENTITIES, demoAccess, demoLoginKey, type DemoIdentity } from '../src/demo.js';
 import { createProjectFromAnswers } from '../src/onboarding.js';
 
 const PROJECT_NAME = 'Musterhaus Sonnenweg';
@@ -134,6 +134,7 @@ async function main(): Promise<void> {
   });
 
   const key = demoLoginKey();
+  const zugang = demoAccess();
   const created = outcome.created;
 
   if (created === null) {
@@ -152,10 +153,14 @@ async function main(): Promise<void> {
   console.log(`  ${bauherr.label}: ${bauherr.displayName} (owner)`);
   console.log(`  ${gu.label}: ${gu.displayName} (contractor)`);
 
-  if (key === null) {
-    console.log('\nFür die Anmeldung fehlt noch DEMO_LOGIN_KEY in der .env — siehe docs/DEMO.md.');
+  if (zugang.mode === 'offen') {
+    console.log('\nAnmelden unter:  http://localhost:5173/  (Tür offen, kein Schlüssel nötig)');
+  } else if (key === null) {
+    console.log(
+      '\nFür die Anmeldung fehlt noch DEMO_OPEN=1 oder DEMO_LOGIN_KEY in der .env — siehe docs/DEMO.md.',
+    );
   } else {
-    console.log(`\nAnmelden unter:  http://localhost:5173/demo?key=${encodeURIComponent(key)}`);
+    console.log(`\nAnmelden unter:  http://localhost:5173/?key=${encodeURIComponent(key)}`);
   }
 }
 

@@ -5,16 +5,21 @@
  * verschickt werden kann, ohne dass es dafür einen Mailversand braucht — genau
  * das Loch, das diese Seite überbrückt.
  *
- * Wer den Link hat, ist einen Klick entfernt: zwei Rollen, zwei Knöpfe. Ein
- * Eingabefeld erscheint nur, wenn im Link kein Schlüssel steht, etwa weil ein
- * Messenger ihn abgeschnitten hat.
+ * Zwei Rollen, zwei Knöpfe. Ein Eingabefeld erscheint nur, wenn die Tür einen
+ * Schlüssel verlangt und keiner vorliegt — etwa weil ein Messenger den Link
+ * abgeschnitten hat. Steht die Tür offen (`DEMO_OPEN`), gibt es das Feld nicht,
+ * denn dann gäbe es nichts einzutragen.
  *
  * Die beiden Rollen stehen **hier** und werden nicht vom Server geholt. Das ist
  * kein Geiz, sondern eine Lehre: Solange die Seite dafür auf eine Antwort
  * wartete, blieb sie bei „Einen Moment." stehen, sobald die API einmal nicht
  * antwortete. Für die Darstellung von zwei festen Knöpfen braucht es keinen
- * Netzaufruf. Ob der Zugang wirklich offen ist, entscheidet ohnehin erst der
- * Klick, und dann sagt es die Antwort im Klartext.
+ * Netzaufruf.
+ *
+ * Die eine Frage, die trotzdem an den Server geht, ist die nach der Stellung
+ * der Tür. Sie hält nichts auf: Die Knöpfe stehen sofort, und ob ein Schlüssel
+ * fehlt, entscheidet sich erst mit der Antwort — oder spätestens beim Klick,
+ * und dann sagt es die Fehlermeldung im Klartext.
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -48,6 +53,8 @@ export function DemoLogin() {
   const [key, setKey] = useState(() => params.get('key') ?? readDemoKey());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // `null` heißt: noch nicht bekannt. Die Knöpfe stehen trotzdem.
+  const [tuer, setTuer] = useState<'offen' | 'schluessel' | null>(null);
   // Der Sprung darf sich nicht wiederholen, auch nicht beim doppelten Aufruf
   // der Effekte im Entwicklungsmodus.
   const jumped = useRef(false);
@@ -67,15 +74,35 @@ export function DemoLogin() {
   }
 
   useEffect(() => {
-    const wanted = params.get('role');
-    if (wanted === null || wanted === '' || key.trim() === '' || jumped.current) return;
-    jumped.current = true;
-    // Absichtlich nur beim ersten Aufbau: Der Link entscheidet, nicht jede
-    // spätere Eingabe im Schlüsselfeld. Scheitert es, bleiben die Knöpfe.
-    void enter(wanted);
+    let abgebrochen = false;
+    void fetch('/api/demo/identities', { headers: { accept: 'application/json' } })
+      .then(async (antwort) => {
+        if (abgebrochen || !antwort.ok) return;
+        const body = (await antwort.json().catch(() => null)) as { open?: boolean } | null;
+        setTuer(body?.open === true ? 'offen' : 'schluessel');
+      })
+      .catch(() => {
+        // Keine Antwort heißt hier nicht „zu": Der Klick entscheidet.
+      });
+    return () => {
+      abgebrochen = true;
+    };
   }, []);
 
   const hasKey = key.trim() !== '';
+
+  useEffect(() => {
+    const wanted = params.get('role');
+    if (wanted === null || wanted === '' || jumped.current) return;
+    // Entweder liegt ein Schlüssel vor, oder die Tür steht offen. Solange
+    // beides offen ist, wird nicht gesprungen — sonst liefe der Sprung in ein
+    // 401 und der Besucher stünde vor einer Fehlermeldung statt vor der Tür.
+    if (!hasKey && tuer !== 'offen') return;
+    jumped.current = true;
+    // Nur einmal: Der Link entscheidet, nicht jede spätere Eingabe im
+    // Schlüsselfeld. Scheitert es, bleiben die Knöpfe.
+    void enter(wanted);
+  }, [tuer, hasKey]);
 
   return (
     <main className="dotted-canvas flex min-h-dvh items-center justify-center px-4 py-16">
@@ -84,36 +111,32 @@ export function DemoLogin() {
           <Topmark />
           <h1 className="display-title text-heading-lg text-charcoal">Testzugang</h1>
           <p className="text-body-lg text-steel">
-            {hasKey
-              ? 'Dasselbe Bauvorhaben aus zwei Sichten. Wähl deine Rolle — wechseln kannst du jederzeit.'
-              : 'Zum Anmelden fehlt der Schlüssel aus dem Link.'}
+            Dasselbe Bauvorhaben aus zwei Sichten. Wähl deine Rolle — wechseln kannst du jederzeit.
           </p>
         </div>
 
         <Card className="flex flex-col gap-4">
-          {hasKey ? (
-            <div className="flex flex-col gap-3">
-              {ROLES.map((entry) => (
-                <div key={entry.role} className="flex flex-col gap-1">
-                  <Button
-                    variant="primary"
-                    size="field"
-                    disabled={busy !== null}
-                    onClick={() => void enter(entry.role)}
-                  >
-                    {busy === entry.role ? 'Einen Moment.' : entry.action}
-                  </Button>
-                  <p className="text-caption text-steel">{entry.person}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            // Der seltene Fall: Der Schlüssel fehlt im Link. Statt einer
-            // Sackgasse ein Feld, in das er sich einfügen lässt.
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(event) => void enter('bauherr', event)}
-            >
+          <div className="flex flex-col gap-3">
+            {ROLES.map((entry) => (
+              <div key={entry.role} className="flex flex-col gap-1">
+                <Button
+                  variant="primary"
+                  size="field"
+                  disabled={busy !== null}
+                  onClick={() => void enter(entry.role)}
+                >
+                  {busy === entry.role ? 'Einen Moment.' : entry.action}
+                </Button>
+                <p className="text-caption text-steel">{entry.person}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Nur, wenn die Tür einen Schlüssel verlangt und keiner vorliegt —
+              etwa weil ein Messenger den Link abgeschnitten hat. Steht sie
+              offen, gäbe es hier nichts einzutragen. */}
+          {tuer === 'schluessel' && !hasKey ? (
+            <form className="flex flex-col gap-4" onSubmit={(event) => void enter('bauherr', event)}>
               <Field
                 label="Zugangsschlüssel"
                 hint="Er steht im Link hinter key=. Nach dem Abmelden ist er hier vergessen — dann brauchst du den Link noch einmal."
@@ -126,7 +149,7 @@ export function DemoLogin() {
                 />
               </Field>
             </form>
-          )}
+          ) : null}
 
           {error !== null ? <p className="text-body text-alarm-red">{error}</p> : null}
 

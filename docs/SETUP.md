@@ -238,7 +238,8 @@ Funktion bleibt dann einfach aus und sagt das auch:
 | `WEATHER_API_URL` | *(nicht gesetzt = Standard)* | Adresse der Wetterabfrage. Standard ist `https://api.brightsky.dev` (DWD Open Data als JSON). Leer eingetragen: kein Wetter, im Tagebuch steht „Wetter nicht erfasst". |
 | `ANTHROPIC_API_KEY` | „Frag den Lotsen" gibt es nicht; die Seite sagt das offen | Schlüssel aus der Anthropic Console. **Niemals als `VITE_`-Variable** — alles mit diesem Präfix landet im Browser-Bundle. |
 | `ASSISTANT_MONTHLY_CENTS` | 500 (fünf Euro je Bauvorhaben und Monat) | Anderer Monatsdeckel für den Assistenten |
-| `DEMO_LOGIN_KEY` | `/demo` gibt es nicht — so gehört es in Produktion | Testzugang ohne Mailversand, siehe `docs/DEMO.md` |
+| `DEMO_LOGIN_KEY` | `/demo` gibt es nicht — so gehört es in Produktion | Testzugang ohne Mailversand, verschlossen: nur mit dem Schlüssel im Link. Siehe `docs/DEMO.md` |
+| `DEMO_OPEN` | dasselbe | `1` öffnet den Testzugang **ohne Schlüssel** — ein Klick auf der Startseite genügt. Für die Vorführung gedacht; schlägt `DEMO_LOGIN_KEY`. Wer echte Bauvorhaben in der Datenbank hat, setzt das nicht |
 | `DATABASE_SSL_NO_VERIFY` | Zertifikat wird geprüft | Notausgang, siehe unten. Nur setzen, wenn nichts mehr geht. |
 
 **`DATABASE_URL`: Transaction-Pooler auf 6543, nicht die Direktverbindung.**
