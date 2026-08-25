@@ -222,6 +222,18 @@ Variable nach der Vorführung und deploye neu**; dann ist die Route wieder weg.
 Ein Link, ein Klick:
 
 ```
+https://<deine-adresse>/?key=<DEMO_LOGIN_KEY>
+```
+
+Das ist die **Startseite** mit den beiden Türen und dem Rundgang darunter — der
+Link, den man jemandem schickt, der das Produkt zum ersten Mal sieht. Ohne
+`?key=` zeigt sie dasselbe, nur führt ein Klick dann auf `/demo` und fragt nach
+dem Schlüssel. Ist `DEMO_LOGIN_KEY` gar nicht gesetzt, verschwinden die beiden
+Türen und es bleibt die Anmeldung per Mail.
+
+Wer direkt vor die zwei Knöpfe will, nimmt weiterhin:
+
+```
 https://<deine-adresse>/demo?key=<DEMO_LOGIN_KEY>
 ```
 

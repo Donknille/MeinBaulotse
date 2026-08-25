@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { onDemoSessionChange, readDemoSession, type DemoSession } from './lib/demo-auth';
 import { DemoLogin } from './routes/DemoLogin';
+import { Landing } from './routes/Landing';
 import { SignIn } from './routes/SignIn';
 import { Assistant } from './routes/Assistant';
 import { Capture } from './routes/Capture';
@@ -92,7 +93,14 @@ export function App() {
               element={<div className="p-6 text-body text-steel">Einen Moment.</div>}
             />
           ) : session === null && demo === null ? (
-            <Route path="*" element={<SignIn />} />
+            // Wer nicht angemeldet ist, landet auf der Startseite und nicht auf
+            // einer Anmeldemaske. Eine Maske ist eine Frage an jemanden, der
+            // schon dazugehört; wer zum ersten Mal hier ist, hat noch keine
+            // Antwort darauf — und geht wieder.
+            <>
+              <Route path="/anmelden" element={<SignIn />} />
+              <Route path="*" element={<Landing />} />
+            </>
           ) : (
             <>
               <Route path="/" element={<Projects />} />
